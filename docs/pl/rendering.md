@@ -1,7 +1,7 @@
 # Renderowanie
 
 Nagłówki: `poligon/renderer.h`, `poligon/math.h`, `poligon/platform.h`.
-Przykład: `examples/renderer`. Shadery: `engine/shaders/*.hlsl`.
+Przykłady: `examples/renderer`, `examples/texture`, `examples/environment`, `examples/model`. Shadery: `engine/shaders/*.hlsl`.
 
 Dodatkowo `poligon/image.h` (obrazy w pamięci, PNG i JPEG) i przykład `examples/texture`.
 
@@ -14,6 +14,23 @@ Dodatkowo `poligon/image.h` (obrazy w pamięci, PNG i JPEG) i przykład `example
 - Błędy nie do naprawienia (brak karty, zła kolejność wywołań) kończą proces przez `FatalError`.
 - Nagłówki silnika nie pokazują typów SDL.
 
+## Etapy klatki
+
+Klatkę nagrywają wywołania `DrawMesh`, a wykonuje ją `EndFrame`, w trzech przebiegach:
+
+1. **Cienie.** Głębia sceny widziana ze słońca, cztery razy (**kaskady**): widoczny zakres do `Environment::shadow_distance` jest pocięty na cztery części, bliskie ostre, dalekie zgrubne. Wszystkie cztery dzielą jeden obraz głębi jako kafelki 2 x 2.
+2. **Scena.** Najpierw niebo, potem siatki, w kolorach liniowych o szerokim zakresie (wartości powyżej 1 zostają), z multisamplingiem (`RendererConfig::msaa_samples`, domyślnie 4). Materiały wycinane alfą używają **alpha to coverage**, więc krawędzie liści są gładkie.
+3. **Mapowanie tonów.** Obraz o szerokim zakresie jest zamieniany na kolory do wyświetlenia: `exposure` skaluje jasność, `ToneMapping::Aces` łagodnie spłaszcza jasne partie, `ToneMapping::None` obcina (dokładne; używane w testach).
+
+## Materiały i światło
+
+- `Material` to model metaliczność-chropowatość z glTF: kolor bazowy (razy `texture`), `metallic`, `roughness`, opcjonalnie `normal_texture` (drobny relief) i `orm_texture` (zielony chropowatość, niebieski metaliczność, czerwony zacienienie otoczenia przy `occlusion_in_orm`). Tekstury z danymi tworzy się z `TextureOptions::is_color = false`.
+- Mapy normalnych są w konwencji OpenGL (zielony wskazuje górę obrazu). Siatki nie potrzebują stycznych; shader wyznacza je dla każdego piksela.
+- `DirectionalLight` to słońce: kierunek `direction`, w którym świeci, kolor `color` (może przekraczać 1) i płaskie światło otoczenia `ambient`. Jednostki: biała matowa powierzchnia zwrócona do słońca odbija dokładnie kolor słońca.
+- `Environment` (trzeci argument `BeginFrame`): `draw_sky` (gradient od `sky_horizon` do `sky_zenith`, `sky_ground` poniżej, tarcza słońca), `sky_light` (powierzchnie oświetla niebo z góry i ziemia z dołu zamiast płaskiego otoczenia; gładkie powierzchnie odbijają niebo), `shadows` i `shadow_distance`, `fog_density` i `fog_color`. Domyślnie jest skromnie: bez nieba, bez mgły, cienie włączone.
+- Materiały dwustronne są traktowane jak cienkie liście: światło z tyłu trochę przez nie prześwieca.
+- Słoneczna scena ma wartości światła 2 do 4, więc ekspozycja powinna wynosić około 0,5 do 0,7.
+- `tests/scene_render_test.cpp` sprawdza cienie, niebo, mgłę, orientację map normalnych, multisampling i mapowanie tonów po wartościach pikseli na obu backendach.
 ## Konwencje
 
 - Matematyka to GLM, używane wprost (`glm::vec3`, `glm::mat4`, `glm::quat`, `glm::translate`, `glm::lookAt`...). Zawsze przez `#include "poligon/math.h"`, nigdy przez nagłówki GLM, i bez własnych `GLM_FORCE_*`: konfigurację ustawia cel `poligon_engine`.
@@ -83,7 +100,7 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 
 ## Znane ograniczenia
 
-- Jeden rodzaj materiału: kolor razy tekstura, jedno światło kierunkowe plus otoczenie. Bez cieni, przezroczystości, map normalnych.
+- Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny i bez przebiegu zacienienia otoczenia.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
 - Siatek i tekstur nie da się zwolnić przed zniszczeniem renderera.
 - Tekstury są nieskompresowane (4 bajty na piksel plus mipmapy), co przy 4 GB pamięci karty wystarczy na testy, nie na duży świat.

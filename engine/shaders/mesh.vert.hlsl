@@ -9,7 +9,7 @@ cbuffer FrameUniforms : register(b0, space1) {
 cbuffer ObjectUniforms : register(b1, space1) {
     float4x4 model;
     float4 object_color;
-    float4 uv_scale_and_cutoff;  // xy: multiplier for texture coordinates, z: alpha cutoff
+    float4 uv_scale;  // xy: multiplier for texture coordinates
 };
 
 struct VertexInput {
@@ -23,7 +23,7 @@ struct VertexOutput {
     float3 world_normal : TEXCOORD0;
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;
-    float alpha_cutoff : TEXCOORD3;
+    float3 world_position : TEXCOORD3;
 };
 
 VertexOutput main(VertexInput input) {
@@ -34,7 +34,7 @@ VertexOutput main(VertexInput input) {
     // scale combined with rotation would need the inverse transpose of the model matrix.
     output.world_normal = mul((float3x3)model, input.normal);
     output.color = object_color;
-    output.uv = input.uv * uv_scale_and_cutoff.xy;
-    output.alpha_cutoff = uv_scale_and_cutoff.z;
+    output.uv = input.uv * uv_scale.xy;
+    output.world_position = world_position.xyz;
     return output;
 }

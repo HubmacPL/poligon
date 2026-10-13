@@ -69,11 +69,12 @@ function(poligon_embed_shader source stage symbol header)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${output_dir}
     # Shaders carry [[vk::...]] attributes that only matter for SPIR-V; the DXIL compile would
     # report them as ignored, so that one warning is off here.
-    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -Wno-ignored-attributes -T ${profile} -E main -Fo ${dxil} ${input}
-    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -spirv -T ${profile} -E main -Fo ${spirv} ${input}
+    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -Wno-ignored-attributes -I ${CMAKE_CURRENT_SOURCE_DIR}/shaders -T ${profile} -E main -Fo ${dxil} ${input}
+    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -spirv -I ${CMAKE_CURRENT_SOURCE_DIR}/shaders -T ${profile} -E main -Fo ${spirv} ${input}
     COMMAND ${CMAKE_COMMAND} -DINPUT=${dxil} -DOUTPUT=${output_dir}/${header}_dxil.h -DSYMBOL=${symbol}Dxil -P ${embed}
     COMMAND ${CMAKE_COMMAND} -DINPUT=${spirv} -DOUTPUT=${output_dir}/${header}_spirv.h -DSYMBOL=${symbol}Spirv -P ${embed}
-    DEPENDS ${input} ${embed}
+    # Every shader may include the shared .hlsli files, so a change there rebuilds all of them.
+    DEPENDS ${input} ${embed} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.hlsli
     COMMENT "Compiling shader ${source}"
     VERBATIM)
   target_sources(poligon_engine PRIVATE ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h)
@@ -82,3 +83,7 @@ endfunction()
 target_include_directories(poligon_engine PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 poligon_embed_shader(shaders/mesh.vert.hlsl vertex kMeshVert mesh_vert)
 poligon_embed_shader(shaders/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
+poligon_embed_shader(shaders/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
+poligon_embed_shader(shaders/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)
+poligon_embed_shader(shaders/sky.frag.hlsl fragment kSkyFrag sky_frag)
+poligon_embed_shader(shaders/tonemap.frag.hlsl fragment kTonemapFrag tonemap_frag)

@@ -87,9 +87,18 @@ public:
         poligon::Camera camera;
         camera.position = glm::vec3(glm::rotate(identity, yaw, up) * glm::vec4(9.0f, 6.0f, 13.0f, 1.0f));
         camera.target = {0.0f, 3.5f, 0.0f};
-        const poligon::DirectionalLight light;
+        // A sunny day with a light haze.
+        poligon::DirectionalLight sun;
+        sun.direction = {-0.5f, -0.75f, -0.4f};
+        sun.color = {2.6f, 2.45f, 2.2f, 1.0f};
+        poligon::Environment environment;
+        environment.draw_sky = true;
+        environment.sky_light = true;
+        environment.sky_ground = {0.42f, 0.44f, 0.46f, 1.0f};
+        environment.shadow_distance = 60.0f;
+        environment.fog_density = 0.002f;
 
-        renderer_.BeginFrame(camera, light);
+        renderer_.BeginFrame(camera, sun, environment);
 
         ground_query_.each([this](const toy::Ground& ground) {
             poligon::Material material;
@@ -191,7 +200,8 @@ int main(int argc, char** argv) {
     renderer_config.backend = options.backend;
     renderer_config.enable_validation = options.gpu_validation;
     renderer_config.window_title = "Poligon toy";
-    renderer_config.clear_color = {0.53f, 0.73f, 0.90f, 1.0f};  // sky
+    renderer_config.clear_color = {0.53f, 0.73f, 0.90f, 1.0f};
+    renderer_config.exposure = 0.45f;
     poligon::Renderer renderer(renderer_config);
 
     flecs::world world;

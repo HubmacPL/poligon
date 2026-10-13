@@ -28,6 +28,13 @@ struct ModelMaterial {
     // The base color texture, already decoded. Empty (width 0) when the material has none
     // or when the image could not be loaded (the reason is then in Model::warnings).
     Image base_color_texture;
+
+    // The rest of the glTF material; see Material in renderer.h. Images are empty when absent.
+    float metallic = 0.0f;
+    float roughness = 0.8f;
+    Image normal_texture;
+    Image orm_texture;  // red: occlusion (if occlusion_in_orm), green: roughness, blue: metallic
+    bool occlusion_in_orm = false;
 };
 
 // One piece of geometry with a single material. Vertices are in the mesh's own space.

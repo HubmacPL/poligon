@@ -17,12 +17,14 @@ target_link_libraries(image_test PRIVATE poligon_engine poligon_build_options)
 add_test(NAME image_test COMMAND image_test ${CMAKE_BINARY_DIR}/test_output)
 
 # Pixel-level checks of textured rendering, on both graphics backends, with the debug layer on.
-add_executable(texture_render_test texture_render_test.cpp)
-target_link_libraries(texture_render_test PRIVATE poligon_engine poligon_build_options)
-foreach(backend d3d12 vulkan)
-  add_test(NAME texture_render_test_${backend} COMMAND texture_render_test ${backend})
-  set_tests_properties(texture_render_test_${backend} PROPERTIES
-    FAIL_REGULAR_EXPRESSION "D3D12 ERROR;D3D12 WARNING;D3D12 CORRUPTION;Validation Error;VUID-")
+foreach(render_test texture_render_test scene_render_test)
+  add_executable(${render_test} ${render_test}.cpp)
+  target_link_libraries(${render_test} PRIVATE poligon_engine poligon_build_options)
+  foreach(backend d3d12 vulkan)
+    add_test(NAME ${render_test}_${backend} COMMAND ${render_test} ${backend})
+    set_tests_properties(${render_test}_${backend} PROPERTIES
+      FAIL_REGULAR_EXPRESSION "D3D12 ERROR;D3D12 WARNING;D3D12 CORRUPTION;Validation Error;VUID-")
+  endforeach()
 endforeach()
 
 # Model loading: the test writes its own small OBJ and glTF files, then the viewer draws one

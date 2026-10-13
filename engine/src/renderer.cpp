@@ -8,46 +8,99 @@
 #include <SDL3/SDL.h>
 
 #include "poligon/fatal_error.h"
+#include "poligon_shaders/fullscreen_vert_dxil.h"
+#include "poligon_shaders/fullscreen_vert_spirv.h"
 #include "poligon_shaders/mesh_frag_dxil.h"
 #include "poligon_shaders/mesh_frag_spirv.h"
 #include "poligon_shaders/mesh_vert_dxil.h"
 #include "poligon_shaders/mesh_vert_spirv.h"
+#include "poligon_shaders/shadow_frag_dxil.h"
+#include "poligon_shaders/shadow_frag_spirv.h"
+#include "poligon_shaders/sky_frag_dxil.h"
+#include "poligon_shaders/sky_frag_spirv.h"
+#include "poligon_shaders/tonemap_frag_dxil.h"
+#include "poligon_shaders/tonemap_frag_spirv.h"
 
 namespace poligon {
 
 namespace {
 
-// Layouts must match the cbuffers in engine/shaders/mesh.*.hlsl.
-struct FrameUniforms {
+constexpr int kCascadeCount = 4;
+
+// Uniform layouts. Each must match the cbuffer of the same name in engine/shaders/*.hlsl.
+struct VertexFrameUniforms {
     glm::mat4 view_projection;
 };
 
 struct ObjectUniforms {
     glm::mat4 model;
-    float color[4];
-    float uv_scale[4];
+    glm::vec4 color;
+    glm::vec4 uv_scale;
 };
 
-struct LightUniforms {
-    float direction[4];
-    float color[4];
-    float ambient[4];
+struct FragmentFrameUniforms {
+    glm::mat4 shadow_matrices[kCascadeCount];
+    glm::vec4 cascade_far;
+    glm::vec4 camera_position;
+    glm::vec4 camera_forward;
+    glm::vec4 light_direction;
+    glm::vec4 light_color;
+    glm::vec4 ambient_sky;
+    glm::vec4 ambient_ground;
+    glm::vec4 sky_zenith;
+    glm::vec4 sky_horizon;
+    glm::vec4 sky_ground;
+    glm::vec4 fog;
+    glm::vec4 options;
+};
+
+struct MaterialUniforms {
+    glm::vec4 factors;
+    glm::vec4 flags;
+};
+
+struct SkyUniforms {
+    glm::mat4 inverse_view_projection;
+    glm::vec4 camera_position;
+    glm::vec4 light_direction;
+    glm::vec4 sun_color;
+    glm::vec4 sky_zenith;
+    glm::vec4 sky_horizon;
+    glm::vec4 sky_ground;
+};
+
+struct TonemapUniforms {
+    glm::vec4 parameters;
 };
 
 // The GPU reads these as tightly packed floats.
 static_assert(sizeof(glm::vec2) == 2 * sizeof(float), "glm::vec2 must be two floats");
 static_assert(sizeof(glm::vec3) == 3 * sizeof(float), "glm::vec3 must be three floats");
+static_assert(sizeof(glm::vec4) == 4 * sizeof(float), "glm::vec4 must be four floats");
 static_assert(sizeof(glm::mat4) == 16 * sizeof(float), "glm::mat4 must be sixteen floats");
 static_assert(sizeof(MeshVertex) == 8 * sizeof(float), "MeshVertex must have no padding");
 
-// The off-screen image stores sRGB-encoded bytes, like image files and displays do. The GPU
+// The scene is drawn in linear colors with a wide range (values above 1 are kept), so that
+// lighting adds up correctly and bright areas can be tone mapped instead of clipped.
+constexpr SDL_GPUTextureFormat kSceneFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+// The final image stores sRGB-encoded bytes, like image files and displays do. The GPU
 // converts automatically: shaders write linear values, the stored bytes are sRGB.
-constexpr SDL_GPUTextureFormat kColorTargetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+constexpr SDL_GPUTextureFormat kOutputFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+
+// Shadow casters this far behind the visible area (towards the sun) still cast shadows into it.
+constexpr float kShadowCasterDistance = 150.0f;
 
 struct Mesh {
     SDL_GPUBuffer* vertex_buffer = nullptr;
     SDL_GPUBuffer* index_buffer = nullptr;
     Uint32 index_count = 0;
+};
+
+struct DrawCommand {
+    std::uint32_t mesh_id;
+    glm::mat4 transform;
+    Material material;
 };
 
 [[noreturn]] void FatalSdlError(const char* what) {
@@ -84,31 +137,64 @@ Uint32 CountMipLevels(int width, int height) {
     return levels;
 }
 
+glm::vec4 ToVec4(Color color) {
+    return glm::vec4(color.r, color.g, color.b, color.a);
+}
+
+SDL_GPUSampleCount ToSampleCount(int samples) {
+    switch (samples) {
+    case 8:
+        return SDL_GPU_SAMPLECOUNT_8;
+    case 4:
+        return SDL_GPU_SAMPLECOUNT_4;
+    case 2:
+        return SDL_GPU_SAMPLECOUNT_2;
+    default:
+        return SDL_GPU_SAMPLECOUNT_1;
+    }
+}
+
 } // namespace
 
 struct Renderer::Impl {
     RendererConfig config;
     SDL_Window* window = nullptr;
     SDL_GPUDevice* device = nullptr;
-    SDL_GPUTexture* color_target = nullptr;
-    SDL_GPUTexture* depth_target = nullptr;
-    SDL_GPUTextureFormat depth_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+    int msaa_samples = 1;
+
+    // Render targets. With multisampling the scene is drawn into scene_color (several samples
+    // per pixel) and averaged into scene_resolved; without it scene_color is used directly.
+    SDL_GPUTexture* scene_color = nullptr;
+    SDL_GPUTexture* scene_depth = nullptr;
+    SDL_GPUTexture* scene_resolved = nullptr;
+    SDL_GPUTexture* output_target = nullptr;
+    SDL_GPUTexture* shadow_atlas = nullptr;
+
     SDL_GPUGraphicsPipeline* mesh_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* mesh_pipeline_double_sided = nullptr;
-    // The pipeline bound in the current frame, to avoid rebinding it for every mesh.
-    SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* shadow_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* sky_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* tonemap_pipeline = nullptr;
+
     SDL_GPUSampler* texture_sampler = nullptr;
+    SDL_GPUSampler* shadow_sampler = nullptr;
+    SDL_GPUSampler* clamp_sampler = nullptr;
+
     std::vector<Mesh> meshes;
     std::vector<SDL_GPUTexture*> textures;
-    // Used for materials without a texture, so that one shader serves both cases.
+    // Stand-ins for materials without the respective texture, so that one shader serves all.
     TextureHandle white_texture;
-    // Clear color as linear values, the form the sRGB render target expects.
+    TextureHandle flat_normal_texture;
+    // Clear color as linear values, the form the scene target expects.
     SDL_FColor linear_clear_color{};
 
-    // Valid only between BeginFrame and EndFrame.
-    SDL_GPUCommandBuffer* frame_commands = nullptr;
-    SDL_GPURenderPass* frame_pass = nullptr;
+    // Recorded between BeginFrame and EndFrame.
+    bool in_frame = false;
     bool has_finished_frame = false;
+    Camera camera;
+    DirectionalLight light;
+    Environment environment;
+    std::vector<DrawCommand> draw_commands;
 
     SDL_GPUShader* CreateShader(SDL_GPUShaderStage stage, Uint32 sampler_count, Uint32 uniform_buffer_count,
                                 const unsigned char* dxil, size_t dxil_size, const unsigned char* spirv,
@@ -139,46 +225,70 @@ struct Renderer::Impl {
         return shader;
     }
 
-    void CreateTargets() {
-        SDL_GPUTextureCreateInfo color_info{};
-        color_info.type = SDL_GPU_TEXTURETYPE_2D;
-        color_info.format = kColorTargetFormat;
-        // SAMPLER is needed because the image is copied (blitted) to the window.
-        color_info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        color_info.width = static_cast<Uint32>(config.width);
-        color_info.height = static_cast<Uint32>(config.height);
-        color_info.layer_count_or_depth = 1;
-        color_info.num_levels = 1;
-        color_info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    SDL_GPUTexture* CreateTarget(SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, int width, int height,
+                                 SDL_GPUSampleCount samples, const SDL_FColor* clear_color, const char* what) {
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.format = format;
+        info.usage = usage;
+        info.width = static_cast<Uint32>(width);
+        info.height = static_cast<Uint32>(height);
+        info.layer_count_or_depth = 1;
+        info.num_levels = 1;
+        info.sample_count = samples;
         // Direct3D 12 clears fastest (and without debug layer warnings) when the clear values
         // are declared at creation. Other backends ignore these properties.
-        const SDL_PropertiesID clear_properties = SDL_CreateProperties();
-        SDL_SetFloatProperty(clear_properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_R_FLOAT, linear_clear_color.r);
-        SDL_SetFloatProperty(clear_properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_G_FLOAT, linear_clear_color.g);
-        SDL_SetFloatProperty(clear_properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_B_FLOAT, linear_clear_color.b);
-        SDL_SetFloatProperty(clear_properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_A_FLOAT, linear_clear_color.a);
-        SDL_SetFloatProperty(clear_properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_DEPTH_FLOAT, 1.0f);
-        color_info.props = clear_properties;
-        color_target = SDL_CreateGPUTexture(device, &color_info);
-        if (color_target == nullptr) {
-            FatalSdlError("cannot create color target");
+        const SDL_PropertiesID properties = SDL_CreateProperties();
+        if (clear_color != nullptr) {
+            SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_R_FLOAT, clear_color->r);
+            SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_G_FLOAT, clear_color->g);
+            SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_B_FLOAT, clear_color->b);
+            SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_A_FLOAT, clear_color->a);
         }
-
-        if (!SDL_GPUTextureSupportsFormat(device, SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTURETYPE_2D,
-                                          SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
-            depth_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+        SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_DEPTH_FLOAT, 1.0f);
+        info.props = properties;
+        SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+        SDL_DestroyProperties(properties);
+        if (texture == nullptr) {
+            const std::string message = std::string("cannot create ") + what;
+            FatalSdlError(message.c_str());
         }
-        SDL_GPUTextureCreateInfo depth_info = color_info;
-        depth_info.format = depth_format;
-        depth_info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-        depth_target = SDL_CreateGPUTexture(device, &depth_info);
-        if (depth_target == nullptr) {
-            FatalSdlError("cannot create depth target");
-        }
-        SDL_DestroyProperties(clear_properties);
+        return texture;
     }
 
-    void CreateTextureSampler() {
+    void CreateTargets() {
+        // Use the asked multisample count, or the nearest lower one the card supports.
+        msaa_samples = config.msaa_samples >= 8 ? 8 : config.msaa_samples >= 4 ? 4 : config.msaa_samples >= 2 ? 2 : 1;
+        while (msaa_samples > 1 &&
+               (!SDL_GPUTextureSupportsSampleCount(device, kSceneFormat, ToSampleCount(msaa_samples)) ||
+                !SDL_GPUTextureSupportsSampleCount(device, kDepthFormat, ToSampleCount(msaa_samples)))) {
+            msaa_samples /= 2;
+        }
+        const SDL_GPUSampleCount samples = ToSampleCount(msaa_samples);
+
+        if (msaa_samples > 1) {
+            scene_color = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, config.width, config.height,
+                                       samples, &linear_clear_color, "multisampled scene target");
+            scene_resolved = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                          config.width, config.height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color,
+                                          "resolved scene target");
+        } else {
+            scene_color = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                       config.width, config.height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color,
+                                       "scene target");
+        }
+        scene_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, config.width, config.height,
+                                   samples, nullptr, "scene depth target");
+        // SAMPLER is needed because the image is copied (blitted) to the window.
+        output_target = CreateTarget(kOutputFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                     config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "output target");
+        // The four shadow cascades share one depth image, as 2 x 2 tiles.
+        shadow_atlas = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                    config.shadow_map_size * 2, config.shadow_map_size * 2, SDL_GPU_SAMPLECOUNT_1,
+                                    nullptr, "shadow image");
+    }
+
+    void CreateSamplers() {
         SDL_GPUSamplerCreateInfo info{};
         info.min_filter = SDL_GPU_FILTER_LINEAR;
         info.mag_filter = SDL_GPU_FILTER_LINEAR;
@@ -191,18 +301,49 @@ struct Renderer::Impl {
         info.max_anisotropy = 8.0f;
         info.max_lod = 1000.0f;
         texture_sampler = SDL_CreateGPUSampler(device, &info);
-        if (texture_sampler == nullptr) {
-            FatalSdlError("cannot create texture sampler");
+
+        // Compares a depth with the stored one and blends the yes/no answers of neighboring
+        // texels, which softens shadow edges.
+        SDL_GPUSamplerCreateInfo shadow_info{};
+        shadow_info.min_filter = SDL_GPU_FILTER_LINEAR;
+        shadow_info.mag_filter = SDL_GPU_FILTER_LINEAR;
+        shadow_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        shadow_info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        shadow_info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        shadow_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        shadow_info.enable_compare = true;
+        shadow_info.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+        shadow_sampler = SDL_CreateGPUSampler(device, &shadow_info);
+
+        SDL_GPUSamplerCreateInfo clamp_info{};
+        clamp_info.min_filter = SDL_GPU_FILTER_NEAREST;
+        clamp_info.mag_filter = SDL_GPU_FILTER_NEAREST;
+        clamp_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        clamp_info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        clamp_info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        clamp_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        clamp_sampler = SDL_CreateGPUSampler(device, &clamp_info);
+
+        if (texture_sampler == nullptr || shadow_sampler == nullptr || clamp_sampler == nullptr) {
+            FatalSdlError("cannot create sampler");
         }
     }
 
-    void CreateMeshPipeline() {
-        SDL_GPUShader* vertex_shader =
-            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil), kMeshVertSpirv,
-                         sizeof(kMeshVertSpirv));
-        SDL_GPUShader* fragment_shader =
-            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kMeshFragDxil, sizeof(kMeshFragDxil), kMeshFragSpirv,
-                         sizeof(kMeshFragSpirv));
+    void CreatePipelines() {
+        SDL_GPUShader* mesh_vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil),
+                                                  kMeshVertSpirv, sizeof(kMeshVertSpirv));
+        SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kMeshFragDxil,
+                                                    sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
+        SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
+                                                      sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
+        SDL_GPUShader* fullscreen_vertex =
+            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 0, kFullscreenVertDxil, sizeof(kFullscreenVertDxil),
+                         kFullscreenVertSpirv, sizeof(kFullscreenVertSpirv));
+        SDL_GPUShader* sky_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1, kSkyFragDxil, sizeof(kSkyFragDxil),
+                                                   kSkyFragSpirv, sizeof(kSkyFragSpirv));
+        SDL_GPUShader* tonemap_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kTonemapFragDxil,
+                                                       sizeof(kTonemapFragDxil), kTonemapFragSpirv,
+                                                       sizeof(kTonemapFragSpirv));
 
         SDL_GPUVertexBufferDescription vertex_buffer{};
         vertex_buffer.slot = 0;
@@ -211,56 +352,105 @@ struct Renderer::Impl {
 
         SDL_GPUVertexAttribute attributes[3]{};
         attributes[0].location = 0;
-        attributes[0].buffer_slot = 0;
         attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
         attributes[0].offset = offsetof(MeshVertex, position);
         attributes[1].location = 1;
-        attributes[1].buffer_slot = 0;
         attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
         attributes[1].offset = offsetof(MeshVertex, normal);
         attributes[2].location = 2;
-        attributes[2].buffer_slot = 0;
         attributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
         attributes[2].offset = offsetof(MeshVertex, uv);
 
-        SDL_GPUColorTargetDescription color_description{};
-        color_description.format = kColorTargetFormat;
+        SDL_GPUColorTargetDescription scene_color_description{};
+        scene_color_description.format = kSceneFormat;
+        SDL_GPUColorTargetDescription output_color_description{};
+        output_color_description.format = kOutputFormat;
 
-        SDL_GPUGraphicsPipelineCreateInfo info{};
-        info.vertex_shader = vertex_shader;
-        info.fragment_shader = fragment_shader;
-        info.vertex_input_state.vertex_buffer_descriptions = &vertex_buffer;
-        info.vertex_input_state.num_vertex_buffers = 1;
-        info.vertex_input_state.vertex_attributes = attributes;
-        info.vertex_input_state.num_vertex_attributes = 3;
-        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-        info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
-        info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
-        info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
-        info.depth_stencil_state.enable_depth_test = true;
-        info.depth_stencil_state.enable_depth_write = true;
-        info.target_info.color_target_descriptions = &color_description;
-        info.target_info.num_color_targets = 1;
-        info.target_info.depth_stencil_format = depth_format;
-        info.target_info.has_depth_stencil_target = true;
+        // --- Meshes in the scene pass ---
+        SDL_GPUGraphicsPipelineCreateInfo mesh_info{};
+        mesh_info.vertex_shader = mesh_vertex;
+        mesh_info.fragment_shader = mesh_fragment;
+        mesh_info.vertex_input_state.vertex_buffer_descriptions = &vertex_buffer;
+        mesh_info.vertex_input_state.num_vertex_buffers = 1;
+        mesh_info.vertex_input_state.vertex_attributes = attributes;
+        mesh_info.vertex_input_state.num_vertex_attributes = 3;
+        mesh_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        mesh_info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        mesh_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+        mesh_info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        mesh_info.rasterizer_state.enable_depth_clip = true;
+        mesh_info.multisample_state.sample_count = ToSampleCount(msaa_samples);
+        // With multisampling, the alpha written by the shader decides how many of a pixel's
+        // samples are covered; cut-out edges (leaves) become smooth this way.
+        mesh_info.multisample_state.enable_alpha_to_coverage = msaa_samples > 1;
+        mesh_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
+        mesh_info.depth_stencil_state.enable_depth_test = true;
+        mesh_info.depth_stencil_state.enable_depth_write = true;
+        mesh_info.target_info.color_target_descriptions = &scene_color_description;
+        mesh_info.target_info.num_color_targets = 1;
+        mesh_info.target_info.depth_stencil_format = kDepthFormat;
+        mesh_info.target_info.has_depth_stencil_target = true;
+        mesh_pipeline = SDL_CreateGPUGraphicsPipeline(device, &mesh_info);
 
-        mesh_pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-        if (mesh_pipeline == nullptr) {
-            FatalSdlError("cannot create mesh pipeline");
+        // The same without back-face culling, for double-sided materials.
+        mesh_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        mesh_pipeline_double_sided = SDL_CreateGPUGraphicsPipeline(device, &mesh_info);
+
+        // --- Meshes in the shadow pass: depth only, seen from the sun ---
+        SDL_GPUGraphicsPipelineCreateInfo shadow_info = mesh_info;
+        shadow_info.fragment_shader = shadow_fragment;
+        shadow_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        // Geometry nearer to the sun than the shadow range is flattened onto its start instead of cut away.
+        shadow_info.rasterizer_state.enable_depth_clip = false;
+        // Pushes shadow depths slightly away from the sun, more on slanted surfaces, so that
+        // lit surfaces do not shadow themselves ("shadow acne").
+        shadow_info.rasterizer_state.enable_depth_bias = true;
+        shadow_info.rasterizer_state.depth_bias_constant_factor = 1.0f;
+        shadow_info.rasterizer_state.depth_bias_slope_factor = 2.5f;
+        shadow_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        shadow_info.multisample_state.enable_alpha_to_coverage = false;
+        shadow_info.target_info.color_target_descriptions = nullptr;
+        shadow_info.target_info.num_color_targets = 0;
+        shadow_pipeline = SDL_CreateGPUGraphicsPipeline(device, &shadow_info);
+
+        // --- Sky: covers the whole image behind the scene ---
+        SDL_GPUGraphicsPipelineCreateInfo sky_info{};
+        sky_info.vertex_shader = fullscreen_vertex;
+        sky_info.fragment_shader = sky_fragment;
+        sky_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        sky_info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        sky_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        sky_info.multisample_state.sample_count = ToSampleCount(msaa_samples);
+        sky_info.target_info.color_target_descriptions = &scene_color_description;
+        sky_info.target_info.num_color_targets = 1;
+        sky_info.target_info.depth_stencil_format = kDepthFormat;
+        sky_info.target_info.has_depth_stencil_target = true;
+        sky_pipeline = SDL_CreateGPUGraphicsPipeline(device, &sky_info);
+
+        // --- Tone mapping: scene image to output image ---
+        SDL_GPUGraphicsPipelineCreateInfo tonemap_info{};
+        tonemap_info.vertex_shader = fullscreen_vertex;
+        tonemap_info.fragment_shader = tonemap_fragment;
+        tonemap_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        tonemap_info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        tonemap_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        tonemap_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        tonemap_info.target_info.color_target_descriptions = &output_color_description;
+        tonemap_info.target_info.num_color_targets = 1;
+        tonemap_pipeline = SDL_CreateGPUGraphicsPipeline(device, &tonemap_info);
+
+        if (mesh_pipeline == nullptr || mesh_pipeline_double_sided == nullptr || shadow_pipeline == nullptr ||
+            sky_pipeline == nullptr || tonemap_pipeline == nullptr) {
+            FatalSdlError("cannot create graphics pipeline");
         }
 
-        // The same pipeline without back-face culling, for double-sided materials.
-        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
-        mesh_pipeline_double_sided = SDL_CreateGPUGraphicsPipeline(device, &info);
-        if (mesh_pipeline_double_sided == nullptr) {
-            FatalSdlError("cannot create double-sided mesh pipeline");
-        }
-
-        // The pipeline keeps what it needs; the shader objects can go.
-        SDL_ReleaseGPUShader(device, vertex_shader);
-        SDL_ReleaseGPUShader(device, fragment_shader);
+        // Pipelines keep what they need; the shader objects can go.
+        SDL_ReleaseGPUShader(device, mesh_vertex);
+        SDL_ReleaseGPUShader(device, mesh_fragment);
+        SDL_ReleaseGPUShader(device, shadow_fragment);
+        SDL_ReleaseGPUShader(device, fullscreen_vertex);
+        SDL_ReleaseGPUShader(device, sky_fragment);
+        SDL_ReleaseGPUShader(device, tonemap_fragment);
     }
 
     // Data reaches the GPU through a transfer buffer: CPU-visible memory that a copy pass reads from.
@@ -309,11 +499,136 @@ struct Renderer::Impl {
         SDL_ReleaseGPUTransferBuffer(device, transfer);
         return buffer;
     }
+
+    SDL_GPUTexture* GetTexture(TextureHandle handle, TextureHandle fallback) const {
+        const TextureHandle chosen = handle.id != 0 ? handle : fallback;
+        return textures[chosen.id - 1];
+    }
+
+    // Matrices of the shadow cascades for this frame.
+    //
+    // The visible distance up to shadow_distance is cut into four ranges, near to far. Each
+    // gets its own shadow image seen from the sun, so near shadows are sharp and far ones
+    // coarse. light_view_projection[i] renders cascade i; shadow_matrix[i] takes a world
+    // position to coordinates inside that cascade's tile of the shared shadow image.
+    struct Cascades {
+        glm::mat4 light_view_projection[kCascadeCount];
+        glm::mat4 shadow_matrix[kCascadeCount];
+        glm::vec4 far_distance;
+    };
+
+    Cascades ComputeCascades() const {
+        Cascades cascades;
+        const float aspect_ratio = static_cast<float>(config.width) / static_cast<float>(config.height);
+        const float tan_half_fov = std::tan(glm::radians(camera.vertical_fov_degrees) * 0.5f);
+        const glm::vec3 forward = glm::normalize(camera.target - camera.position);
+        const glm::vec3 right = glm::normalize(glm::cross(forward, camera.up));
+        const glm::vec3 up = glm::cross(right, forward);
+
+        const glm::vec3 light_direction = glm::normalize(light.direction);
+        const glm::vec3 light_up = std::fabs(light_direction.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+        // Rotation that looks along the light, used to align cascades to the shadow image grid.
+        const glm::mat4 light_rotation = glm::lookAt(glm::vec3(0.0f), light_direction, light_up);
+        const glm::mat4 light_rotation_inverse = glm::inverse(light_rotation);
+
+        const float near_distance = camera.near_plane;
+        const float far_distance = glm::max(environment.shadow_distance, near_distance * 2.0f);
+        float range_start = near_distance;
+        for (int i = 0; i < kCascadeCount; ++i) {
+            // A mix of even and geometric spacing: ranges grow with distance, but not too fast.
+            const float fraction = static_cast<float>(i + 1) / static_cast<float>(kCascadeCount);
+            const float geometric = near_distance * std::pow(far_distance / near_distance, fraction);
+            const float even = near_distance + (far_distance - near_distance) * fraction;
+            const float range_end = glm::mix(even, geometric, 0.75f);
+            cascades.far_distance[i] = range_end;
+
+            // A sphere around this part of the view. Its size does not change when the camera
+            // turns, which keeps shadow edges from crawling.
+            glm::vec3 corners[8];
+            int corner_index = 0;
+            for (const float distance : {range_start, range_end}) {
+                const float half_height = distance * tan_half_fov;
+                const float half_width = half_height * aspect_ratio;
+                const glm::vec3 center = camera.position + forward * distance;
+                for (const float x : {-1.0f, 1.0f}) {
+                    for (const float y : {-1.0f, 1.0f}) {
+                        corners[corner_index++] = center + right * (x * half_width) + up * (y * half_height);
+                    }
+                }
+            }
+            glm::vec3 sphere_center(0.0f);
+            for (const glm::vec3& corner : corners) {
+                sphere_center += corner / 8.0f;
+            }
+            float radius = 0.0f;
+            for (const glm::vec3& corner : corners) {
+                radius = glm::max(radius, glm::length(corner - sphere_center));
+            }
+            radius = std::ceil(radius * 8.0f) / 8.0f;
+
+            // Move the center in whole shadow texels only; otherwise shadows shimmer as the camera moves.
+            const float texel_size = radius * 2.0f / static_cast<float>(config.shadow_map_size);
+            glm::vec3 center_in_light = glm::vec3(light_rotation * glm::vec4(sphere_center, 1.0f));
+            center_in_light.x = std::floor(center_in_light.x / texel_size) * texel_size;
+            center_in_light.y = std::floor(center_in_light.y / texel_size) * texel_size;
+            sphere_center = glm::vec3(light_rotation_inverse * glm::vec4(center_in_light, 1.0f));
+
+            const glm::vec3 eye = sphere_center - light_direction * (radius + kShadowCasterDistance);
+            const glm::mat4 light_view = glm::lookAt(eye, sphere_center, light_up);
+            const glm::mat4 light_projection =
+                glm::ortho(-radius, radius, -radius, radius, 0.0f, radius * 2.0f + kShadowCasterDistance);
+            cascades.light_view_projection[i] = light_projection * light_view;
+
+            // Clip coordinates (-1..1, y up) to this cascade's tile in the 2 x 2 shadow image
+            // (0..1, y down).
+            const float tile_x = static_cast<float>(i % 2);
+            const float tile_y = static_cast<float>(i / 2);
+            glm::mat4 to_tile(1.0f);
+            to_tile[0][0] = 0.25f;
+            to_tile[1][1] = -0.25f;
+            to_tile[3][0] = 0.25f + tile_x * 0.5f;
+            to_tile[3][1] = 0.25f + tile_y * 0.5f;
+            cascades.shadow_matrix[i] = to_tile * cascades.light_view_projection[i];
+
+            range_start = range_end;
+        }
+        return cascades;
+    }
+
+    void DrawCommandGeometry(SDL_GPURenderPass* pass, const DrawCommand& command) {
+        const Mesh& mesh = meshes[command.mesh_id - 1];
+        SDL_GPUBufferBinding vertex_binding{};
+        vertex_binding.buffer = mesh.vertex_buffer;
+        SDL_BindGPUVertexBuffers(pass, 0, &vertex_binding, 1);
+        SDL_GPUBufferBinding index_binding{};
+        index_binding.buffer = mesh.index_buffer;
+        SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_DrawGPUIndexedPrimitives(pass, mesh.index_count, 1, 0, 0, 0);
+    }
+
+    static ObjectUniforms MakeObjectUniforms(const DrawCommand& command) {
+        ObjectUniforms uniforms;
+        uniforms.model = command.transform;
+        uniforms.color = ToVec4(command.material.color);
+        uniforms.uv_scale = glm::vec4(command.material.uv_scale.x, command.material.uv_scale.y, 0.0f, 0.0f);
+        return uniforms;
+    }
+
+    static MaterialUniforms MakeMaterialUniforms(const Material& material) {
+        MaterialUniforms uniforms;
+        uniforms.factors = glm::vec4(material.metallic, material.roughness, material.alpha_cutoff, 0.0f);
+        uniforms.flags = glm::vec4(material.normal_texture.id != 0 ? 1.0f : 0.0f, material.orm_texture.id != 0 ? 1.0f : 0.0f,
+                                   material.occlusion_in_orm ? 1.0f : 0.0f, material.double_sided ? 1.0f : 0.0f);
+        return uniforms;
+    }
 };
 
 Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>()) {
     if (config.width < 1 || config.height < 1) {
         FatalError("Renderer: width and height must be at least 1");
+    }
+    if (config.shadow_map_size < 64 || config.shadow_map_size > 8192) {
+        FatalError("Renderer: shadow_map_size must be between 64 and 8192");
     }
     impl_->config = config;
     impl_->linear_clear_color = SDL_FColor{SrgbToLinear(config.clear_color.r), SrgbToLinear(config.clear_color.g),
@@ -344,7 +659,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
         if (!SDL_ClaimWindowForGPUDevice(impl_->device, impl_->window)) {
             FatalSdlError("cannot attach window to graphics device");
         }
-        // SDR_LINEAR: the window image is sRGB-encoded too, so copying the off-screen image to it
+        // SDR_LINEAR: the window image is sRGB-encoded too, so copying the output image to it
         // keeps colors unchanged. VSYNC: presenting waits for the display refresh, which also
         // paces the game loop.
         if (!SDL_WindowSupportsGPUSwapchainComposition(impl_->device, impl_->window,
@@ -358,12 +673,17 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     }
 
     impl_->CreateTargets();
-    impl_->CreateTextureSampler();
-    impl_->CreateMeshPipeline();
+    impl_->CreateSamplers();
+    impl_->CreatePipelines();
 
-    TextureOptions white_options;
-    white_options.generate_mipmaps = false;
-    impl_->white_texture = CreateTexture(MakeSolidImage(1, 1, 255, 255, 255), white_options);
+    TextureOptions plain_color;
+    plain_color.generate_mipmaps = false;
+    impl_->white_texture = CreateTexture(MakeSolidImage(1, 1, 255, 255, 255), plain_color);
+    TextureOptions plain_data;
+    plain_data.generate_mipmaps = false;
+    plain_data.is_color = false;
+    // A normal pointing straight out of the surface.
+    impl_->flat_normal_texture = CreateTexture(MakeSolidImage(1, 1, 128, 128, 255), plain_data);
 }
 
 Renderer::~Renderer() {
@@ -377,10 +697,20 @@ Renderer::~Renderer() {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
+        SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
+        SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline_double_sided);
-        SDL_ReleaseGPUTexture(impl_->device, impl_->depth_target);
-        SDL_ReleaseGPUTexture(impl_->device, impl_->color_target);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->shadow_pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->sky_pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->tonemap_pipeline);
+        SDL_ReleaseGPUTexture(impl_->device, impl_->shadow_atlas);
+        SDL_ReleaseGPUTexture(impl_->device, impl_->output_target);
+        SDL_ReleaseGPUTexture(impl_->device, impl_->scene_depth);
+        if (impl_->scene_resolved != nullptr) {
+            SDL_ReleaseGPUTexture(impl_->device, impl_->scene_resolved);
+        }
+        SDL_ReleaseGPUTexture(impl_->device, impl_->scene_color);
         if (impl_->window != nullptr) {
             SDL_ReleaseWindowFromGPUDevice(impl_->device, impl_->window);
             SDL_DestroyWindow(impl_->window);
@@ -469,7 +799,7 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
         image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4) {
         FatalError("Renderer::CreateTexture: the image is empty or its pixel data has the wrong size");
     }
-    if (impl_->frame_commands != nullptr) {
+    if (impl_->in_frame) {
         FatalError("Renderer::CreateTexture: do not create textures between BeginFrame and EndFrame");
     }
 
@@ -534,98 +864,30 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
     return handle;
 }
 
-void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light) {
-    if (impl_->frame_commands != nullptr) {
+void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, const Environment& environment) {
+    if (impl_->in_frame) {
         FatalError("Renderer::BeginFrame: the previous frame was not finished with EndFrame");
     }
-
-    impl_->frame_commands = SDL_AcquireGPUCommandBuffer(impl_->device);
-    if (impl_->frame_commands == nullptr) {
-        FatalSdlError("cannot acquire command buffer");
-    }
-
-    SDL_GPUColorTargetInfo color_info{};
-    color_info.texture = impl_->color_target;
-    color_info.clear_color = impl_->linear_clear_color;
-    color_info.load_op = SDL_GPU_LOADOP_CLEAR;
-    color_info.store_op = SDL_GPU_STOREOP_STORE;
-
-    SDL_GPUDepthStencilTargetInfo depth_info{};
-    depth_info.texture = impl_->depth_target;
-    depth_info.clear_depth = 1.0f;
-    depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
-    depth_info.store_op = SDL_GPU_STOREOP_DONT_CARE;
-    depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-    depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-
-    impl_->frame_pass = SDL_BeginGPURenderPass(impl_->frame_commands, &color_info, 1, &depth_info);
-    if (impl_->frame_pass == nullptr) {
-        FatalSdlError("cannot begin render pass");
-    }
-    SDL_BindGPUGraphicsPipeline(impl_->frame_pass, impl_->mesh_pipeline);
-    impl_->bound_pipeline = impl_->mesh_pipeline;
-
-    const float aspect_ratio = static_cast<float>(impl_->config.width) / static_cast<float>(impl_->config.height);
-    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
-    const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
-                                                  camera.near_plane, camera.far_plane);
-    FrameUniforms frame_uniforms;
-    frame_uniforms.view_projection = projection * view;
-    SDL_PushGPUVertexUniformData(impl_->frame_commands, 0, &frame_uniforms, sizeof(frame_uniforms));
-
-    const glm::vec3 direction = glm::normalize(light.direction);
-    const LightUniforms light_uniforms = {
-        {direction.x, direction.y, direction.z, 0.0f},
-        {light.color.r, light.color.g, light.color.b, light.color.a},
-        {light.ambient.r, light.ambient.g, light.ambient.b, light.ambient.a},
-    };
-    SDL_PushGPUFragmentUniformData(impl_->frame_commands, 0, &light_uniforms, sizeof(light_uniforms));
+    impl_->in_frame = true;
+    impl_->camera = camera;
+    impl_->light = light;
+    impl_->environment = environment;
+    impl_->draw_commands.clear();
 }
 
 void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material) {
-    if (impl_->frame_pass == nullptr) {
+    if (!impl_->in_frame) {
         FatalError("Renderer::DrawMesh: call BeginFrame first");
     }
     if (mesh_handle.id == 0 || mesh_handle.id > impl_->meshes.size()) {
         FatalError("Renderer::DrawMesh: invalid mesh handle");
     }
-    if (material.texture.id > impl_->textures.size()) {
+    const size_t texture_count = impl_->textures.size();
+    if (material.texture.id > texture_count || material.normal_texture.id > texture_count ||
+        material.orm_texture.id > texture_count) {
         FatalError("Renderer::DrawMesh: invalid texture handle");
     }
-    const Mesh& mesh = impl_->meshes[mesh_handle.id - 1];
-    const TextureHandle texture = material.texture.id != 0 ? material.texture : impl_->white_texture;
-
-    ObjectUniforms object_uniforms;
-    object_uniforms.model = transform;
-    object_uniforms.color[0] = material.color.r;
-    object_uniforms.color[1] = material.color.g;
-    object_uniforms.color[2] = material.color.b;
-    object_uniforms.color[3] = material.color.a;
-    object_uniforms.uv_scale[0] = material.uv_scale.x;
-    object_uniforms.uv_scale[1] = material.uv_scale.y;
-    object_uniforms.uv_scale[2] = material.alpha_cutoff;
-    object_uniforms.uv_scale[3] = 0.0f;
-    SDL_PushGPUVertexUniformData(impl_->frame_commands, 1, &object_uniforms, sizeof(object_uniforms));
-
-    SDL_GPUGraphicsPipeline* pipeline =
-        material.double_sided ? impl_->mesh_pipeline_double_sided : impl_->mesh_pipeline;
-    if (pipeline != impl_->bound_pipeline) {
-        SDL_BindGPUGraphicsPipeline(impl_->frame_pass, pipeline);
-        impl_->bound_pipeline = pipeline;
-    }
-
-    SDL_GPUTextureSamplerBinding texture_binding{};
-    texture_binding.texture = impl_->textures[texture.id - 1];
-    texture_binding.sampler = impl_->texture_sampler;
-    SDL_BindGPUFragmentSamplers(impl_->frame_pass, 0, &texture_binding, 1);
-
-    SDL_GPUBufferBinding vertex_binding{};
-    vertex_binding.buffer = mesh.vertex_buffer;
-    SDL_BindGPUVertexBuffers(impl_->frame_pass, 0, &vertex_binding, 1);
-    SDL_GPUBufferBinding index_binding{};
-    index_binding.buffer = mesh.index_buffer;
-    SDL_BindGPUIndexBuffer(impl_->frame_pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(impl_->frame_pass, mesh.index_count, 1, 0, 0, 0);
+    impl_->draw_commands.push_back(DrawCommand{mesh_handle.id, transform, material});
 }
 
 void Renderer::DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color) {
@@ -635,45 +897,236 @@ void Renderer::DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color
 }
 
 void Renderer::EndFrame() {
-    if (impl_->frame_pass == nullptr) {
+    if (!impl_->in_frame) {
         FatalError("Renderer::EndFrame: call BeginFrame first");
     }
-    SDL_EndGPURenderPass(impl_->frame_pass);
-    impl_->frame_pass = nullptr;
+    Impl& impl = *impl_;
+    const Camera& camera = impl.camera;
+    const DirectionalLight& light = impl.light;
+    const Environment& environment = impl.environment;
 
-    if (impl_->window != nullptr) {
+    SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(impl.device);
+    if (commands == nullptr) {
+        FatalSdlError("cannot acquire command buffer");
+    }
+
+    const float aspect_ratio = static_cast<float>(impl.config.width) / static_cast<float>(impl.config.height);
+    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
+                                                  camera.near_plane, camera.far_plane);
+    const glm::mat4 view_projection = projection * view;
+    const glm::vec3 light_direction = glm::normalize(light.direction);
+    const bool sun_is_on = light.color.r > 0.0f || light.color.g > 0.0f || light.color.b > 0.0f;
+    const bool shadows_on = environment.shadows && sun_is_on && !impl.draw_commands.empty();
+
+    // --- Pass 1: shadows. The scene's depth as seen from the sun, once per cascade. ---
+    Impl::Cascades cascades{};
+    if (shadows_on) {
+        cascades = impl.ComputeCascades();
+
+        SDL_GPUDepthStencilTargetInfo depth_info{};
+        depth_info.texture = impl.shadow_atlas;
+        depth_info.clear_depth = 1.0f;
+        depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
+        depth_info.store_op = SDL_GPU_STOREOP_STORE;
+        depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, nullptr, 0, &depth_info);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin shadow pass");
+        }
+        SDL_BindGPUGraphicsPipeline(pass, impl.shadow_pipeline);
+        const float tile_size = static_cast<float>(impl.config.shadow_map_size);
+        for (int cascade = 0; cascade < kCascadeCount; ++cascade) {
+            SDL_GPUViewport viewport{};
+            viewport.x = static_cast<float>(cascade % 2) * tile_size;
+            viewport.y = static_cast<float>(cascade / 2) * tile_size;
+            viewport.w = tile_size;
+            viewport.h = tile_size;
+            viewport.min_depth = 0.0f;
+            viewport.max_depth = 1.0f;
+            SDL_SetGPUViewport(pass, &viewport);
+
+            VertexFrameUniforms frame_uniforms;
+            frame_uniforms.view_projection = cascades.light_view_projection[cascade];
+            SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
+
+            for (const DrawCommand& command : impl.draw_commands) {
+                const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
+                SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+                const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
+                SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
+
+                SDL_GPUTextureSamplerBinding binding{};
+                binding.texture = impl.GetTexture(command.material.texture, impl.white_texture);
+                binding.sampler = impl.texture_sampler;
+                SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+                impl.DrawCommandGeometry(pass, command);
+            }
+        }
+        SDL_EndGPURenderPass(pass);
+    }
+
+    // --- Pass 2: the scene, in linear wide-range colors. ---
+    {
+        SDL_GPUColorTargetInfo color_info{};
+        color_info.texture = impl.scene_color;
+        color_info.clear_color = impl.linear_clear_color;
+        color_info.load_op = SDL_GPU_LOADOP_CLEAR;
+        if (impl.msaa_samples > 1) {
+            // Average the samples of every pixel into the single-sample image.
+            color_info.store_op = SDL_GPU_STOREOP_RESOLVE;
+            color_info.resolve_texture = impl.scene_resolved;
+        } else {
+            color_info.store_op = SDL_GPU_STOREOP_STORE;
+        }
+
+        SDL_GPUDepthStencilTargetInfo depth_info{};
+        depth_info.texture = impl.scene_depth;
+        depth_info.clear_depth = 1.0f;
+        depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
+        depth_info.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, &depth_info);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin scene pass");
+        }
+
+        if (environment.draw_sky) {
+            SkyUniforms sky_uniforms;
+            sky_uniforms.inverse_view_projection = glm::inverse(view_projection);
+            sky_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
+            sky_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
+            sky_uniforms.sun_color = ToVec4(light.color);
+            sky_uniforms.sky_zenith = ToVec4(environment.sky_zenith);
+            sky_uniforms.sky_horizon = ToVec4(environment.sky_horizon);
+            sky_uniforms.sky_ground = ToVec4(environment.sky_ground);
+            SDL_BindGPUGraphicsPipeline(pass, impl.sky_pipeline);
+            SDL_PushGPUFragmentUniformData(commands, 0, &sky_uniforms, sizeof(sky_uniforms));
+            SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+        }
+
+        VertexFrameUniforms vertex_frame_uniforms;
+        vertex_frame_uniforms.view_projection = view_projection;
+        SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
+
+        FragmentFrameUniforms frame_uniforms{};
+        for (int i = 0; i < kCascadeCount; ++i) {
+            frame_uniforms.shadow_matrices[i] = cascades.shadow_matrix[i];
+        }
+        frame_uniforms.cascade_far = cascades.far_distance;
+        frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
+        frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
+        frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
+        frame_uniforms.light_color = ToVec4(light.color);
+        if (environment.sky_light) {
+            // Upward-facing surfaces see mostly sky between the zenith and the horizon;
+            // downward-facing ones see the ground.
+            const glm::vec4 sky_average = (ToVec4(environment.sky_zenith) + ToVec4(environment.sky_horizon)) * 0.5f;
+            frame_uniforms.ambient_sky = sky_average * environment.sky_light_intensity;
+            frame_uniforms.ambient_ground = ToVec4(environment.sky_ground) * environment.sky_light_intensity;
+        } else {
+            frame_uniforms.ambient_sky = ToVec4(light.ambient);
+            frame_uniforms.ambient_ground = ToVec4(light.ambient);
+        }
+        frame_uniforms.sky_zenith = ToVec4(environment.sky_zenith) * environment.sky_light_intensity;
+        frame_uniforms.sky_horizon = ToVec4(environment.sky_horizon) * environment.sky_light_intensity;
+        frame_uniforms.sky_ground = ToVec4(environment.sky_ground) * environment.sky_light_intensity;
+        frame_uniforms.fog = glm::vec4(environment.fog_color.r, environment.fog_color.g, environment.fog_color.b,
+                                       environment.fog_density);
+        frame_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, impl.msaa_samples > 1 ? 1.0f : 0.0f,
+                                           environment.sky_light ? 1.0f : 0.0f,
+                                           1.0f / static_cast<float>(impl.config.shadow_map_size * 2));
+        SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
+
+        SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
+        for (const DrawCommand& command : impl.draw_commands) {
+            const Material& material = command.material;
+            SDL_GPUGraphicsPipeline* pipeline =
+                material.double_sided ? impl.mesh_pipeline_double_sided : impl.mesh_pipeline;
+            if (pipeline != bound_pipeline) {
+                SDL_BindGPUGraphicsPipeline(pass, pipeline);
+                bound_pipeline = pipeline;
+            }
+
+            const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
+            SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material);
+            SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
+
+            SDL_GPUTextureSamplerBinding bindings[4]{};
+            bindings[0].texture = impl.GetTexture(material.texture, impl.white_texture);
+            bindings[0].sampler = impl.texture_sampler;
+            bindings[1].texture = impl.GetTexture(material.normal_texture, impl.flat_normal_texture);
+            bindings[1].sampler = impl.texture_sampler;
+            bindings[2].texture = impl.GetTexture(material.orm_texture, impl.white_texture);
+            bindings[2].sampler = impl.texture_sampler;
+            bindings[3].texture = impl.shadow_atlas;
+            bindings[3].sampler = impl.shadow_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 4);
+            impl.DrawCommandGeometry(pass, command);
+        }
+        SDL_EndGPURenderPass(pass);
+    }
+
+    // --- Pass 3: tone mapping into the output image. ---
+    {
+        SDL_GPUColorTargetInfo color_info{};
+        color_info.texture = impl.output_target;
+        color_info.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        color_info.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, nullptr);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin tone mapping pass");
+        }
+        SDL_BindGPUGraphicsPipeline(pass, impl.tonemap_pipeline);
+        SDL_GPUTextureSamplerBinding binding{};
+        binding.texture = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;
+        binding.sampler = impl.clamp_sampler;
+        SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+        TonemapUniforms uniforms;
+        uniforms.parameters = glm::vec4(impl.config.exposure, impl.config.tone_mapping == ToneMapping::Aces ? 1.0f : 0.0f,
+                                        0.0f, 0.0f);
+        SDL_PushGPUFragmentUniformData(commands, 0, &uniforms, sizeof(uniforms));
+        SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+        SDL_EndGPURenderPass(pass);
+    }
+
+    if (impl.window != nullptr) {
         // The swapchain texture is the image the window shows. It can be unavailable
         // (for example while the window is minimized); the frame is then simply not shown.
         SDL_GPUTexture* swapchain_texture = nullptr;
         Uint32 swapchain_width = 0;
         Uint32 swapchain_height = 0;
-        if (!SDL_WaitAndAcquireGPUSwapchainTexture(impl_->frame_commands, impl_->window, &swapchain_texture,
-                                                   &swapchain_width, &swapchain_height)) {
+        if (!SDL_WaitAndAcquireGPUSwapchainTexture(commands, impl.window, &swapchain_texture, &swapchain_width,
+                                                   &swapchain_height)) {
             FatalSdlError("cannot acquire window image");
         }
         if (swapchain_texture != nullptr) {
             SDL_GPUBlitInfo blit{};
-            blit.source.texture = impl_->color_target;
-            blit.source.w = static_cast<Uint32>(impl_->config.width);
-            blit.source.h = static_cast<Uint32>(impl_->config.height);
+            blit.source.texture = impl.output_target;
+            blit.source.w = static_cast<Uint32>(impl.config.width);
+            blit.source.h = static_cast<Uint32>(impl.config.height);
             blit.destination.texture = swapchain_texture;
             blit.destination.w = swapchain_width;
             blit.destination.h = swapchain_height;
             blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
             blit.filter = SDL_GPU_FILTER_LINEAR;
-            SDL_BlitGPUTexture(impl_->frame_commands, &blit);
+            SDL_BlitGPUTexture(commands, &blit);
         }
     }
 
-    if (!SDL_SubmitGPUCommandBuffer(impl_->frame_commands)) {
+    if (!SDL_SubmitGPUCommandBuffer(commands)) {
         FatalSdlError("cannot submit frame");
     }
-    impl_->frame_commands = nullptr;
-    impl_->has_finished_frame = true;
+    impl.in_frame = false;
+    impl.has_finished_frame = true;
 }
 
 void Renderer::CaptureFrame(Image& image) {
-    if (impl_->frame_commands != nullptr || !impl_->has_finished_frame) {
+    if (impl_->in_frame || !impl_->has_finished_frame) {
         FatalError("Renderer::CaptureFrame: call it after EndFrame");
     }
 
@@ -695,7 +1148,7 @@ void Renderer::CaptureFrame(Image& image) {
     }
     SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
     SDL_GPUTextureRegion source{};
-    source.texture = impl_->color_target;
+    source.texture = impl_->output_target;
     source.w = width;
     source.h = height;
     source.d = 1;
@@ -744,6 +1197,10 @@ int Renderer::GetWidth() const {
 
 int Renderer::GetHeight() const {
     return impl_->config.height;
+}
+
+int Renderer::GetMsaaSamples() const {
+    return impl_->msaa_samples;
 }
 
 } // namespace poligon

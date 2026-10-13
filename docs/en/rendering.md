@@ -1,7 +1,7 @@
 # Rendering
 
 Headers: `poligon/renderer.h`, `poligon/math.h`, `poligon/image.h`, `poligon/platform.h`.
-Examples: `examples/renderer`, `examples/texture`. Shaders: `engine/shaders/*.hlsl`.
+Examples: `examples/renderer`, `examples/texture`, `examples/environment`, `examples/model`. Shaders: `engine/shaders/*.hlsl`.
 
 ## How it works
 
@@ -12,6 +12,23 @@ Examples: `examples/renderer`, `examples/texture`. Shaders: `engine/shaders/*.hl
 - Unrecoverable problems (no graphics device, calls in the wrong order) end the process through `FatalError`.
 - Engine headers do not expose SDL types.
 
+## Frame stages
+
+A frame is recorded by `DrawMesh` calls and carried out in `EndFrame`, in three passes:
+
+1. **Shadows.** The scene's depth as seen from the sun, four times (**cascades**): the visible range up to `Environment::shadow_distance` is cut into four parts, near ones sharp, far ones coarse. All four share one depth image as 2 x 2 tiles.
+2. **Scene.** Sky first, then meshes, in linear colors with a wide range (values above 1 are kept), with multisampling (`RendererConfig::msaa_samples`, 4 by default). Cut-out materials use **alpha to coverage**, so leaf edges are smooth.
+3. **Tone mapping.** The wide-range image is turned into displayable colors: `exposure` scales brightness, `ToneMapping::Aces` rolls bright areas off smoothly, `ToneMapping::None` clips (exact; used by tests).
+
+## Materials and light
+
+- `Material` is the metallic-roughness model of glTF: base color (times `texture`), `metallic`, `roughness`, optional `normal_texture` (fine relief) and `orm_texture` (green roughness, blue metallic, red ambient occlusion when `occlusion_in_orm`). Data textures are created with `TextureOptions::is_color = false`.
+- Normal maps follow the OpenGL convention (green points to the top of the image). Meshes need no tangents; the shader derives them per pixel.
+- `DirectionalLight` is the sun: `direction` it shines in, `color` (may exceed 1), and flat `ambient` light. Units: a white matte surface facing the sun reflects exactly the sun's color.
+- `Environment` (third argument of `BeginFrame`): `draw_sky` (gradient from `sky_horizon` to `sky_zenith`, `sky_ground` below, sun disc), `sky_light` (surfaces are lit by the sky from above and the ground from below instead of flat ambient; smooth surfaces mirror the sky), `shadows` and `shadow_distance`, `fog_density` and `fog_color`. The default is plain: no sky, no fog, shadows on.
+- Double-sided materials are treated as thin foliage: light from behind shines through a little.
+- A sunny scene has light values of 2 to 4, so use an exposure around 0.5 to 0.7.
+- `tests/scene_render_test.cpp` checks shadows, sky, fog, normal map orientation, multisampling and tone mapping by pixel values on both backends.
 ## Conventions
 
 - Math is GLM, used directly (`glm::vec3`, `glm::mat4`, `glm::quat`, `glm::translate`, `glm::lookAt`...). Always through `#include "poligon/math.h"`, never through GLM headers, and without your own `GLM_FORCE_*`: the `poligon_engine` target sets the configuration.
@@ -81,7 +98,7 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 
 ## Known limits
 
-- One kind of material: color times texture, one directional light plus ambient. No shadows, transparency or normal maps.
+- One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene, no ambient occlusion pass.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
 - Meshes and textures cannot be released before the renderer is destroyed.
 - Textures are uncompressed (4 bytes per pixel plus mipmaps): enough for tests with 4 GB of card memory, not for a large world.

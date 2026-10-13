@@ -62,8 +62,8 @@ public:
         : renderer_(renderer), input_(input), actions_(actions) {
         render_model_ = poligon::UploadModel(renderer, model);
         floor_mesh_ = renderer.CreatePlaneMesh();
-        const std::uint8_t light[4] = {200, 200, 200, 255};
-        const std::uint8_t dark[4] = {150, 150, 150, 255};
+        const std::uint8_t light[4] = {150, 150, 150, 255};
+        const std::uint8_t dark[4] = {120, 120, 120, 255};
         floor_texture_ = renderer.CreateTexture(poligon::MakeCheckerImage(128, 128, 64, light, dark));
 
         // Frame the model: look at its middle from far enough to see all of it.
@@ -109,9 +109,17 @@ public:
         // Clip planes follow the model's size, so both a pebble and a mountain are drawn fully.
         camera.near_plane = radius_ * 0.01f;
         camera.far_plane = radius_ * 100.0f;
-        const poligon::DirectionalLight light;
+        // A sunny day: warm sun from the upper left, blue sky lighting the shadows.
+        poligon::DirectionalLight sun;
+        sun.direction = {-0.5f, -0.75f, -0.4f};
+        sun.color = {2.6f, 2.45f, 2.2f, 1.0f};
+        poligon::Environment environment;
+        environment.draw_sky = true;
+        environment.sky_light = true;
+        environment.sky_ground = {0.42f, 0.44f, 0.46f, 1.0f};  // haze below the horizon, past the floor's edge
+        environment.shadow_distance = std::max(distance_ + radius_ * 3.0f, 5.0f);
 
-        renderer_.BeginFrame(camera, light);
+        renderer_.BeginFrame(camera, sun, environment);
 
         poligon::Material floor_material;
         floor_material.texture = floor_texture_;
@@ -150,8 +158,11 @@ void PrintModelSummary(const char* path, const poligon::Model& model) {
     std::printf("size: %.3f x %.3f x %.3f (width x height x depth)\n", size.x, size.y, size.z);
     for (const poligon::ModelMaterial& material : model.materials) {
         if (material.base_color_texture.width > 0) {
-            std::printf("material \"%s\": texture %dx%d\n", material.name.c_str(), material.base_color_texture.width,
-                        material.base_color_texture.height);
+            std::printf("material \"%s\": texture %dx%d%s%s%s\n", material.name.c_str(),
+                        material.base_color_texture.width, material.base_color_texture.height,
+                        material.normal_texture.width > 0 ? ", normal map" : "",
+                        material.orm_texture.width > 0 ? ", roughness/metallic map" : "",
+                        material.alpha_cutoff > 0.0f ? ", cut-out" : "");
         } else {
             std::printf("material \"%s\": color %.2f %.2f %.2f, no texture\n", material.name.c_str(),
                         material.base_color.r, material.base_color.g, material.base_color.b);
@@ -210,6 +221,7 @@ int main(int argc, char** argv) {
     renderer_config.enable_validation = options.gpu_validation;
     renderer_config.window_title = "Poligon model viewer";
     renderer_config.clear_color = {0.53f, 0.73f, 0.90f, 1.0f};
+    renderer_config.exposure = 0.6f;
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;

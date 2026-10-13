@@ -23,25 +23,31 @@ glm::mat4 ToGlm(const aiMatrix4x4& m) {
     return result;
 }
 
-// Loads the base color texture of a material, from inside the model file or from a file next to it.
-void LoadBaseColorTexture(const aiScene& scene, const aiMaterial& source, const std::filesystem::path& model_directory,
-                          ModelMaterial& material, std::vector<std::string>& warnings) {
+// Loads one texture of a material, from inside the model file or from a file next to it.
+// Tries the given texture kinds in order and uses the first the material has. Returns the
+// texture's path as written in the model file, or "" when the material has none of them.
+std::string LoadMaterialTexture(const aiScene& scene, const aiMaterial& source,
+                                const std::filesystem::path& model_directory, const aiTextureType* kinds,
+                                int kind_count, const std::string& material_name, Image& image,
+                                std::vector<std::string>& warnings) {
     aiString texture_path;
-    if (source.GetTexture(aiTextureType_BASE_COLOR, 0, &texture_path) != aiReturn_SUCCESS &&
-        source.GetTexture(aiTextureType_DIFFUSE, 0, &texture_path) != aiReturn_SUCCESS) {
-        return;
+    bool found = false;
+    for (int i = 0; i < kind_count && !found; ++i) {
+        found = source.GetTexture(kinds[i], 0, &texture_path) == aiReturn_SUCCESS;
+    }
+    if (!found) {
+        return "";
     }
 
     std::string error;
     if (const aiTexture* embedded = scene.GetEmbeddedTexture(texture_path.C_Str())) {
         if (embedded->mHeight == 0) {
             // A whole PNG or JPEG file stored in the model; mWidth is its size in bytes.
-            if (!LoadImageFromMemory(embedded->pcData, embedded->mWidth, material.base_color_texture, error)) {
-                warnings.push_back("material \"" + material.name + "\": embedded texture: " + error);
+            if (!LoadImageFromMemory(embedded->pcData, embedded->mWidth, image, error)) {
+                warnings.push_back("material \"" + material_name + "\": embedded texture: " + error);
             }
         } else {
             // Raw pixels, stored as blue, green, red, alpha.
-            Image& image = material.base_color_texture;
             image.width = static_cast<int>(embedded->mWidth);
             image.height = static_cast<int>(embedded->mHeight);
             image.pixels.resize(static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4);
@@ -53,13 +59,14 @@ void LoadBaseColorTexture(const aiScene& scene, const aiMaterial& source, const 
                 image.pixels[i * 4 + 3] = texel.a;
             }
         }
-        return;
+        return texture_path.C_Str();
     }
 
     const std::filesystem::path file = model_directory / std::filesystem::path(texture_path.C_Str());
-    if (!LoadImageFromFile(file.string().c_str(), material.base_color_texture, error)) {
-        warnings.push_back("material \"" + material.name + "\": " + error);
+    if (!LoadImageFromFile(file.string().c_str(), image, error)) {
+        warnings.push_back("material \"" + material_name + "\": " + error);
     }
+    return texture_path.C_Str();
 }
 
 ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
@@ -88,10 +95,31 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
         material.double_sided = two_sided;
     }
 
-    LoadBaseColorTexture(scene, source, model_directory, material, warnings);
+    // Formats without these values (OBJ, for example) keep the defaults: a matte non-metal.
+    source.Get(AI_MATKEY_METALLIC_FACTOR, material.metallic);
+    source.Get(AI_MATKEY_ROUGHNESS_FACTOR, material.roughness);
+
+    const aiTextureType base_color_kinds[] = {aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE};
+    LoadMaterialTexture(scene, source, model_directory, base_color_kinds, 2, material.name,
+                        material.base_color_texture, warnings);
+
+    const aiTextureType normal_kinds[] = {aiTextureType_NORMALS};
+    LoadMaterialTexture(scene, source, model_directory, normal_kinds, 1, material.name, material.normal_texture,
+                        warnings);
+
+    // glTF packs roughness (green) and metallic (blue) into one image, and usually ambient
+    // occlusion (red) into the same one. Occlusion is used only when it is that same image.
+    const aiTextureType orm_kinds[] = {aiTextureType_GLTF_METALLIC_ROUGHNESS, aiTextureType_DIFFUSE_ROUGHNESS,
+                                       aiTextureType_METALNESS};
+    const std::string orm_path = LoadMaterialTexture(scene, source, model_directory, orm_kinds, 3, material.name,
+                                                     material.orm_texture, warnings);
+    aiString occlusion_path;
+    if (!orm_path.empty() && (source.GetTexture(aiTextureType_LIGHTMAP, 0, &occlusion_path) == aiReturn_SUCCESS ||
+                              source.GetTexture(aiTextureType_AMBIENT_OCCLUSION, 0, &occlusion_path) == aiReturn_SUCCESS)) {
+        material.occlusion_in_orm = orm_path == occlusion_path.C_Str();
+    }
     return material;
 }
-
 ModelMesh ConvertMesh(const aiMesh& source) {
     ModelMesh mesh;
     mesh.name = source.mName.C_Str();
@@ -236,8 +264,20 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
         material.color = source.base_color;
         material.alpha_cutoff = source.alpha_cutoff;
         material.double_sided = source.double_sided;
+        material.metallic = source.metallic;
+        material.roughness = source.roughness;
+        material.occlusion_in_orm = source.occlusion_in_orm;
         if (source.base_color_texture.width > 0) {
             material.texture = renderer.CreateTexture(source.base_color_texture);
+        }
+        // Normal maps and roughness/metallic images hold data, not colors.
+        TextureOptions data_options;
+        data_options.is_color = false;
+        if (source.normal_texture.width > 0) {
+            material.normal_texture = renderer.CreateTexture(source.normal_texture, data_options);
+        }
+        if (source.orm_texture.width > 0) {
+            material.orm_texture = renderer.CreateTexture(source.orm_texture, data_options);
         }
         result.materials.push_back(material);
     }

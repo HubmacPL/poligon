@@ -15,8 +15,14 @@ enum class GraphicsBackend {
     Vulkan,
 };
 
-// Color components in the 0..1 range. Object and light colors are linear;
-// RendererConfig::clear_color is used as given (already display-encoded).
+// How the wide range of scene brightness is squeezed into what a display can show.
+enum class ToneMapping {
+    None,  // values are used as they are and clipped at white; exact, for tests
+    Aces,  // filmic curve: bright areas roll off smoothly instead of clipping
+};
+
+// Color components. Material and light colors are linear and may exceed 1 for lights;
+// RendererConfig::clear_color is given as it should look on screen.
 struct Color {
     float r = 1.0f;
     float g = 1.0f;
@@ -33,9 +39,17 @@ struct RendererConfig {
     // Turns on the graphics API's debug layer when it is installed. Slower; for verification runs.
     bool enable_validation = false;
     const char* window_title = "Poligon";
-    // Background color every frame starts with. Fixed for the lifetime of the renderer,
+    // Background color where no sky is drawn. Fixed for the lifetime of the renderer,
     // because Direct3D 12 wants to know the clear color when the image is created.
     Color clear_color{0.0f, 0.0f, 0.0f, 1.0f};
+    // Multisample anti-aliasing: each pixel is covered by this many samples, which smooths
+    // edges. 1 (off), 2, 4 or 8. Falls back to fewer if the card does not support the count.
+    int msaa_samples = 4;
+    ToneMapping tone_mapping = ToneMapping::Aces;
+    // Brightness multiplier applied before tone mapping.
+    float exposure = 1.0f;
+    // Width and height in pixels of each of the four shadow images (cascades).
+    int shadow_map_size = 2048;
 };
 
 struct Camera {
@@ -47,11 +61,39 @@ struct Camera {
     float far_plane = 1000.0f;
 };
 
+// The sun: light arriving everywhere from one direction, plus plain ambient light.
 struct DirectionalLight {
     // Direction the light travels (from the light towards the scene).
     glm::vec3 direction{-0.4f, -1.0f, -0.3f};
     Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    // Light that reaches every surface regardless of direction. With Environment::sky_light
+    // this is replaced by light from the sky and the ground.
     Color ambient{0.15f, 0.15f, 0.15f, 1.0f};
+};
+
+// Everything around the scene: sky, the light it gives, shadows and fog. The default
+// (no sky, no fog, shadows on) keeps a scene looking as plain as possible.
+struct Environment {
+    // Draw the sky as the background instead of the clear color.
+    bool draw_sky = false;
+    Color sky_zenith{0.16f, 0.32f, 0.75f, 1.0f};   // straight up
+    Color sky_horizon{0.60f, 0.72f, 0.88f, 1.0f};  // at eye level
+    Color sky_ground{0.20f, 0.18f, 0.15f, 1.0f};   // below the horizon
+
+    // Light surfaces from the sky colors (upward-facing ones from the zenith, downward-facing
+    // ones from the ground) instead of DirectionalLight::ambient, and let smooth surfaces
+    // mirror the sky.
+    bool sky_light = false;
+    float sky_light_intensity = 1.0f;
+
+    // The sun casts shadows up to this distance from the camera (meters). Shadows are skipped
+    // when the sun's color is black.
+    bool shadows = true;
+    float shadow_distance = 120.0f;
+
+    // Fog: 0 turns it off; 0.01 hides things about 300 m away. Distant objects fade into fog_color.
+    float fog_density = 0.0f;
+    Color fog_color{0.60f, 0.72f, 0.88f, 1.0f};
 };
 
 struct MeshVertex {
@@ -72,34 +114,51 @@ struct TextureHandle {
 };
 
 struct TextureOptions {
-    // true for images that hold colors (almost all): the bytes are sRGB-encoded and are
-    // converted to linear values when sampled. false for images that hold other data.
+    // true for images that hold colors: the bytes are sRGB-encoded and are converted to linear
+    // values when sampled. false for images that hold other data (normal maps, roughness).
     bool is_color = true;
     // Mipmaps are smaller copies of the texture used when it is drawn small or far away;
     // without them distant textures shimmer.
     bool generate_mipmaps = true;
 };
 
-// How a mesh is drawn: its texture is multiplied by `color`. Without a texture the mesh has the plain color.
+// How a surface looks. This is the metallic-roughness material model of glTF.
 struct Material {
+    // Base color; multiplied by `texture` when there is one.
     Color color{1.0f, 1.0f, 1.0f, 1.0f};
     TextureHandle texture;
-    // Multiplies the mesh's texture coordinates; (4, 4) repeats the texture four times in each direction.
+    // Multiplies the mesh's texture coordinates; (4, 4) repeats the textures four times in each direction.
     glm::vec2 uv_scale{1.0f, 1.0f};
     // Pixels whose alpha (texture alpha times color alpha) is below this value are not drawn.
     // 0 turns it off. This is how leaves are drawn: a flat square with a picture of a twig,
     // of which only the twig is visible. A typical value is 0.5.
     float alpha_cutoff = 0.0f;
-    // Draw both sides of every triangle. Needed for thin things seen from both sides, such as leaves.
+    // Draw both sides of every triangle. Needed for thin things seen from both sides, such
+    // as leaves; such surfaces also let some sunlight shine through.
     bool double_sided = false;
+
+    // 0 = non-metal (wood, stone, leaves), 1 = bare metal.
+    float metallic = 0.0f;
+    // 0 = mirror-smooth, 1 = completely matte.
+    float roughness = 0.8f;
+    // Normal map: per-pixel surface direction that adds fine relief without more triangles.
+    // Create it with TextureOptions::is_color = false.
+    TextureHandle normal_texture;
+    // Combined data texture, glTF layout: green = roughness, blue = metallic, both multiplied
+    // by the factors above; red = ambient occlusion (how much a crevice is shielded from
+    // ambient light), used when occlusion_in_orm is true. Create it with is_color = false.
+    TextureHandle orm_texture;
+    bool occlusion_in_orm = false;
 };
 
-// Draws lit meshes, plain or textured. Every frame is rendered to an off-screen image first;
-// with a window that image is then shown, without one it can only be saved.
+// Draws lit meshes. A frame goes through these stages: shadows of the sun, the scene itself
+// (multisampled, in linear wide-range colors), tone mapping to an off-screen image.
+// With a window that image is then shown, without one it can only be saved or captured.
 // The same pixels are produced in both cases.
 //
-// Frame order: BeginFrame, any number of DrawMesh, EndFrame. CaptureFrame and SaveFrameToPng
-// may be called after EndFrame and return the frame that was just finished.
+// Frame order: BeginFrame, any number of DrawMesh, EndFrame. Drawing is recorded by DrawMesh
+// and carried out in EndFrame. CaptureFrame and SaveFrameToPng may be called after EndFrame
+// and return the frame that was just finished.
 // Meshes and textures live until the Renderer is destroyed.
 // Unrecoverable problems (no usable graphics device, calls in the wrong order) end the
 // process through FatalError.
@@ -122,7 +181,8 @@ public:
     // Copies the image to the graphics card. Textures repeat outside the 0..1 coordinate range.
     TextureHandle CreateTexture(const Image& image, const TextureOptions& options = TextureOptions{});
 
-    void BeginFrame(const Camera& camera, const DirectionalLight& light);
+    void BeginFrame(const Camera& camera, const DirectionalLight& light,
+                    const Environment& environment = Environment{});
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material);
     // Same, with a plain color and no texture.
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
@@ -137,6 +197,8 @@ public:
     const char* GetBackendName() const;
     int GetWidth() const;
     int GetHeight() const;
+    // The multisample count actually in use (see RendererConfig::msaa_samples).
+    int GetMsaaSamples() const;
 
 private:
     struct Impl;
