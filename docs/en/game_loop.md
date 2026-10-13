@@ -31,7 +31,7 @@ Changes are verified in headless mode.
 - `--headless`: headless mode.
 - `--ticks N`: stop after N ticks (N >= 1). Without it a game with a window runs until the window is closed or Escape is pressed.
 - `--backend d3d12|vulkan`, `--gpu-validation`, `--dump-frame FILE.png`: see [rendering.md](rendering.md).
-- `--dump-state FILE.json`: see [ecs.md](ecs.md). `--record`, `--replay`: see [input.md](input.md). `--hash-log`, `--hash-interval`: see [determinism.md](determinism.md).
+- `--dump-state FILE.json`: see [ecs.md](ecs.md). `--record`, `--replay`: see [input.md](input.md). `--hash-log`, `--hash-interval`: see [determinism.md](determinism.md). `--render-settings`: see [debug_tools.md](debug_tools.md).
 - An unknown option is an error (exit code 2), so a typo cannot pass silently.
 
 Example: `build\dev\bin\toy.exe --headless --ticks 600 --dump-frame frame.png`.

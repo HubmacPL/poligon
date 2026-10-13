@@ -5,12 +5,16 @@
 // Usage: forest_scene [X Z TURN TILT] [standard Poligon options]
 //   X Z         where to stand, in meters from the middle of the forest (default 0 0)
 //   TURN TILT   where to look, in degrees (default: towards the sun, level)
+//   --render-settings FILE   the look to start with, as saved from the settings window
 //
 // Mouse: hold the left button and move to look around.
 // Keys:  W/S walk, A/D step sideways, Left/Right turn, Up/Down look up and down, hold
-//        Left Shift to run.
+//        Left Shift to run. F switches between walking and flying (then E/Q rise and sink).
+//        Tab hides and shows the debug windows.
+// The "Render settings" window changes the look while the program runs; its Save button
+// writes forest_render_settings.txt into the poligon-assets folder.
 // Example for the agent:
-//   forest_scene 10 -5 40 5 --headless --dump-frame forest.png
+//   forest_scene 10 -5 40 5 --headless --dump-frame forest.png --render-settings look.txt
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -23,10 +27,13 @@
 
 #include "poligon/command_line.h"
 #include "poligon/crash_handler.h"
+#include "poligon/debug_ui.h"
+#include "poligon/free_camera.h"
 #include "poligon/game_loop.h"
 #include "poligon/input.h"
 #include "poligon/model.h"
 #include "poligon/platform.h"
+#include "poligon/render_settings.h"
 #include "poligon/renderer.h"
 
 namespace {
@@ -95,6 +102,9 @@ struct ForestActions {
     poligon::InputAction turn;
     poligon::InputAction tilt;
     poligon::InputAction run;
+    poligon::InputAction rise;
+    poligon::InputAction toggle_fly;
+    poligon::InputAction toggle_windows;
     poligon::InputAction drag_x;
     poligon::InputAction drag_y;
     poligon::InputAction drag_hold;
@@ -107,6 +117,9 @@ ForestActions SetUpInput(poligon::Input& input) {
     actions.turn = input.AddAction("turn");
     actions.tilt = input.AddAction("tilt");
     actions.run = input.AddAction("run");
+    actions.rise = input.AddAction("rise");
+    actions.toggle_fly = input.AddAction("toggle_fly");
+    actions.toggle_windows = input.AddAction("toggle_windows");
     actions.drag_x = input.AddAction("drag_x");
     actions.drag_y = input.AddAction("drag_y");
     actions.drag_hold = input.AddAction("drag_hold");
@@ -120,6 +133,10 @@ ForestActions SetUpInput(poligon::Input& input) {
     input.BindKey(actions.tilt, poligon::Key::Up, 1.0f);
     input.BindKey(actions.tilt, poligon::Key::Down, -1.0f);
     input.BindKey(actions.run, poligon::Key::LeftShift);
+    input.BindKey(actions.rise, poligon::Key::E, 1.0f);
+    input.BindKey(actions.rise, poligon::Key::Q, -1.0f);
+    input.BindKey(actions.toggle_fly, poligon::Key::F);
+    input.BindKey(actions.toggle_windows, poligon::Key::Tab);
     input.BindMouseMotion(actions.drag_x, poligon::MouseAxis::X);
     input.BindMouseMotion(actions.drag_y, poligon::MouseAxis::Y);
     input.BindMouseButton(actions.drag_hold, poligon::MouseButton::Left);
@@ -165,11 +182,14 @@ struct Box {
 class ForestGame : public poligon::Game {
 public:
     ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const poligon::Input& input,
-               const ForestActions& actions, const float view[4])
-        : renderer_(renderer), assets_(assets), input_(input), actions_(actions) {
-        position_ = {view[0], view[1]};
-        yaw_degrees_ = view[2];
-        pitch_degrees_ = view[3];
+               const ForestActions& actions, const float view[4], const poligon::RenderSettings& settings,
+               const std::string& settings_path)
+        : renderer_(renderer), assets_(assets), input_(input), actions_(actions), settings_(settings),
+          settings_path_(settings_path) {
+        camera_.position = {view[0], GroundHeight(view[0], view[1]) + kEyeHeight, view[1]};
+        camera_.yaw_degrees = view[2];
+        camera_.pitch_degrees = view[3];
+        camera_.vertical_fov_degrees = 65.0f;
         CreateGround();
         LoadKinds();
         PlantForest();
@@ -184,56 +204,53 @@ public:
     }
 
     void FixedUpdate(poligon::GameLoop& /*loop*/, const poligon::TickInfo& tick) override {
-        const float delta = static_cast<float>(tick.delta_seconds);
-        yaw_degrees_ += input_.GetValue(actions_.turn) * 90.0f * delta;
-        pitch_degrees_ += input_.GetValue(actions_.tilt) * 60.0f * delta;
-        if (input_.IsDown(actions_.drag_hold)) {
-            yaw_degrees_ -= input_.GetValue(actions_.drag_x) * 0.2f;
-            pitch_degrees_ -= input_.GetValue(actions_.drag_y) * 0.2f;
+        if (input_.WasPressed(actions_.toggle_fly)) {
+            flying_ = !flying_;
         }
-        pitch_degrees_ = std::clamp(pitch_degrees_, -80.0f, 80.0f);
+        if (input_.WasPressed(actions_.toggle_windows)) {
+            show_windows_ = !show_windows_;
+        }
 
-        const float yaw = glm::radians(yaw_degrees_);
-        const glm::vec2 forward{-std::sin(yaw), -std::cos(yaw)};
-        const glm::vec2 right{std::cos(yaw), -std::sin(yaw)};
-        const float speed = input_.IsDown(actions_.run) ? 10.0f : 2.5f;
-        position_ += (forward * input_.GetValue(actions_.walk) + right * input_.GetValue(actions_.strafe)) * (speed * delta);
-        position_ = glm::clamp(position_, glm::vec2(-kGroundHalfSize + 20.0f), glm::vec2(kGroundHalfSize - 20.0f));
+        const float delta = static_cast<float>(tick.delta_seconds);
+        float yaw_change = input_.GetValue(actions_.turn) * 90.0f * delta;
+        float pitch_change = input_.GetValue(actions_.tilt) * 60.0f * delta;
+        if (input_.IsDown(actions_.drag_hold)) {
+            yaw_change -= input_.GetValue(actions_.drag_x) * 0.2f;
+            pitch_change -= input_.GetValue(actions_.drag_y) * 0.2f;
+        }
+        camera_.Turn(yaw_change, pitch_change);
+
+        const float speed = (input_.IsDown(actions_.run) ? 10.0f : 2.5f) * delta;
+        const float forward = input_.GetValue(actions_.walk) * speed;
+        const float right = input_.GetValue(actions_.strafe) * speed;
+        if (flying_) {
+            camera_.Move(forward, right, input_.GetValue(actions_.rise) * speed);
+        } else {
+            // Walking: move level whatever the view direction, and stay at eye height above the ground.
+            poligon::FreeCamera level = camera_;
+            level.pitch_degrees = 0.0f;
+            level.Move(forward, right, 0.0f);
+            camera_.position = level.position;
+        }
+        const float limit = kGroundHalfSize - 20.0f;
+        camera_.position.x = std::clamp(camera_.position.x, -limit, limit);
+        camera_.position.z = std::clamp(camera_.position.z, -limit, limit);
+        const float ground = GroundHeight(camera_.position.x, camera_.position.z);
+        camera_.position.y = flying_ ? std::max(camera_.position.y, ground + 0.3f) : ground + kEyeHeight;
     }
 
     void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
-        const float yaw = glm::radians(yaw_degrees_);
-        const float pitch = glm::radians(pitch_degrees_);
-        poligon::Camera camera;
-        camera.position = {position_.x, GroundHeight(position_.x, position_.y) + kEyeHeight, position_.y};
-        camera.target = camera.position +
-                        glm::vec3(-std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch));
-        camera.vertical_fov_degrees = 65.0f;
-        camera.near_plane = 0.1f;
-        camera.far_plane = 600.0f;
+        poligon::Camera clip_planes;
+        clip_planes.near_plane = 0.1f;
+        clip_planes.far_plane = 600.0f;
+        const poligon::Camera camera = camera_.ToCamera(clip_planes);
 
-        // Late afternoon: a warm, fairly low sun, so that trunks throw long shadows through the haze.
-        poligon::DirectionalLight sun;
-        sun.direction = {-0.62f, -0.48f, -0.62f};
-        sun.color = {3.4f, 2.9f, 2.2f, 1.0f};
-        poligon::Environment environment;
-        environment.draw_sky = true;
-        environment.sky_light = true;
-        environment.sky_zenith = {0.18f, 0.34f, 0.72f, 1.0f};
-        environment.sky_horizon = {0.72f, 0.76f, 0.80f, 1.0f};
-        environment.sky_ground = {0.20f, 0.19f, 0.16f, 1.0f};
-        environment.shadow_distance = 90.0f;
-        environment.ambient_occlusion = true;
-        environment.ambient_occlusion_radius = 0.5f;
-        environment.volumetric_fog = true;
-        environment.fog_density = 0.012f;
-        environment.fog_color = {0.80f, 0.78f, 0.70f, 1.0f};
-        environment.fog_height_falloff = 0.05f;
-        environment.fog_base_height = 2.0f;
-        environment.fog_shadow_brightness = 0.22f;
-        environment.fog_sun_glow = 1.2f;
-
-        renderer_.BeginFrame(camera, sun, environment);
+        renderer_.SetPostSettings(settings_.post);
+        renderer_.BeginFrame(camera, settings_.sun, settings_.environment);
+        if (show_windows_) {
+            poligon::ShowRenderSettingsWindow(renderer_, settings_, settings_path_.c_str());
+            poligon::ShowFrameStatsWindow(renderer_);
+        }
         renderer_.DrawMesh(ground_mesh_, glm::mat4(1.0f), ground_material_);
         for (const Placement& placement : placements_) {
             if (placement.is_small && glm::distance(placement.position, camera.position) > kSmallPlantDistance) {
@@ -488,10 +505,42 @@ private:
     int loaded_kind_count_ = 0;
     std::vector<Placement> placements_;
 
-    glm::vec2 position_{0.0f, 0.0f};  // x and z
-    float yaw_degrees_ = 0.0f;
-    float pitch_degrees_ = 0.0f;
+    poligon::RenderSettings settings_;
+    std::string settings_path_;
+    poligon::FreeCamera camera_;
+    bool flying_ = false;
+    bool show_windows_ = true;
 };
+
+// The look the forest starts with: late afternoon, a warm and fairly low sun, so that
+// trunks throw long shadows through the haze.
+poligon::RenderSettings MakeForestSettings() {
+    poligon::RenderSettings settings;
+    settings.sun.direction = {-0.62f, -0.48f, -0.62f};
+    settings.sun.color = {3.4f, 2.9f, 2.2f, 1.0f};
+
+    poligon::Environment& environment = settings.environment;
+    environment.draw_sky = true;
+    environment.sky_light = true;
+    environment.sky_zenith = {0.18f, 0.34f, 0.72f, 1.0f};
+    environment.sky_horizon = {0.72f, 0.76f, 0.80f, 1.0f};
+    environment.sky_ground = {0.20f, 0.19f, 0.16f, 1.0f};
+    environment.shadow_distance = 90.0f;
+    environment.ambient_occlusion = true;
+    environment.ambient_occlusion_radius = 0.5f;
+    environment.volumetric_fog = true;
+    environment.fog_density = 0.012f;
+    environment.fog_color = {0.80f, 0.78f, 0.70f, 1.0f};
+    environment.fog_height_falloff = 0.05f;
+    environment.fog_base_height = 2.0f;
+    environment.fog_shadow_brightness = 0.22f;
+    environment.fog_sun_glow = 1.2f;
+
+    settings.post.bloom = true;
+    settings.post.auto_exposure = true;
+    settings.post.auto_exposure_target = 0.22f;
+    return settings;
+}
 
 } // namespace
 
@@ -542,9 +591,18 @@ int main(int argc, char** argv) {
     renderer_config.backend = options.backend;
     renderer_config.enable_validation = options.gpu_validation;
     renderer_config.window_title = "Poligon forest scene - loading...";
-    renderer_config.bloom = true;
-    renderer_config.auto_exposure = true;
-    renderer_config.auto_exposure_target = 0.22f;
+    poligon::RenderSettings settings = MakeForestSettings();
+    // Where the window's Save button writes; a file given on the command line is both read and written.
+    std::string settings_path = (assets / "forest_render_settings.txt").string();
+    if (!options.render_settings_path.empty()) {
+        settings_path = options.render_settings_path;
+        if (!poligon::LoadRenderSettings(settings_path.c_str(), settings, error)) {
+            std::fprintf(stderr, "forest_scene: %s\n", error.c_str());
+            return 2;
+        }
+    }
+    renderer_config.post = settings.post;
+    renderer_config.debug_ui = true;
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;
@@ -554,7 +612,7 @@ int main(int argc, char** argv) {
     }
 
     const auto load_start = std::chrono::steady_clock::now();
-    ForestGame game(renderer, assets, input, actions, view);
+    ForestGame game(renderer, assets, input, actions, view, settings, settings_path);
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s\n", load_seconds);
     if (game.GetLoadedKindCount() == 0) {
@@ -565,7 +623,7 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
-    renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, drag the mouse to look)");
+    renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, F fly, Tab windows, drag the mouse to look)");
 
     poligon::GameLoopConfig loop_config;
     loop_config.headless = options.headless;

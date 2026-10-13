@@ -6,6 +6,9 @@
 #include <vector>
 
 #include <SDL3/SDL.h>
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlgpu3.h>
 
 #include "poligon/fatal_error.h"
 #include "poligon_shaders/ao_blur_frag_dxil.h"
@@ -262,6 +265,8 @@ SDL_GPUSampleCount ToSampleCount(int samples) {
 
 struct Renderer::Impl {
     RendererConfig config;
+    PostSettings post;
+    bool debug_ui_active = false;
     SDL_Window* window = nullptr;
     SDL_GPUDevice* device = nullptr;
     int msaa_samples = 1;
@@ -568,7 +573,7 @@ struct Renderer::Impl {
                          kFullscreenVertSpirv, sizeof(kFullscreenVertSpirv));
         SDL_GPUShader* sky_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1, kSkyFragDxil, sizeof(kSkyFragDxil),
                                                    kSkyFragSpirv, sizeof(kSkyFragSpirv));
-        SDL_GPUShader* tonemap_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1, kTonemapFragDxil,
+        SDL_GPUShader* tonemap_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 1, kTonemapFragDxil,
                                                        sizeof(kTonemapFragDxil), kTonemapFragSpirv,
                                                        sizeof(kTonemapFragSpirv));
 
@@ -908,6 +913,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
         FatalError("Renderer: shadow_map_size must be between 64 and 8192");
     }
     impl_->config = config;
+    impl_->post = config.post;
     impl_->linear_clear_color = SDL_FColor{SrgbToLinear(config.clear_color.r), SrgbToLinear(config.clear_color.g),
                                            SrgbToLinear(config.clear_color.b), config.clear_color.a};
 
@@ -961,11 +967,42 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     plain_data.is_color = false;
     // A normal pointing straight out of the surface.
     impl_->flat_normal_texture = CreateTexture(MakeSolidImage(1, 1, 128, 128, 255), plain_data);
+
+    if (config.debug_ui && impl_->window != nullptr) {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        // No settings file: it would be written into whatever folder the program was started from.
+        io.IniFilename = nullptr;
+        ImGui::StyleColorsDark();
+        // Dear ImGui's colors are meant for the screen as they are, but our output image
+        // expects linear values and encodes them when storing. Decode them once here, or
+        // every window would come out pale.
+        for (ImVec4& color : ImGui::GetStyle().Colors) {
+            color.x = SrgbToLinear(color.x);
+            color.y = SrgbToLinear(color.y);
+            color.z = SrgbToLinear(color.z);
+        }
+        ImGui_ImplSDL3_InitForSDLGPU(impl_->window);
+        ImGui_ImplSDLGPU3_InitInfo init_info;
+        init_info.Device = impl_->device;
+        init_info.ColorTargetFormat = kOutputFormat;
+        init_info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+        if (!ImGui_ImplSDLGPU3_Init(&init_info)) {
+            FatalError("Renderer: cannot set up the debug windows");
+        }
+        impl_->debug_ui_active = true;
+    }
 }
 
 Renderer::~Renderer() {
     if (impl_->device != nullptr) {
         SDL_WaitForGPUIdle(impl_->device);
+        if (impl_->debug_ui_active) {
+            ImGui_ImplSDLGPU3_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
+            ImGui::DestroyContext();
+        }
         for (const Mesh& mesh : impl_->meshes) {
             if (mesh.vertex_buffer != nullptr) {
                 SDL_ReleaseGPUBuffer(impl_->device, mesh.vertex_buffer);
@@ -1198,6 +1235,11 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->light = light;
     impl_->environment = environment;
     impl_->draw_commands.clear();
+    if (impl_->debug_ui_active) {
+        ImGui_ImplSDLGPU3_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+    }
 }
 
 void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material) {
@@ -1464,7 +1506,8 @@ void Renderer::EndFrame() {
         // Volumetric fog is added after the scene pass; the simple fog is then left out here.
         frame_uniforms.fog = glm::vec4(environment.fog_color.r, environment.fog_color.g, environment.fog_color.b,
                                        fog_on ? 0.0f : environment.fog_density);
-        frame_uniforms.screen = glm::vec4(ao_on ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+        frame_uniforms.screen = glm::vec4(ao_on ? 1.0f : 0.0f, environment.show_shadow_cascades && shadows_on ? 1.0f : 0.0f,
+                                          0.0f, 0.0f);
         frame_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, impl.msaa_samples > 1 ? 1.0f : 0.0f,
                                            environment.sky_light ? 1.0f : 0.0f,
                                            1.0f / static_cast<float>(impl.config.shadow_map_size * 2));
@@ -1547,8 +1590,8 @@ void Renderer::EndFrame() {
 
     // --- Pass 6: bloom. A chain of ever smaller blurred copies of the scene, then mixed
     // back together from the smallest up. Automatic exposure reads the smallest copy. ---
-    const bool bloom_on = impl.config.bloom && impl.config.bloom_strength > 0.0f;
-    if (bloom_on || impl.config.auto_exposure) {
+    const bool bloom_on = impl.post.bloom && impl.post.bloom_strength > 0.0f;
+    if (bloom_on || impl.post.auto_exposure) {
         SDL_GPUTexture* source = scene_image;
         float source_width = width;
         float source_height = height;
@@ -1566,12 +1609,12 @@ void Renderer::EndFrame() {
             source_height = static_cast<float>(level.height);
         }
     }
-    if (impl.config.auto_exposure) {
+    if (impl.post.auto_exposure) {
         const int previous = impl.luminance_index;
         const int current = 1 - previous;
         ParameterUniforms uniforms;
         uniforms.parameters = glm::vec4(
-            impl.has_luminance_history ? glm::clamp(impl.config.auto_exposure_speed, 0.0f, 1.0f) : 1.0f, 0.0f, 0.0f, 0.0f);
+            impl.has_luminance_history ? glm::clamp(impl.post.auto_exposure_speed, 0.0f, 1.0f) : 1.0f, 0.0f, 0.0f, 0.0f);
         SDL_GPUTextureSamplerBinding bindings[2]{};
         bindings[0].texture = impl.bloom_levels.back().texture;
         bindings[0].sampler = impl.linear_clamp_sampler;
@@ -1598,21 +1641,61 @@ void Renderer::EndFrame() {
 
     // --- Pass 7: tone mapping into the output image. ---
     {
-        SDL_GPUTextureSamplerBinding bindings[3]{};
+        // The debug view shows one stage's image instead of the finished frame; a stage that
+        // is turned off shows as white.
+        SDL_GPUTexture* debug_image = white;
+        float debug_mode = 0.0f;
+        switch (impl.post.debug_view) {
+        case DebugView::None:
+            break;
+        case DebugView::AmbientOcclusion:
+            debug_image = ao_on ? impl.ao_target : white;
+            debug_mode = 1.0f;
+            break;
+        case DebugView::Fog:
+            debug_image = fog_on ? impl.fog_target : white;
+            debug_mode = 2.0f;
+            break;
+        case DebugView::Bloom:
+            debug_image = bloom_on ? impl.bloom_levels[0].texture : white;
+            debug_mode = 2.0f;
+            break;
+        }
+
+        SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = scene_image;
         bindings[0].sampler = impl.clamp_sampler;
         bindings[1].texture = bloom_on ? impl.bloom_levels[0].texture : white;
         bindings[1].sampler = impl.linear_clamp_sampler;
-        bindings[2].texture = impl.config.auto_exposure ? impl.luminance_targets[impl.luminance_index] : white;
+        bindings[2].texture = impl.post.auto_exposure ? impl.luminance_targets[impl.luminance_index] : white;
         bindings[2].sampler = impl.clamp_sampler;
+        bindings[3].texture = debug_image;
+        bindings[3].sampler = impl.linear_clamp_sampler;
         TonemapUniforms uniforms;
-        uniforms.parameters = glm::vec4(impl.config.exposure, impl.config.tone_mapping == ToneMapping::Aces ? 1.0f : 0.0f,
-                                        bloom_on ? impl.config.bloom_strength : 0.0f,
-                                        impl.config.auto_exposure ? 1.0f : 0.0f);
-        uniforms.auto_exposure = glm::vec4(impl.config.auto_exposure_target, impl.config.auto_exposure_min,
-                                           impl.config.auto_exposure_max, 0.0f);
-        impl.DrawFullscreenPass(commands, impl.output_target, false, impl.tonemap_pipeline, bindings, 3, &uniforms,
+        uniforms.parameters = glm::vec4(impl.post.exposure, impl.post.tone_mapping == ToneMapping::Aces ? 1.0f : 0.0f,
+                                        bloom_on ? impl.post.bloom_strength : 0.0f,
+                                        impl.post.auto_exposure ? 1.0f : 0.0f);
+        uniforms.auto_exposure = glm::vec4(impl.post.auto_exposure_target, impl.post.auto_exposure_min,
+                                           impl.post.auto_exposure_max, debug_mode);
+        impl.DrawFullscreenPass(commands, impl.output_target, false, impl.tonemap_pipeline, bindings, 4, &uniforms,
                                 sizeof(uniforms));
+    }
+
+    // --- Pass 8: debug windows, drawn over the finished picture. ---
+    if (impl.debug_ui_active) {
+        ImGui::Render();
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, commands);
+        SDL_GPUColorTargetInfo color_info{};
+        color_info.texture = impl.output_target;
+        color_info.load_op = SDL_GPU_LOADOP_LOAD;
+        color_info.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, nullptr);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin debug window pass");
+        }
+        ImGui_ImplSDLGPU3_RenderDrawData(draw_data, commands, pass);
+        SDL_EndGPURenderPass(pass);
     }
 
     if (impl.window != nullptr) {
@@ -1706,6 +1789,18 @@ bool Renderer::SaveFrameToPng(const char* path) {
     Image image;
     CaptureFrame(image);
     return SaveImageToPng(path, image);
+}
+
+const PostSettings& Renderer::GetPostSettings() const {
+    return impl_->post;
+}
+
+void Renderer::SetPostSettings(const PostSettings& settings) {
+    impl_->post = settings;
+}
+
+bool Renderer::IsDebugUiActive() const {
+    return impl_->debug_ui_active;
 }
 
 FrameStats Renderer::GetFrameStats() const {

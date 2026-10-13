@@ -16,6 +16,10 @@ target_include_directories(image_test SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(image_test PRIVATE poligon_engine poligon_build_options)
 add_test(NAME image_test COMMAND image_test ${CMAKE_BINARY_DIR}/test_output)
 
+add_executable(render_settings_test render_settings_test.cpp)
+target_link_libraries(render_settings_test PRIVATE poligon_engine poligon_build_options)
+add_test(NAME render_settings_test COMMAND render_settings_test ${CMAKE_BINARY_DIR}/test_output)
+
 # Pixel-level checks of textured rendering, on both graphics backends, with the debug layer on.
 foreach(render_test texture_render_test scene_render_test effects_render_test)
   add_executable(${render_test} ${render_test}.cpp)

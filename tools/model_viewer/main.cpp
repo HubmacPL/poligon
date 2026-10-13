@@ -351,8 +351,8 @@ int main(int argc, char** argv) {
     renderer_config.enable_validation = options.gpu_validation;
     renderer_config.window_title = "Poligon model viewer";
     renderer_config.clear_color = {0.53f, 0.73f, 0.90f, 1.0f};
-    renderer_config.bloom = true;
-    renderer_config.auto_exposure = true;
+    renderer_config.post.bloom = true;
+    renderer_config.post.auto_exposure = true;
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;

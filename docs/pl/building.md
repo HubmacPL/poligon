@@ -39,6 +39,7 @@ Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<prese
 - Lista zależności jest w `vcpkg.json`. Pole `builtin-baseline` przypina katalog pakietów do jednego commita, więc wersje są powtarzalne.
 - Zainstalowane biblioteki trafiają do `vcpkg_installed/` w projekcie (wspólne dla wszystkich presetów). Pobrane źródła i zbudowane paczki vcpkg trzyma w swojej pamięci podręcznej w profilu użytkownika.
 - Przed dodaniem zależności: poszukać gotowej biblioteki (zasada „najpierw biblioteka"), sprawdzić licencję w źródle i uzyskać zgodę autora.
+- `imgui` z cechami `sdl3-binding` i `sdlgpu3-binding` (MIT; nie ciągnie nic poza SDL3): okna narzędzi.
 - `assimp` (BSD-3; ciągnie kubazip, pugixml i rapidjson na MIT, poly2tri na BSD-3, minizip i zlib na zlib, polyclipping i utfcpp na Boost; vcpkg wymienia też ISC dla dołączonej części).
 - `glm` (do wyboru MIT albo „Happy Bunny"; korzystamy na MIT).
 - `flecs` (MIT; w środku fragmenty na BSD-2, MIT i jeden w domenie publicznej).

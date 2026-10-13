@@ -62,7 +62,8 @@ bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& opt
                 return false;
             }
         } else if (argument == "--dump-frame" || argument == "--dump-state" || argument == "--record" ||
-                   argument == "--replay" || argument == "--hash-log") {
+                   argument == "--replay" || argument == "--hash-log" ||
+                   argument == "--render-settings") {
             const char* value = ReadOptionValue(argc, argv, i, error);
             if (value == nullptr) {
                 return false;
@@ -79,6 +80,8 @@ bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& opt
                 options.record_path = value;
             } else if (argument == "--hash-log") {
                 options.hash_log_path = value;
+            } else if (argument == "--render-settings") {
+                options.render_settings_path = value;
             } else {
                 options.replay_path = value;
             }

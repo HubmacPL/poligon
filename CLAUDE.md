@@ -12,6 +12,7 @@ This file is the table of contents and the rule book. Details live in topic file
 - Input as actions, bindings, recording and replay, recording file format: [docs/en/input.md](docs/en/input.md)
 - Determinism: what is guaranteed, how to compare two runs and find the tick where they diverge, what breaks it: [docs/en/determinism.md](docs/en/determinism.md)
 - Crashes: report with call stack, program exit codes, how to read a report: [docs/en/crashes.md](docs/en/crashes.md)
+- Debug windows (Dear ImGui), render settings file, debug views, free camera: [docs/en/debug_tools.md](docs/en/debug_tools.md)
 - Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`, `model_viewer`, `forest_scene`, `image_tool`), `cmake/`, `docs/en/` and `docs/pl/`.
 - After every code change run `powershell -ExecutionPolicy Bypass -File tools\check.ps1`. Only `CHECK PASSED` means it works.
 
@@ -20,6 +21,8 @@ This file is the table of contents and the rule book. Details live in topic file
 - Milestone 1 (verification layer) is complete: headless runs with a fixed time step, input recording and replay, JSON state dump, PNG frame dump, determinism test, crash reports.
 - Milestone 2 (models and textures) is complete: GLM, textures and materials, model import through Assimp, the `model_viewer` gallery, and an asset pipeline outside the repository (Poly Haven downloads, Blender simplification, EZ-Tree generated trees, alpha repair with `image_tool`).
 - Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure, frustum culling, and the showcase `forest_scene` (about 34 ms per frame on the GTX 980 in the `release` preset). Known cost to remove in the vegetation milestone: every tree is drawn at full detail in every shadow cascade (no levels of detail, no instancing).
+- Milestone 4 (in-game tools) is complete: debug windows with Dear ImGui (render settings, frame statistics, world state), a render settings file with the option `--render-settings`, debug views of single frame stages, a free camera.
+- Next: milestone 5 (skeletal animation).
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap
@@ -70,6 +73,7 @@ The order after milestone 2 is the agent's call. Audio, networking, scripting, h
 - Shader compiler DXC (NCSA license, not on the list) is allowed only as a build-time tool. Shipping `dxcompiler.dll` with a game would be a new dependency and a separate decision.
 - Math: GLM (under MIT), used directly, always through `poligon/math.h`.
 - Images: `stb_image` and `stb_image_write` from the stb package.
+- Debug windows: Dear ImGui (MIT) with its SDL3 and SDL GPU backends, from vcpkg. Used directly (`ImGui::` calls in game code); never active in headless mode. Every setting a window can change must also be settable from code or from a file, so the agent can reproduce what the author set by hand.
 - Model import: Assimp (BSD-3), linked into the engine, behind `poligon/model.h`. Any format Assimp reads is accepted. cgltf was approved earlier and then dropped in favor of Assimp.
 - Models for the goal scene: the agent searches (Poly Haven is CC0), presents candidates with pictures from `model_viewer`, the author chooses. Every download is shown first (file, source, size). Downloaded files live in the folder `poligon-assets` next to the project folder, outside the repository.
 - ECS: flecs (MIT). Typed C++ API only; query strings and flecs script are forbidden. Every component registers its members. All systems are created at startup, before any entity is deleted, each with an explicit phase (flecs orders systems by id, and a recycled id breaks the order). Single-threaded. The flecs REST server only in development builds. EnTT was rejected.
@@ -79,7 +83,7 @@ The order after milestone 2 is the agent's call. Audio, networking, scripting, h
 
 ## Library candidates (not yet added)
 
-Physics: Jolt (MIT, in vcpkg). Skeletal animation: ozz-animation (MIT, not in vcpkg). Navigation: Recast/Detour (zlib). Tools and debug UI: Dear ImGui (MIT, in vcpkg with SDL3 and SDL GPU bindings).
+Physics: Jolt (MIT, in vcpkg). Skeletal animation: ozz-animation (MIT, not in vcpkg). Navigation: Recast/Detour (zlib).
 
 ## Open
 

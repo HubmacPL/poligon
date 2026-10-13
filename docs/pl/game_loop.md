@@ -31,6 +31,7 @@ Weryfikacja zmian odbywa się w trybie bez okna.
 - `--headless`: tryb bez okna.
 - `--ticks N`: zakończ po N tickach (N >= 1). Bez tej opcji gra z oknem działa do zamknięcia okna lub Escape.
 - `--backend d3d12|vulkan`, `--gpu-validation`, `--dump-frame PLIK.png`: patrz [rendering.md](rendering.md).
+- `--dump-state PLIK.json`: patrz [ecs.md](ecs.md). `--record`, `--replay`: patrz [input.md](input.md). `--hash-log`, `--hash-interval`: patrz [determinism.md](determinism.md). `--render-settings`: patrz [debug_tools.md](debug_tools.md).
 - Nieznana opcja jest błędem (kod wyjścia 2), żeby literówka nie przeszła po cichu.
 
 Przykład: `build\dev\bin\toy.exe --headless --ticks 600 --dump-frame klatka.png`.

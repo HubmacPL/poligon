@@ -14,6 +14,13 @@
     "glm",
     "assimp",
     {
+      "name": "imgui",
+      "features": [
+        "sdl3-binding",
+        "sdlgpu3-binding"
+      ]
+    },
+    {
       "name": "directx-dxc",
       "host": true
     }

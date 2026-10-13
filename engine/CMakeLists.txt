@@ -6,20 +6,24 @@ find_package(directx-dxc CONFIG REQUIRED)
 find_package(flecs CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 add_library(poligon_engine STATIC
   src/command_line.cpp
   src/crash_handler.cpp
+  src/debug_ui.cpp
   src/ecs.cpp
   src/state_dump.cpp
   src/fatal_error.cpp
   src/fixed_step_clock.cpp
+  src/free_camera.cpp
   src/game_loop.cpp
   src/image.cpp
   src/input.cpp
   src/model.cpp
   src/stb_image_impl.cpp
   src/platform.cpp
+  src/render_settings.cpp
   src/renderer.cpp
   src/stb_image_write_impl.cpp
   src/version.cpp
@@ -32,6 +36,8 @@ target_link_libraries(poligon_engine PRIVATE poligon_build_options SDL3::SDL3 db
 target_link_libraries(poligon_engine PRIVATE assimp::assimp)
 # flecs is PUBLIC: game code uses the flecs API directly through poligon/ecs.h.
 target_link_libraries(poligon_engine PUBLIC $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
+# Dear ImGui draws the debug windows (poligon/debug_ui.h). PUBLIC: games and tools call ImGui:: directly.
+target_link_libraries(poligon_engine PUBLIC imgui::imgui)
 # GLM is PUBLIC for the same reason (poligon/math.h). Its configuration must be identical in
 # every file of a program, so it is set here and nowhere else:
 #   DEPTH_ZERO_TO_ONE  projection matrices produce depth 0..1, as Direct3D 12 and Vulkan expect

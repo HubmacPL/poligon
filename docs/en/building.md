@@ -39,6 +39,7 @@ Output goes to `build/<preset>/`; all programs and DLLs to `build/<preset>/bin/`
 - The dependency list is in `vcpkg.json`. The `builtin-baseline` field pins the package catalog to one commit, so versions are repeatable.
 - Installed libraries land in `vcpkg_installed/` in the project (shared by all presets). vcpkg keeps downloaded sources and built packages in its cache in the user profile.
 - Before adding a dependency: look for it (library-first rule), check its license at the source and get the author's approval.
+- `imgui` with the features `sdl3-binding` and `sdlgpu3-binding` (MIT; pulls in nothing but SDL3): the debug windows.
 - `assimp` (BSD-3; brings kubazip, pugixml and rapidjson under MIT, poly2tri under BSD-3, minizip and zlib under zlib, polyclipping and utfcpp under Boost; vcpkg also lists ISC for a bundled part).
 - `glm` (MIT or "Happy Bunny"; we use it under MIT).
 - `flecs` (MIT; contains pieces under BSD-2, MIT and one in the public domain).

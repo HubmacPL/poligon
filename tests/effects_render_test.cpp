@@ -34,7 +34,7 @@ poligon::RendererConfig MakeConfig(poligon::GraphicsBackend backend) {
     config.backend = backend;
     config.clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
     // No tone mapping, so that expected pixel values can be computed by hand.
-    config.tone_mapping = poligon::ToneMapping::None;
+    config.post.tone_mapping = poligon::ToneMapping::None;
     return config;
 }
 
@@ -124,8 +124,44 @@ int main(int argc, char** argv) {
                     }
                     Expect(corner <= 225 && corner >= 60, "ambient occlusion darkens the floor where it meets the cube");
                     Expect(RedIs(frame, open_floor.x, open_floor.y, 255, 3), "ambient occlusion leaves open floor alone");
+
+                    // The debug view shows the occlusion itself: dark in the corner, white
+                    // in the open, whatever the light. The same frame is drawn again.
+                    poligon::PostSettings post = renderer.GetPostSettings();
+                    post.debug_view = poligon::DebugView::AmbientOcclusion;
+                    renderer.SetPostSettings(post);
+                    renderer.BeginFrame(camera, MakeFlatLight(0.3f), environment);
+                    renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+                    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), white);
+                    renderer.EndFrame();
+                    renderer.CaptureFrame(frame);
+                    Expect(RedAt(frame, near_cube.x, near_cube.y) <= 225, "the ambient occlusion view is dark in the corner");
+                    Expect(RedIs(frame, open_floor.x, open_floor.y, 255, 3), "the ambient occlusion view is white in the open");
+                    post.debug_view = poligon::DebugView::None;
+                    renderer.SetPostSettings(post);
                 }
             }
+
+            // Tinting by shadow cascade: the floor 3.6 m from the camera is shaded by the
+            // second cascade and comes out green, far away by the last one and comes out yellow.
+            poligon::Environment environment;
+            environment.show_shadow_cascades = true;
+            environment.shadow_distance = 40.0f;
+            poligon::DirectionalLight sun;
+            sun.color = {0.5f, 0.5f, 0.5f, 1.0f};
+            sun.ambient = {0.5f, 0.5f, 0.5f, 1.0f};
+            renderer.BeginFrame(camera, sun, environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const glm::ivec2 near_floor = ToPixel(camera, {0.0f, 0.0f, 3.0f});
+            const glm::ivec2 far_floor = ToPixel(camera, {0.0f, 0.0f, -14.0f});
+            const std::uint8_t* near_pixel = &frame.pixels[static_cast<size_t>(near_floor.y * frame.width + near_floor.x) * 4];
+            const std::uint8_t* far_pixel = &frame.pixels[static_cast<size_t>(far_floor.y * frame.width + far_floor.x) * 4];
+            Expect(near_pixel[1] > near_pixel[0] + 40 && near_pixel[1] > near_pixel[2] + 40,
+                   "the cascade view tints near floor green");
+            Expect(far_pixel[0] > far_pixel[2] + 40 && far_pixel[1] > far_pixel[2] + 40 && far_pixel[1] < far_pixel[0] + 20,
+                   "the cascade view tints distant floor yellow");
         }
 
         // --- Volumetric fog and light shafts ---
@@ -181,7 +217,7 @@ int main(int argc, char** argv) {
     // with bloom the square's light spills over, less so far away.
     for (int pass = 0; pass < 2; ++pass) {
         poligon::RendererConfig config = MakeConfig(backend);
-        config.bloom = pass == 1;
+        config.post.bloom = pass == 1;
         poligon::Renderer renderer(config);
         const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
         const poligon::Camera camera = MakeTopDownCamera(10.0f);
@@ -209,11 +245,11 @@ int main(int argc, char** argv) {
     // target brightness (0.25, stored as 137).
     for (const float brightness : {8.0f, 0.02f}) {
         poligon::RendererConfig config = MakeConfig(backend);
-        config.auto_exposure = true;
-        config.auto_exposure_target = 0.25f;
-        config.auto_exposure_min = 0.001f;
-        config.auto_exposure_max = 1000.0f;
-        config.auto_exposure_speed = 0.5f;
+        config.post.auto_exposure = true;
+        config.post.auto_exposure_target = 0.25f;
+        config.post.auto_exposure_min = 0.001f;
+        config.post.auto_exposure_max = 1000.0f;
+        config.post.auto_exposure_speed = 0.5f;
         poligon::Renderer renderer(config);
         const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
         const poligon::Camera camera = MakeTopDownCamera(5.0f);

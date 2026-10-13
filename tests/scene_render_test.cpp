@@ -52,7 +52,7 @@ poligon::RendererConfig MakeConfig(poligon::GraphicsBackend backend) {
     config.backend = backend;
     config.clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
     // No tone mapping, so that expected pixel values can be computed by hand.
-    config.tone_mapping = poligon::ToneMapping::None;
+    config.post.tone_mapping = poligon::ToneMapping::None;
     return config;
 }
 
@@ -318,7 +318,7 @@ int main(int argc, char** argv) {
         // Tone mapping: the filmic curve keeps a fully lit white surface below pure white
         // (0.80 linear, stored as 231), leaving room for brighter things; exposure scales the light.
         poligon::RendererConfig config = MakeConfig(backend);
-        config.tone_mapping = poligon::ToneMapping::Aces;
+        config.post.tone_mapping = poligon::ToneMapping::Aces;
         poligon::Renderer renderer(config);
         const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
         poligon::DirectionalLight flat;

@@ -18,9 +18,15 @@ Texture2D<float> luminance_texture : register(t2, space2);
 [[vk::combinedImageSampler]][[vk::binding(2, 2)]]
 SamplerState luminance_sampler : register(s2, space2);
 
+// One stage's image, shown instead of the frame when a debug view is on.
+[[vk::combinedImageSampler]][[vk::binding(3, 2)]]
+Texture2D<float4> debug_texture : register(t3, space2);
+[[vk::combinedImageSampler]][[vk::binding(3, 2)]]
+SamplerState debug_sampler : register(s3, space2);
+
 cbuffer TonemapUniforms : register(b0, space3) {
     float4 parameters;     // x: exposure (brightness multiplier), y: 0 = none, 1 = ACES filmic curve, z: bloom share, w: automatic exposure on
-    float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier
+    float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier, w: debug view (0 = off, 1 = show red as gray, 2 = show color)
 };
 
 struct FragmentInput {
@@ -37,6 +43,13 @@ float3 AcesFilmic(float3 x) {
 
 float4 main(FragmentInput input) : SV_Target0 {
     float3 color = scene_texture.Sample(scene_sampler, input.uv).rgb;
+    if (auto_exposure.w > 0.5) {
+        float4 debug = debug_texture.SampleLevel(debug_sampler, input.uv, 0.0);
+        if (auto_exposure.w < 1.5) {
+            return float4(debug.rrr, 1.0);
+        }
+        color = debug.rgb;
+    }
     if (parameters.z > 0.0) {
         float3 bloom = bloom_texture.SampleLevel(bloom_sampler, input.uv, 0.0).rgb;
         color = lerp(color, bloom, parameters.z);

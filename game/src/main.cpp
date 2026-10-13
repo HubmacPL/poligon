@@ -1,10 +1,12 @@
 // Toy game: boxes that fall, bounce and expire; the player steers the big red one.
 // It exists to exercise the engine.
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 #include "poligon/command_line.h"
 #include "poligon/crash_handler.h"
+#include "poligon/debug_ui.h"
 #include "poligon/ecs.h"
 #include "poligon/game_loop.h"
 #include "poligon/input.h"
@@ -45,12 +47,15 @@ poligon::Image MakeCrateImage() {
 class ToyGame : public poligon::Game {
 public:
     ToyGame(flecs::world& world, poligon::Renderer& renderer, const poligon::Input& input,
-            const toy::ToyActions& actions, poligon::StateHashLog& hash_log)
+            const toy::ToyActions& actions, poligon::StateHashLog& hash_log, const poligon::RenderSettings& settings,
+            const std::string& settings_path)
         : world_(world),
           renderer_(renderer),
           input_(input),
           actions_(actions),
           hash_log_(hash_log),
+          settings_(settings),
+          settings_path_(settings_path),
           box_query_(world.query<const toy::Position, const toy::Box>()),
           ground_query_(world.query<const toy::Ground>()) {}
 
@@ -87,21 +92,14 @@ public:
         poligon::Camera camera;
         camera.position = glm::vec3(glm::rotate(identity, yaw, up) * glm::vec4(9.0f, 6.0f, 13.0f, 1.0f));
         camera.target = {0.0f, 3.5f, 0.0f};
-        // A sunny day with a light haze.
-        poligon::DirectionalLight sun;
-        sun.direction = {-0.5f, -0.75f, -0.4f};
-        sun.color = {2.6f, 2.45f, 2.2f, 1.0f};
-        poligon::Environment environment;
-        environment.draw_sky = true;
-        environment.sky_light = true;
-        environment.sky_ground = {0.42f, 0.44f, 0.46f, 1.0f};
-        environment.shadow_distance = 60.0f;
-        environment.fog_density = 0.002f;
-        environment.volumetric_fog = true;
-        environment.fog_height_falloff = 0.02f;
-        environment.ambient_occlusion = true;
+        // The free camera is a viewing aid only: it changes what is drawn, never the world.
+        if (free_camera_on_) {
+            camera = free_camera_.ToCamera(camera);
+        }
 
-        renderer_.BeginFrame(camera, sun, environment);
+        renderer_.SetPostSettings(settings_.post);
+        renderer_.BeginFrame(camera, settings_.sun, settings_.environment);
+        ShowDebugWindows(camera);
 
         ground_query_.each([this](const toy::Ground& ground) {
             poligon::Material material;
@@ -130,6 +128,40 @@ public:
     }
 
 private:
+    // Debug windows and keys. They take effect from the next frame on. Without a window
+    // (headless runs, tests) nothing here does anything.
+    void ShowDebugWindows(const poligon::Camera& camera) {
+        if (!renderer_.IsDebugUiActive()) {
+            return;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+            show_windows_ = !show_windows_;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !ImGui::GetIO().WantTextInput) {
+            free_camera_on_ = !free_camera_on_;
+            if (free_camera_on_) {
+                free_camera_.SetFromCamera(camera);
+            }
+        }
+        if (free_camera_on_) {
+            poligon::FlyFreeCamera(renderer_, free_camera_);
+        }
+        if (show_windows_) {
+            poligon::ShowRenderSettingsWindow(renderer_, settings_, settings_path_.c_str());
+            poligon::ShowFrameStatsWindow(renderer_);
+            poligon::ShowWorldWindow(renderer_, world_);
+            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 130.0f), ImGuiCond_FirstUseEver,
+                                    ImVec2(1.0f, 0.0f));
+            if (ImGui::Begin("Keys", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextUnformatted("Tab: hide or show these windows");
+                ImGui::Text("F: free camera (%s)", free_camera_on_ ? "on" : "off");
+                ImGui::TextUnformatted("  I/J/K/L move, U/O down and up, Shift faster");
+                ImGui::TextUnformatted("  hold the middle mouse button to look");
+            }
+            ImGui::End();
+        }
+    }
+
     flecs::world& world_;
     poligon::Renderer& renderer_;
     const poligon::Input& input_;
@@ -141,7 +173,31 @@ private:
     poligon::MeshHandle plane_mesh_;
     poligon::TextureHandle ground_texture_;
     poligon::TextureHandle box_texture_;
+    poligon::RenderSettings settings_;
+    std::string settings_path_;
+    poligon::FreeCamera free_camera_;
+    bool free_camera_on_ = false;
+    bool show_windows_ = true;
 };
+
+// The look of the toy: a sunny day with a light haze.
+poligon::RenderSettings MakeToySettings() {
+    poligon::RenderSettings settings;
+    settings.sun.direction = {-0.5f, -0.75f, -0.4f};
+    settings.sun.color = {2.6f, 2.45f, 2.2f, 1.0f};
+    poligon::Environment& environment = settings.environment;
+    environment.draw_sky = true;
+    environment.sky_light = true;
+    environment.sky_ground = {0.42f, 0.44f, 0.46f, 1.0f};
+    environment.shadow_distance = 60.0f;
+    environment.fog_density = 0.002f;
+    environment.volumetric_fog = true;
+    environment.fog_height_falloff = 0.02f;
+    environment.ambient_occlusion = true;
+    settings.post.bloom = true;
+    settings.post.auto_exposure = true;
+    return settings;
+}
 
 } // namespace
 
@@ -159,9 +215,10 @@ int main(int argc, char** argv) {
                      "usage: toy [--headless] [--ticks N] [--backend d3d12|vulkan] [--gpu-validation]\n"
                      "           [--record PATH] [--replay PATH]\n"
                      "           [--dump-frame PATH.png] [--dump-state PATH.json]\n"
-                     "           [--hash-log PATH] [--hash-interval N]\n"
+                     "           [--hash-log PATH] [--hash-interval N] [--render-settings PATH]\n"
                      "keys: A/D/W/S or arrows move the red box, Space jumps,\n"
-                     "      hold the right mouse button and move the mouse to turn the camera, Escape quits\n",
+                     "      hold the right mouse button and move the mouse to turn the camera, Escape quits,\n"
+                     "      Tab hides the debug windows, F switches the free camera\n",
                      error.c_str());
         return 2;
     }
@@ -204,8 +261,18 @@ int main(int argc, char** argv) {
     renderer_config.enable_validation = options.gpu_validation;
     renderer_config.window_title = "Poligon toy";
     renderer_config.clear_color = {0.53f, 0.73f, 0.90f, 1.0f};
-    renderer_config.bloom = true;
-    renderer_config.auto_exposure = true;
+    poligon::RenderSettings settings = MakeToySettings();
+    // Where the settings window saves: next to the program, unless a file was given.
+    std::string settings_path = (std::filesystem::path(argv[0]).parent_path() / "toy_render_settings.txt").string();
+    if (!options.render_settings_path.empty()) {
+        settings_path = options.render_settings_path;
+        if (!poligon::LoadRenderSettings(settings_path.c_str(), settings, error)) {
+            std::fprintf(stderr, "toy: %s\n", error.c_str());
+            return 2;
+        }
+    }
+    renderer_config.post = settings.post;
+    renderer_config.debug_ui = true;
     poligon::Renderer renderer(renderer_config);
 
     flecs::world world;
@@ -220,7 +287,7 @@ int main(int argc, char** argv) {
     poligon::GameLoopResult result{};
     {
         // The game owns queries, which must be released before the world is destroyed.
-        ToyGame game(world, renderer, input, actions, hash_log);
+        ToyGame game(world, renderer, input, actions, hash_log, settings, settings_path);
         poligon::GameLoop loop(loop_config);
         result = loop.Run(game);
     }

@@ -18,6 +18,8 @@ namespace poligon {
 //   --record PATH         write the input of this run to PATH
 //   --replay PATH         take input from the recording PATH instead of keyboard and mouse
 //   --hash-log PATH       write the state hash to PATH every --hash-interval ticks
+//   --render-settings PATH  load sun, environment and post-processing settings from PATH
+//                         (a file saved from the render settings window, see render_settings.h)
 //   --hash-interval N     ticks between hash log entries (default 60, N >= 1)
 struct CommandLineOptions {
     bool headless = false;
@@ -29,6 +31,7 @@ struct CommandLineOptions {
     std::string record_path;      // empty = not given
     std::string replay_path;      // empty = not given
     std::string hash_log_path;    // empty = not given
+    std::string render_settings_path;  // empty = not given
     std::int64_t hash_interval = 60;
     // Arguments that are not options (do not start with "--"), in order. What they mean is up
     // to the program, for example a file to open. A program that takes none should reject them.

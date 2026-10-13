@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
     config.enable_validation = true;
     config.clear_color = {0.2f, 0.2f, 0.2f, 1.0f};
     // No tone mapping: with flat lighting a pixel then shows exactly the material color.
-    config.tone_mapping = poligon::ToneMapping::None;
+    config.post.tone_mapping = poligon::ToneMapping::None;
     if (argc == 2 && std::strcmp(argv[1], "d3d12") == 0) {
         config.backend = poligon::GraphicsBackend::Direct3D12;
     } else if (argc == 2 && std::strcmp(argv[1], "vulkan") == 0) {

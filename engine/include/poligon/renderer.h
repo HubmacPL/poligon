@@ -30,26 +30,21 @@ struct Color {
     float a = 1.0f;
 };
 
-struct RendererConfig {
-    int width = 1280;
-    int height = 720;
-    // true: no window is created; frames are rendered to an off-screen image only.
-    bool headless = false;
-    GraphicsBackend backend = GraphicsBackend::Default;
-    // Turns on the graphics API's debug layer when it is installed. Slower; for verification runs.
-    bool enable_validation = false;
-    const char* window_title = "Poligon";
-    // Background color where no sky is drawn. Fixed for the lifetime of the renderer,
-    // because Direct3D 12 wants to know the clear color when the image is created.
-    Color clear_color{0.0f, 0.0f, 0.0f, 1.0f};
-    // Multisample anti-aliasing: each pixel is covered by this many samples, which smooths
-    // edges. 1 (off), 2, 4 or 8. Falls back to fewer if the card does not support the count.
-    int msaa_samples = 4;
+// A picture of one stage of the frame instead of the finished frame, for finding out which
+// stage is responsible for something that looks wrong.
+enum class DebugView {
+    None,              // the finished frame
+    AmbientOcclusion,  // white = open, dark = occluded
+    Fog,               // the light added by volumetric fog
+    Bloom,             // the blurred image that bloom mixes in
+};
+
+// What happens to the picture after the scene is drawn. Starts as RendererConfig::post and
+// can be changed at any time with Renderer::SetPostSettings.
+struct PostSettings {
     ToneMapping tone_mapping = ToneMapping::Aces;
     // Brightness multiplier applied before tone mapping.
     float exposure = 1.0f;
-    // Width and height in pixels of each of the four shadow images (cascades).
-    int shadow_map_size = 2048;
 
     // Bloom: bright areas spread a soft glow over their surroundings, as in a camera lens.
     // bloom_strength is the share of the blurred image in the final one.
@@ -65,6 +60,32 @@ struct RendererConfig {
     float auto_exposure_min = 0.05f;
     float auto_exposure_max = 8.0f;
     float auto_exposure_speed = 0.05f;
+
+    DebugView debug_view = DebugView::None;
+};
+
+struct RendererConfig {
+    int width = 1280;
+    int height = 720;
+    // true: no window is created; frames are rendered to an off-screen image only.
+    bool headless = false;
+    GraphicsBackend backend = GraphicsBackend::Default;
+    // Turns on the graphics API's debug layer when it is installed. Slower; for verification runs.
+    bool enable_validation = false;
+    const char* window_title = "Poligon";
+    // Background color where no sky is drawn. Fixed for the lifetime of the renderer,
+    // because Direct3D 12 wants to know the clear color when the image is created.
+    Color clear_color{0.0f, 0.0f, 0.0f, 1.0f};
+    // Multisample anti-aliasing: each pixel is covered by this many samples, which smooths
+    // edges. 1 (off), 2, 4 or 8. Falls back to fewer if the card does not support the count.
+    int msaa_samples = 4;
+    // Width and height in pixels of each of the four shadow images (cascades).
+    int shadow_map_size = 2048;
+    // Tone mapping, exposure and bloom; see PostSettings.
+    PostSettings post;
+    // Debug windows drawn over the picture with Dear ImGui (see poligon/debug_ui.h).
+    // Ignored in headless mode: without a window there is nobody to look at them.
+    bool debug_ui = false;
 };
 
 struct Camera {
@@ -131,6 +152,10 @@ struct Environment {
     // How far (meters) a surface can be to still darken another.
     float ambient_occlusion_radius = 0.6f;
     float ambient_occlusion_strength = 1.0f;
+
+    // Debug aid: tints surfaces by the shadow cascade that shades them (red, green, blue,
+    // yellow from near to far).
+    bool show_shadow_cascades = false;
 };
 
 struct MeshVertex {
@@ -247,6 +272,15 @@ public:
     void CaptureFrame(Image& image);
     // Writes the last finished frame as an 8-bit RGBA PNG. Returns false if the file cannot be written.
     bool SaveFrameToPng(const char* path);
+
+    // Tone mapping, exposure, bloom and the debug view can be changed between frames.
+    const PostSettings& GetPostSettings() const;
+    void SetPostSettings(const PostSettings& settings);
+
+    // True when debug windows can be drawn: RendererConfig::debug_ui was set and there is a
+    // window. Dear ImGui calls are only allowed between BeginFrame and EndFrame, and only
+    // when this is true.
+    bool IsDebugUiActive() const;
 
     // Counts for the last finished frame.
     FrameStats GetFrameStats() const;

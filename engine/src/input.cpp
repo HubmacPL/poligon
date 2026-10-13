@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include <SDL3/SDL.h>
+#include <imgui.h>
 
 #include "poligon/fatal_error.h"
 
@@ -52,6 +53,24 @@ void ReadLiveDeviceState(InputDeviceState& state) {
     state.mouse_buttons[static_cast<int>(MouseButton::Left)] = (buttons & SDL_BUTTON_LMASK) != 0;
     state.mouse_buttons[static_cast<int>(MouseButton::Right)] = (buttons & SDL_BUTTON_RMASK) != 0;
     state.mouse_buttons[static_cast<int>(MouseButton::Middle)] = (buttons & SDL_BUTTON_MMASK) != 0;
+
+    // While a debug window (poligon/debug_ui.h) is using the mouse or the keyboard, the
+    // game sees them as untouched: dragging a slider must not also turn the camera.
+    if (ImGui::GetCurrentContext() != nullptr) {
+        const ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            state.mouse_motion_x = 0.0f;
+            state.mouse_motion_y = 0.0f;
+            for (bool& button : state.mouse_buttons) {
+                button = false;
+            }
+        }
+        if (io.WantCaptureKeyboard) {
+            for (bool& key : state.keys) {
+                key = false;
+            }
+        }
+    }
 }
 
 bool IsValidActionName(const char* name) {

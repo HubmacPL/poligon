@@ -82,6 +82,10 @@ int main() {
                "--hash-log and --hash-interval are read");
     }
     {
+        const char* argv[] = {"program", "--render-settings", "look.txt"};
+        Expect(Parse(3, argv, options, error) && options.render_settings_path == "look.txt", "--render-settings is read");
+    }
+    {
         const char* argv[] = {"program", "--hash-interval", "0"};
         Expect(!Parse(3, argv, options, error), "--hash-interval 0 is an error");
     }

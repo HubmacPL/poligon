@@ -1,6 +1,8 @@
 #include "poligon/platform.h"
 
 #include <SDL3/SDL.h>
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
 
 namespace poligon {
 
@@ -9,9 +11,16 @@ bool ProcessPlatformEvents() {
         return true;
     }
 
+    // The debug windows (Dear ImGui) need to see every event; they exist only when a
+    // Renderer was created with RendererConfig::debug_ui and a window.
+    const bool debug_ui = ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().BackendPlatformUserData != nullptr;
+
     bool keep_running = true;
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (debug_ui) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+        }
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             keep_running = false;
         } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {

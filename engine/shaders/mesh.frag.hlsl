@@ -52,7 +52,7 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 sky_ground;
     float4 fog;                   // rgb: color, a: density per meter
     float4 options;               // x: shadows on, y: alpha to coverage on, z: sky reflections on, w: shadow texel size
-    float4 screen;                // x: screen-space ambient occlusion on
+    float4 screen;                // x: screen-space ambient occlusion on, y: tint by shadow cascade (debug)
 };
 
 cbuffer MaterialUniforms : register(b1, space3) {
@@ -240,6 +240,20 @@ float4 main(FragmentInput input) : SV_Target0 {
         float3 sky = SkyColor(reflected, sky_zenith.rgb, sky_horizon.rgb, sky_ground.rgb);
         float3 fresnel = specular_color + (max(1.0 - roughness, specular_color) - specular_color) * pow(1.0 - n_dot_v, 5.0);
         color += sky * fresnel * (1.0 - roughness) * occlusion;
+    }
+
+    // Debug aid: show which shadow cascade shades each pixel.
+    if (screen.y > 0.5) {
+        static const float3 kCascadeTints[5] = {float3(1.0, 0.35, 0.35), float3(0.35, 1.0, 0.35), float3(0.4, 0.4, 1.0),
+                                                float3(1.0, 1.0, 0.35), float3(1.0, 1.0, 1.0)};
+        float view_depth = dot(input.world_position - camera_position.xyz, camera_forward.xyz);
+        int cascade = 4;
+        for (int i = 3; i >= 0; --i) {
+            if (view_depth < cascade_far[i]) {
+                cascade = i;
+            }
+        }
+        color *= kCascadeTints[cascade];
     }
 
     // --- Fog: distant things fade into the fog color ---

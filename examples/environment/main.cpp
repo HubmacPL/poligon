@@ -18,8 +18,8 @@ int main(int argc, char** argv) {
     config.headless = true;
     // Light values in a sunny scene go well above 1. Automatic exposure scales them to a
     // pleasant brightness before tone mapping; bloom adds a glow around the brightest areas.
-    config.auto_exposure = true;
-    config.bloom = true;
+    config.post.auto_exposure = true;
+    config.post.bloom = true;
     poligon::Renderer renderer(config);
 
     const poligon::MeshHandle cube = renderer.CreateCubeMesh();
