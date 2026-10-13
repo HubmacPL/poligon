@@ -1,7 +1,9 @@
 #include "poligon/model.h"
 
+#include <cstring>
 #include <filesystem>
 
+#include <assimp/GltfMaterial.h>
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
@@ -71,6 +73,20 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
         source.Get(AI_MATKEY_COLOR_DIFFUSE, color);
     }
     material.base_color = {color.r, color.g, color.b, color.a};
+
+    aiString alpha_mode;
+    if (source.Get(AI_MATKEY_GLTF_ALPHAMODE, alpha_mode) == aiReturn_SUCCESS) {
+        if (std::strcmp(alpha_mode.C_Str(), "MASK") == 0) {
+            material.alpha_cutoff = 0.5f;
+            source.Get(AI_MATKEY_GLTF_ALPHACUTOFF, material.alpha_cutoff);
+        } else if (std::strcmp(alpha_mode.C_Str(), "BLEND") == 0) {
+            material.alpha_cutoff = 0.5f;
+        }
+    }
+    bool two_sided = false;
+    if (source.Get(AI_MATKEY_TWOSIDED, two_sided) == aiReturn_SUCCESS) {
+        material.double_sided = two_sided;
+    }
 
     LoadBaseColorTexture(scene, source, model_directory, material, warnings);
     return material;
@@ -218,6 +234,8 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
     for (const ModelMaterial& source : model.materials) {
         Material material;
         material.color = source.base_color;
+        material.alpha_cutoff = source.alpha_cutoff;
+        material.double_sided = source.double_sided;
         if (source.base_color_texture.width > 0) {
             material.texture = renderer.CreateTexture(source.base_color_texture);
         }

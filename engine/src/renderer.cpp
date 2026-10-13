@@ -94,6 +94,9 @@ struct Renderer::Impl {
     SDL_GPUTexture* depth_target = nullptr;
     SDL_GPUTextureFormat depth_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     SDL_GPUGraphicsPipeline* mesh_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* mesh_pipeline_double_sided = nullptr;
+    // The pipeline bound in the current frame, to avoid rebinding it for every mesh.
+    SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
     SDL_GPUSampler* texture_sampler = nullptr;
     std::vector<Mesh> meshes;
     std::vector<SDL_GPUTexture*> textures;
@@ -248,6 +251,13 @@ struct Renderer::Impl {
             FatalSdlError("cannot create mesh pipeline");
         }
 
+        // The same pipeline without back-face culling, for double-sided materials.
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        mesh_pipeline_double_sided = SDL_CreateGPUGraphicsPipeline(device, &info);
+        if (mesh_pipeline_double_sided == nullptr) {
+            FatalSdlError("cannot create double-sided mesh pipeline");
+        }
+
         // The pipeline keeps what it needs; the shader objects can go.
         SDL_ReleaseGPUShader(device, vertex_shader);
         SDL_ReleaseGPUShader(device, fragment_shader);
@@ -368,6 +378,7 @@ Renderer::~Renderer() {
         }
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline_double_sided);
         SDL_ReleaseGPUTexture(impl_->device, impl_->depth_target);
         SDL_ReleaseGPUTexture(impl_->device, impl_->color_target);
         if (impl_->window != nullptr) {
@@ -552,6 +563,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light) {
         FatalSdlError("cannot begin render pass");
     }
     SDL_BindGPUGraphicsPipeline(impl_->frame_pass, impl_->mesh_pipeline);
+    impl_->bound_pipeline = impl_->mesh_pipeline;
 
     const float aspect_ratio = static_cast<float>(impl_->config.width) / static_cast<float>(impl_->config.height);
     const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
@@ -591,9 +603,16 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
     object_uniforms.color[3] = material.color.a;
     object_uniforms.uv_scale[0] = material.uv_scale.x;
     object_uniforms.uv_scale[1] = material.uv_scale.y;
-    object_uniforms.uv_scale[2] = 0.0f;
+    object_uniforms.uv_scale[2] = material.alpha_cutoff;
     object_uniforms.uv_scale[3] = 0.0f;
     SDL_PushGPUVertexUniformData(impl_->frame_commands, 1, &object_uniforms, sizeof(object_uniforms));
+
+    SDL_GPUGraphicsPipeline* pipeline =
+        material.double_sided ? impl_->mesh_pipeline_double_sided : impl_->mesh_pipeline;
+    if (pipeline != impl_->bound_pipeline) {
+        SDL_BindGPUGraphicsPipeline(impl_->frame_pass, pipeline);
+        impl_->bound_pipeline = pipeline;
+    }
 
     SDL_GPUTextureSamplerBinding texture_binding{};
     texture_binding.texture = impl_->textures[texture.id - 1];

@@ -140,6 +140,55 @@ int main(int argc, char** argv) {
     }
 
     {
+        // Alpha cutout: the left half of this image is transparent red, the right half solid green.
+        // With a cutoff the transparent half is not drawn, so the background shows through.
+        poligon::Image cutout_image = poligon::MakeSolidImage(2, 2, 0, 255, 0);
+        for (int row = 0; row < 2; ++row) {
+            const std::uint8_t transparent_red[4] = {255, 0, 0, 0};
+            std::memcpy(&cutout_image.pixels[static_cast<size_t>(row) * 8], transparent_red, 4);
+        }
+        const poligon::TextureHandle cutout_texture = renderer.CreateTexture(cutout_image, no_mipmaps);
+
+        poligon::Material material;
+        material.texture = cutout_texture;
+        material.alpha_cutoff = 0.5f;
+        renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
+        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        Expect(PixelIs(frame, ToPixel(-1), ToPixel(0), 51, 51, 51, 1), "pixels below the alpha cutoff are not drawn");
+        Expect(PixelIs(frame, ToPixel(1), ToPixel(0), 0, 255, 0, 1), "pixels above the cutoff are drawn normally");
+
+        material.alpha_cutoff = 0.0f;
+        renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
+        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        Expect(PixelIs(frame, ToPixel(-1), ToPixel(0), 255, 0, 0, 1), "without a cutoff alpha is ignored");
+    }
+
+    {
+        // Double-sided: seen from below, the plane (which faces up) is invisible unless the
+        // material is double-sided.
+        poligon::Camera below = MakeTopDownCamera(5.0f);
+        below.position = {0.0f, -5.0f, 0.0f};
+        for (int pass = 0; pass < 2; ++pass) {
+            poligon::Material material;
+            material.color = {0.0f, 0.0f, 1.0f, 1.0f};
+            material.double_sided = pass == 1;
+            renderer.BeginFrame(below, flat_light);
+            renderer.DrawMesh(plane, four_by_four, material);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            if (pass == 0) {
+                Expect(PixelIs(frame, ToPixel(0), ToPixel(0), 51, 51, 51, 1), "a back face is not drawn by default");
+            } else {
+                Expect(PixelIs(frame, ToPixel(0), ToPixel(0), 0, 0, 255, 1), "a double-sided material shows its back face");
+            }
+        }
+    }
+
+    {
         // Mipmaps: a fine black and white checker seen from far away must blend to gray.
         // Without mipmaps each pixel picks one square and is black or white.
         const std::uint8_t black[4] = {0, 0, 0, 255};

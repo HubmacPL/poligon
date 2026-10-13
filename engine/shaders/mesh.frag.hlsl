@@ -20,12 +20,22 @@ struct FragmentInput {
     float3 world_normal : TEXCOORD0;
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;
+    float alpha_cutoff : TEXCOORD3;
+    bool is_front_face : SV_IsFrontFace;
 };
 
 float4 main(FragmentInput input) : SV_Target0 {
     // Color textures are stored sRGB-encoded; the texture format makes this sample linear.
-    float3 base_color = base_texture.Sample(base_sampler, input.uv).rgb * input.color.rgb;
-    float3 normal = normalize(input.world_normal);
+    float4 texel = base_texture.Sample(base_sampler, input.uv);
+
+    // Alpha cutout: pixels below the cutoff are not drawn at all (leaves, fences).
+    if (texel.a * input.color.a < input.alpha_cutoff) {
+        discard;
+    }
+
+    float3 base_color = texel.rgb * input.color.rgb;
+    // The back side of a double-sided surface is lit as if its normal pointed the other way.
+    float3 normal = normalize(input.world_normal) * (input.is_front_face ? 1.0 : -1.0);
     float diffuse = saturate(dot(normal, -light_direction.xyz));
     float3 linear_color = base_color * (ambient_color.rgb + light_color.rgb * diffuse);
     // The render target has an sRGB format: the GPU encodes this linear value when storing it.

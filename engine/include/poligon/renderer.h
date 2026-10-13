@@ -86,6 +86,12 @@ struct Material {
     TextureHandle texture;
     // Multiplies the mesh's texture coordinates; (4, 4) repeats the texture four times in each direction.
     glm::vec2 uv_scale{1.0f, 1.0f};
+    // Pixels whose alpha (texture alpha times color alpha) is below this value are not drawn.
+    // 0 turns it off. This is how leaves are drawn: a flat square with a picture of a twig,
+    // of which only the twig is visible. A typical value is 0.5.
+    float alpha_cutoff = 0.0f;
+    // Draw both sides of every triangle. Needed for thin things seen from both sides, such as leaves.
+    bool double_sided = false;
 };
 
 // Draws lit meshes, plain or textured. Every frame is rendered to an off-screen image first;

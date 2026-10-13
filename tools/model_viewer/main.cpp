@@ -8,6 +8,7 @@
 // Keys:  A/D or Left/Right turn, W/S or Up/Down zoom, Q/E raise and lower the view, Escape quits.
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include "poligon/command_line.h"
@@ -70,6 +71,12 @@ public:
         radius_ = std::max(glm::length(model.bounds_max - model.bounds_min) * 0.5f, 0.001f);
         floor_height_ = model.bounds_min.y;
         distance_ = radius_ * 2.6f;
+    }
+
+    void SetView(float yaw_degrees, float pitch_degrees, float distance_factor) {
+        yaw_degrees_ = yaw_degrees;
+        pitch_degrees_ = pitch_degrees;
+        distance_ = radius_ * 2.6f * distance_factor;
     }
 
     void BeginFrame(poligon::GameLoop& loop) override {
@@ -162,14 +169,26 @@ int main(int argc, char** argv) {
 
     poligon::CommandLineOptions options;
     std::string error;
-    if (poligon::ParseCommandLine(argc, argv, options, error) && options.positional.size() != 1) {
-        error = "expected exactly one model file";
+    // Optional starting view: turn and tilt in degrees, and distance as a multiple of the default.
+    float view[3] = {35.0f, 20.0f, 1.0f};
+    if (poligon::ParseCommandLine(argc, argv, options, error)) {
+        if (options.positional.empty() || options.positional.size() > 4) {
+            error = "expected a model file, optionally followed by TURN TILT DISTANCE";
+        }
+        for (size_t i = 1; i < options.positional.size() && error.empty(); ++i) {
+            char* end = nullptr;
+            view[i - 1] = std::strtof(options.positional[i].c_str(), &end);
+            if (end == options.positional[i].c_str() || *end != '\0') {
+                error = "\"" + options.positional[i] + "\" is not a number";
+            }
+        }
     }
     if (!error.empty()) {
         std::fprintf(stderr,
                      "model_viewer: %s\n"
-                     "usage: model_viewer MODEL_FILE [--headless --ticks N] [--backend d3d12|vulkan]\n"
-                     "                    [--gpu-validation] [--dump-frame PATH.png]\n",
+                     "usage: model_viewer MODEL_FILE [TURN TILT DISTANCE] [--headless --ticks N]\n"
+                     "                    [--backend d3d12|vulkan] [--gpu-validation] [--dump-frame PATH.png]\n"
+                     "TURN and TILT are in degrees; DISTANCE 0.5 starts twice as close as the default.\n",
                      error.c_str());
         return 2;
     }
@@ -206,6 +225,7 @@ int main(int argc, char** argv) {
     loop_config.input = &input;
 
     ViewerGame game(renderer, model, input, actions);
+    game.SetView(view[0], view[1], view[2]);
     poligon::GameLoop loop(loop_config);
     const poligon::GameLoopResult result = loop.Run(game);
 

@@ -1,0 +1,37 @@
+{
+  "seed": 4217,
+  "type": "deciduous",
+  "bark": {
+    "type": "pine",
+    "tint": 14472100,
+    "flatShading": false,
+    "textured": true,
+    "textureScale": { "x": 1, "y": 4 }
+  },
+  "branch": {
+    "levels": 3,
+    "angle": { "1": 78, "2": 58, "3": 50 },
+    "children": { "0": 18, "1": 6, "2": 5 },
+    "force": { "direction": { "x": 0, "y": 1, "z": 0 }, "strength": 0.018 },
+    "gnarliness": { "0": 0.04, "1": 0.3, "2": 0.3, "3": 0.15 },
+    "length": { "0": 62, "1": 17, "2": 7.5, "3": 3 },
+    "radius": { "0": 1.7, "1": 0.36, "2": 0.5, "3": 0.5 },
+    "sections": { "0": 14, "1": 8, "2": 6, "3": 4 },
+    "segments": { "0": 10, "1": 6, "2": 4, "3": 3 },
+    "start": { "1": 0.52, "2": 0.3, "3": 0.2 },
+    "taper": { "0": 0.5, "1": 0.7, "2": 0.7, "3": 0.7 },
+    "twist": { "0": 0, "1": 0.15, "2": 0.15, "3": 0 }
+  },
+  "leaves": {
+    "type": "pine",
+    "billboard": "double",
+    "angle": 40,
+    "count": 7,
+    "start": 0.2,
+    "size": 2.1,
+    "sizeVariance": 0.5,
+    "tint": 8425572,
+    "alphaTest": 0.4
+  },
+  "trellis": { "enabled": false }
+}

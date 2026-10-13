@@ -32,6 +32,7 @@ Examples: `examples/renderer`, `examples/texture`. Shaders: `engine/shaders/*.hl
 - `Renderer::CreateTexture(image, options)` copies an image to the graphics card. Default: a color image (sRGB) with mipmaps. `is_color = false` for images that hold data other than color.
 - **Mipmaps** are smaller copies of a texture used when it is drawn small or far away; without them distant textures shimmer.
 - `Material` has a color, a texture and `uv_scale`. The color multiplies the texture; a material without a texture has the plain color; `uv_scale` repeats the texture.
+- `alpha_cutoff` above 0 makes pixels with lower alpha invisible (**alpha cutout**): the way leaves are drawn, as flat squares with a picture of a twig. `double_sided` draws both sides of every triangle and lights the back as if its normal were flipped. Models get both from the file (glTF alpha mode and `doubleSided`).
 - There is one sampler for all textures: linear filtering with mipmaps, anisotropy 8, repeat outside the 0..1 range.
 - `tests/texture_render_test.cpp` renders headless and checks single pixels (orientation, colors, repetition, mipmaps) on both backends. It is the pattern for rendering tests without reference images.
 
@@ -46,6 +47,8 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - `UploadModel(renderer, model)` copies meshes and textures to the card; `DrawModel(renderer, render_model, transform)` draws them.
 - `model_viewer FILE` shows a model on a checkered floor with a circling camera (left mouse drag, A/D, W/S, Q/E). `model_viewer FILE --headless --dump-frame out.png` writes one picture and prints triangle counts, size and warnings; this is how the agent looks at a model.
 - Too heavy a model (film-quality trees have millions of triangles): `tools/assets/simplify_model.py` runs in Blender without its window and writes a glTF with a given part of the triangles kept: `blender -b --factory-startup -P tools/assets/simplify_model.py -- INPUT OUTPUT.gltf 0.1`. Blender is an external tool; nothing from it is linked.
+- Generated trees: `tools/assets/make_tree.mjs` runs the EZ-Tree library (MIT) under Node.js and writes a glTF with bark and twig textures: `node tools/assets/make_tree.mjs NODE_MODULES OUTPUT_DIR NAME PRESET HEIGHT`. PRESET is a built-in name ("Pine Large", "Oak Medium", "Bush 1"...) or a `.json` file; ours are in `tools/assets/tree_presets/`. EZ-Tree and three.js are installed outside the repository (`poligon-assets/tools/eztree`).
+- `model_viewer FILE TURN TILT DISTANCE` sets the starting view, for close-up pictures.
 - Downloaded and simplified assets live in `poligon-assets/` next to the project (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), never in the repository.
 - Not loaded yet: skeletons, animations, normal maps and the other glTF material textures, cameras and lights from the file. Mirrored transforms (negative scale) would flip triangle winding.
 

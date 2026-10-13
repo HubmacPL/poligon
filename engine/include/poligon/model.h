@@ -21,6 +21,10 @@ namespace poligon {
 struct ModelMaterial {
     std::string name;
     Color base_color;  // linear
+    // See Material in renderer.h. Set from the file's alpha mode: "mask" gives the file's
+    // cutoff, "blend" (true transparency, not supported yet) is drawn as a cutout at 0.5.
+    float alpha_cutoff = 0.0f;
+    bool double_sided = false;
     // The base color texture, already decoded. Empty (width 0) when the material has none
     // or when the image could not be loaded (the reason is then in Model::warnings).
     Image base_color_texture;

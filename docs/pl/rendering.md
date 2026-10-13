@@ -34,6 +34,7 @@ Dodatkowo `poligon/image.h` (obrazy w pamięci, PNG i JPEG) i przykład `example
 - `Renderer::CreateTexture(image, options)` kopiuje obraz na kartę. Domyślnie: obraz kolorów (sRGB) z mipmapami. `is_color = false` dla obrazów z danymi innymi niż kolor.
 - **Mipmapy** to pomniejszone kopie tekstury używane, gdy jest rysowana mała lub daleko; bez nich odległe tekstury migoczą.
 - `Material` ma kolor, teksturę i `uv_scale`. Kolor mnoży teksturę; materiał bez tekstury ma sam kolor; `uv_scale` powtarza teksturę.
+- `alpha_cutoff` powyżej 0 sprawia, że piksele o niższej alfie są niewidoczne (**wycinanie alfą**): tak rysuje się liście, jako płaskie kwadraty ze zdjęciem gałązki. `double_sided` rysuje obie strony każdego trójkąta i oświetla tył tak, jakby normalna była odwrócona. Modele dostają jedno i drugie z pliku (tryb alfa glTF i `doubleSided`).
 - Próbkowanie jest jedno dla wszystkich tekstur: filtrowanie liniowe z mipmapami, anizotropia 8, powtarzanie poza zakresem 0..1.
 - Test `tests/texture_render_test.cpp` renderuje bez okna i sprawdza pojedyncze piksele (orientację, kolory, powtarzanie, mipmapy) na obu backendach. To wzór na testy renderowania bez obrazów wzorcowych.
 
@@ -48,6 +49,8 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - `UploadModel(renderer, model)` kopiuje siatki i tekstury na kartę; `DrawModel(renderer, render_model, transform)` je rysuje.
 - `model_viewer PLIK` pokazuje model na podłodze w szachownicę z kamerą krążącą wokół (przeciąganie lewym przyciskiem myszy, A/D, W/S, Q/E). `model_viewer PLIK --headless --dump-frame out.png` zapisuje jeden obraz i wypisuje liczbę trójkątów, rozmiar i ostrzeżenia; tak agent ogląda model.
 - Za ciężki model (drzewa filmowej jakości mają miliony trójkątów): `tools/assets/simplify_model.py` działa w Blenderze bez okna i zapisuje glTF z zachowaną zadaną częścią trójkątów: `blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚCIE.gltf 0.1`. Blender to narzędzie zewnętrzne; nic z niego nie jest linkowane.
+- Drzewa generowane: `tools/assets/make_tree.mjs` uruchamia bibliotekę EZ-Tree (MIT) w Node.js i zapisuje glTF z teksturami kory i gałązek: `node tools/assets/make_tree.mjs NODE_MODULES KATALOG NAZWA PRESET WYSOKOŚĆ`. PRESET to wbudowana nazwa („Pine Large", „Oak Medium", „Bush 1"...) albo plik `.json`; nasze są w `tools/assets/tree_presets/`. EZ-Tree i three.js są zainstalowane poza repozytorium (`poligon-assets/tools/eztree`).
+- `model_viewer PLIK OBRÓT POCHYLENIE ODLEGŁOŚĆ` ustawia widok początkowy, do obrazków z bliska.
 - Pobrane i odchudzone zasoby leżą w `poligon-assets/` obok projektu (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), nigdy w repozytorium.
 - Jeszcze nie wczytujemy: szkieletów, animacji, map normalnych i pozostałych tekstur materiału glTF, kamer i świateł z pliku. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
 
