@@ -35,6 +35,18 @@ Examples: `examples/renderer`, `examples/texture`. Shaders: `engine/shaders/*.hl
 - There is one sampler for all textures: linear filtering with mipmaps, anisotropy 8, repeat outside the 0..1 range.
 - `tests/texture_render_test.cpp` renders headless and checks single pixels (orientation, colors, repetition, mipmaps) on both backends. It is the pattern for rendering tests without reference images.
 
+## Models
+
+Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
+
+- `LoadModelFromFile(path, model, error)` reads a model through the Assimp library: glTF/GLB, FBX, OBJ, DAE and about forty other formats. It needs no graphics card.
+- The loaded `Model` follows our conventions whatever the file used: right-handed, +Y up, counter-clockwise front faces, UV (0, 0) at the top-left.
+- A model file is a tree of nodes with transforms. Loading flattens it into **instances**: "draw this mesh with this transform". `Model::bounds_min/max` is the box around everything.
+- Each material has a base color and, if present, a decoded base color texture (from a file next to the model or embedded in it). A texture that cannot be loaded gives an entry in `Model::warnings`, not an error.
+- `UploadModel(renderer, model)` copies meshes and textures to the card; `DrawModel(renderer, render_model, transform)` draws them.
+- `model_viewer FILE` shows a model on a checkered floor with a circling camera (left mouse drag, A/D, W/S, Q/E). `model_viewer FILE --headless --dump-frame out.png` writes one picture and prints triangle counts, size and warnings; this is how the agent looks at a model.
+- Not loaded yet: skeletons, animations, normal maps and the other glTF material textures, cameras and lights from the file. Mirrored transforms (negative scale) would flip triangle winding.
+
 ## Backend
 
 - Default: **Direct3D 12**. Vulkan is built and tested as the second one (`--backend vulkan`).

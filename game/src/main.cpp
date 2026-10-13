@@ -138,7 +138,10 @@ int main(int argc, char** argv) {
 
     poligon::CommandLineOptions options;
     std::string error;
-    if (!poligon::ParseCommandLine(argc, argv, options, error)) {
+    if (poligon::ParseCommandLine(argc, argv, options, error) && !options.positional.empty()) {
+        error = "unexpected argument \"" + options.positional[0] + "\"";
+    }
+    if (!error.empty()) {
         std::fprintf(stderr,
                      "toy: %s\n"
                      "usage: toy [--headless] [--ticks N] [--backend d3d12|vulkan] [--gpu-validation]\n"

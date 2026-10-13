@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "poligon/renderer.h"
 
@@ -29,6 +30,9 @@ struct CommandLineOptions {
     std::string replay_path;      // empty = not given
     std::string hash_log_path;    // empty = not given
     std::int64_t hash_interval = 60;
+    // Arguments that are not options (do not start with "--"), in order. What they mean is up
+    // to the program, for example a file to open. A program that takes none should reject them.
+    std::vector<std::string> positional;
 };
 
 // Parses argv (argv[0] is skipped). Returns false and fills `error` on an unknown option,

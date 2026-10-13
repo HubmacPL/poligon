@@ -37,6 +37,18 @@ Dodatkowo `poligon/image.h` (obrazy w pamięci, PNG i JPEG) i przykład `example
 - Próbkowanie jest jedno dla wszystkich tekstur: filtrowanie liniowe z mipmapami, anizotropia 8, powtarzanie poza zakresem 0..1.
 - Test `tests/texture_render_test.cpp` renderuje bez okna i sprawdza pojedyncze piksele (orientację, kolory, powtarzanie, mipmapy) na obu backendach. To wzór na testy renderowania bez obrazów wzorcowych.
 
+## Modele
+
+Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_viewer`.
+
+- `LoadModelFromFile(path, model, error)` czyta model przez bibliotekę Assimp: glTF/GLB, FBX, OBJ, DAE i około czterdziestu innych formatów. Nie wymaga karty graficznej.
+- Wczytany `Model` trzyma się naszych konwencji niezależnie od pliku: układ prawoskrętny, +Y w górę, przednie ściany przeciwnie do ruchu wskazówek zegara, UV (0, 0) w lewym górnym rogu.
+- Plik modelu to drzewo węzłów z przekształceniami. Wczytanie spłaszcza je do **instancji**: „narysuj tę siatkę z tym przekształceniem". `Model::bounds_min/max` to pudełko wokół całości.
+- Każdy materiał ma kolor bazowy i, jeśli jest, zdekodowaną teksturę koloru (z pliku obok modelu albo osadzoną w nim). Tekstura, której nie da się wczytać, daje wpis w `Model::warnings`, a nie błąd.
+- `UploadModel(renderer, model)` kopiuje siatki i tekstury na kartę; `DrawModel(renderer, render_model, transform)` je rysuje.
+- `model_viewer PLIK` pokazuje model na podłodze w szachownicę z kamerą krążącą wokół (przeciąganie lewym przyciskiem myszy, A/D, W/S, Q/E). `model_viewer PLIK --headless --dump-frame out.png` zapisuje jeden obraz i wypisuje liczbę trójkątów, rozmiar i ostrzeżenia; tak agent ogląda model.
+- Jeszcze nie wczytujemy: szkieletów, animacji, map normalnych i pozostałych tekstur materiału glTF, kamer i świateł z pliku. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
+
 ## Backend
 
 - Domyślny: **Direct3D 12**. Vulkan jest budowany i testowany jako drugi (`--backend vulkan`).

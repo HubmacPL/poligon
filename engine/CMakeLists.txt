@@ -5,6 +5,7 @@ find_package(directx-dxc CONFIG REQUIRED)
 
 find_package(flecs CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 
 add_library(poligon_engine STATIC
   src/command_line.cpp
@@ -16,6 +17,7 @@ add_library(poligon_engine STATIC
   src/game_loop.cpp
   src/image.cpp
   src/input.cpp
+  src/model.cpp
   src/stb_image_impl.cpp
   src/platform.cpp
   src/renderer.cpp
@@ -26,6 +28,8 @@ target_include_directories(poligon_engine PUBLIC include)
 target_include_directories(poligon_engine SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 # dbghelp is a Windows system library: turns addresses into function names for crash reports.
 target_link_libraries(poligon_engine PRIVATE poligon_build_options SDL3::SDL3 dbghelp)
+# Assimp reads 3D model files in many formats (poligon/model.h). Its types stay inside model.cpp.
+target_link_libraries(poligon_engine PRIVATE assimp::assimp)
 # flecs is PUBLIC: game code uses the flecs API directly through poligon/ecs.h.
 target_link_libraries(poligon_engine PUBLIC $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
 # GLM is PUBLIC for the same reason (poligon/math.h). Its configuration must be identical in

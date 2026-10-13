@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -31,6 +32,9 @@ Image MakeHalfSizeImage(const Image& image, bool is_color);
 // Reads a PNG or JPEG file. Images without alpha get alpha 255; grayscale becomes gray RGB.
 // Returns false and fills `error` if the file is missing or not a readable image.
 bool LoadImageFromFile(const char* path, Image& image, std::string& error);
+
+// Same, for a PNG or JPEG file that is already in memory (for example a texture stored inside a model file).
+bool LoadImageFromMemory(const void* data, size_t size, Image& image, std::string& error);
 
 // Writes an image as PNG. Returns false if the image is empty or the file cannot be written.
 bool SaveImageToPng(const char* path, const Image& image);

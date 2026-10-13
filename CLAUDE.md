@@ -18,7 +18,8 @@ This file is the table of contents and the rule book. Details live in topic file
 ## Project state
 
 - Milestone 1 (verification layer) is complete: headless runs with a fixed time step, input recording and replay, JSON state dump, PNG frame dump, determinism test, crash reports.
-- Milestone 2 (models and textures) is in progress: GLM replaces the hand-written math (done), textures and materials (done), model import (next), toy with a loaded model.
+- Milestone 2 (models and textures) is done except for real models: GLM, textures and materials, model import through Assimp and the `model_viewer` tool exist; only self-made test models have been loaded so far.
+- Pending the author's decision: whether to try Diligent Engine (ready-made PBR, shadows, post-processing) as the renderer base instead of writing those on SDL3 GPU.
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap
@@ -69,6 +70,8 @@ The order after milestone 2 is the agent's call. Audio, networking, scripting, h
 - Shader compiler DXC (NCSA license, not on the list) is allowed only as a build-time tool. Shipping `dxcompiler.dll` with a game would be a new dependency and a separate decision.
 - Math: GLM (under MIT), used directly, always through `poligon/math.h`.
 - Images: `stb_image` and `stb_image_write` from the stb package.
+- Model import: Assimp (BSD-3), linked into the engine, behind `poligon/model.h`. Any format Assimp reads is accepted. cgltf was approved earlier and then dropped in favor of Assimp.
+- Models for the goal scene: the agent searches (Poly Haven is CC0), presents candidates with pictures from `model_viewer`, the author chooses. Every download is shown first (file, source, size). Downloaded files live in a folder outside the repository.
 - ECS: flecs (MIT). Typed C++ API only; query strings and flecs script are forbidden. Every component registers its members. All systems are created at startup, before any entity is deleted, each with an explicit phase (flecs orders systems by id, and a recycled id breaks the order). Single-threaded. The flecs REST server only in development builds. EnTT was rejected.
 - State dump is our own (`poligon/state_dump.h`), because flecs' `world.to_json()` truncates floating-point numbers.
 - Determinism: identical state JSON from two replays is a hard requirement. PNG frames are compared with a tolerance.
@@ -80,7 +83,6 @@ Physics: Jolt (MIT, in vcpkg). Skeletal animation: ozz-animation (MIT, not in vc
 
 ## Open
 
-- Model import library and supported formats (see project state).
 - Terrain, vegetation, world streaming, water: the largest work of our own.
 - Terrain and level editor; source of the height map.
 - Texture compression: needed by the terrain milestone.

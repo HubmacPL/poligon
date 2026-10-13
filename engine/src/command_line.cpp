@@ -82,6 +82,8 @@ bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& opt
             } else {
                 options.replay_path = value;
             }
+        } else if (argument.rfind("--", 0) != 0) {
+            options.positional.push_back(argument);
         } else {
             error = "unknown option \"" + argument + "\"";
             return false;

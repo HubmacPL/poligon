@@ -1,0 +1,2 @@
+add_executable(model_viewer main.cpp)
+target_link_libraries(model_viewer PRIVATE poligon_engine poligon_build_options)

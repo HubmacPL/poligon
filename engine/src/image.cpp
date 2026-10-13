@@ -120,6 +120,26 @@ bool LoadImageFromFile(const char* path, Image& image, std::string& error) {
     return true;
 }
 
+bool LoadImageFromMemory(const void* data, size_t size, Image& image, std::string& error) {
+    int width = 0;
+    int height = 0;
+    int channels_in_file = 0;
+    stbi_uc* decoded = size > 0 && size <= 0x7fffffff
+                           ? stbi_load_from_memory(static_cast<const stbi_uc*>(data), static_cast<int>(size), &width,
+                                                   &height, &channels_in_file, 4)
+                           : nullptr;
+    if (decoded == nullptr) {
+        error = std::string("cannot decode image from memory: ") + (size > 0 ? stbi_failure_reason() : "no data");
+        return false;
+    }
+    image.width = width;
+    image.height = height;
+    image.pixels.assign(decoded, decoded + static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+    stbi_image_free(decoded);
+    error.clear();
+    return true;
+}
+
 bool SaveImageToPng(const char* path, const Image& image) {
     if (image.width < 1 || image.height < 1 ||
         image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4) {

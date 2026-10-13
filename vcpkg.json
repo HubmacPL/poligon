@@ -12,6 +12,7 @@
     "stb",
     "flecs",
     "glm",
+    "assimp",
     {
       "name": "directx-dxc",
       "host": true
