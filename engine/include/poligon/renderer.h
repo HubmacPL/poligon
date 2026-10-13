@@ -159,7 +159,7 @@ struct Material {
 // Frame order: BeginFrame, any number of DrawMesh, EndFrame. Drawing is recorded by DrawMesh
 // and carried out in EndFrame. CaptureFrame and SaveFrameToPng may be called after EndFrame
 // and return the frame that was just finished.
-// Meshes and textures live until the Renderer is destroyed.
+// Meshes and textures live until they are destroyed or the Renderer is.
 // Unrecoverable problems (no usable graphics device, calls in the wrong order) end the
 // process through FatalError.
 class Renderer {
@@ -181,6 +181,12 @@ public:
     // Copies the image to the graphics card. Textures repeat outside the 0..1 coordinate range.
     TextureHandle CreateTexture(const Image& image, const TextureOptions& options = TextureOptions{});
 
+    // Free a mesh or texture before the renderer is destroyed, to release graphics memory.
+    // The handle must not be used afterwards; its number is not given out again.
+    // Call outside BeginFrame/EndFrame.
+    void DestroyMesh(MeshHandle mesh);
+    void DestroyTexture(TextureHandle texture);
+
     void BeginFrame(const Camera& camera, const DirectionalLight& light,
                     const Environment& environment = Environment{});
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material);
@@ -199,6 +205,8 @@ public:
     int GetHeight() const;
     // The multisample count actually in use (see RendererConfig::msaa_samples).
     int GetMsaaSamples() const;
+    // Changes the text in the window's title bar. Does nothing in headless mode.
+    void SetWindowTitle(const char* title);
 
 private:
     struct Impl;

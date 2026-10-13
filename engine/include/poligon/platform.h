@@ -7,4 +7,10 @@ namespace poligon {
 // Call once per frame. Safe to call in headless mode, where it always returns true.
 bool ProcessPlatformEvents();
 
+// Shows a message in a small window with an OK button and waits until it is closed.
+// Only for programs a person starts by hand (a viewer started with a double click): a
+// program that may run headless or in a test must never call this, because nobody would
+// be there to click.
+void ShowMessageBox(const char* title, const char* message);
+
 } // namespace poligon

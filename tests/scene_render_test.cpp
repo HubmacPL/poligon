@@ -128,6 +128,24 @@ int main(int argc, char** argv) {
             }
         }
 
+        // --- Destroying meshes and textures ---
+        // Destroyed resources are simply gone; everything else keeps drawing as before.
+        {
+            const poligon::MeshHandle extra_mesh = renderer.CreateCubeMesh();
+            const poligon::TextureHandle extra_texture = renderer.CreateTexture(poligon::MakeSolidImage(4, 4, 255, 0, 0));
+            renderer.DestroyMesh(extra_mesh);
+            renderer.DestroyTexture(extra_texture);
+
+            poligon::DirectionalLight flat;
+            flat.color = {0.0f, 0.0f, 0.0f, 1.0f};
+            flat.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
+            renderer.BeginFrame(MakeTopDownCamera(5.0f), flat);
+            renderer.DrawMesh(plane, glm::scale(identity, {4.0f, 1.0f, 4.0f}), MakeMatte({0.0f, 1.0f, 0.0f, 1.0f}));
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            Expect(PixelIs(frame, kSize / 2, kSize / 2, 0, 255, 0, 1), "drawing works after other resources were destroyed");
+        }
+
         // --- Sky ---
         // No objects, a camera looking level. The middle row of the picture looks exactly at
         // the horizon, the top row 30 degrees up, the bottom row 30 degrees down.

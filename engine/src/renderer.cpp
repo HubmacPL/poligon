@@ -690,11 +690,15 @@ Renderer::~Renderer() {
     if (impl_->device != nullptr) {
         SDL_WaitForGPUIdle(impl_->device);
         for (const Mesh& mesh : impl_->meshes) {
-            SDL_ReleaseGPUBuffer(impl_->device, mesh.vertex_buffer);
-            SDL_ReleaseGPUBuffer(impl_->device, mesh.index_buffer);
+            if (mesh.vertex_buffer != nullptr) {
+                SDL_ReleaseGPUBuffer(impl_->device, mesh.vertex_buffer);
+                SDL_ReleaseGPUBuffer(impl_->device, mesh.index_buffer);
+            }
         }
         for (SDL_GPUTexture* texture : impl_->textures) {
-            SDL_ReleaseGPUTexture(impl_->device, texture);
+            if (texture != nullptr) {
+                SDL_ReleaseGPUTexture(impl_->device, texture);
+            }
         }
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
@@ -864,6 +868,30 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
     return handle;
 }
 
+void Renderer::DestroyMesh(MeshHandle mesh) {
+    if (impl_->in_frame) {
+        FatalError("Renderer::DestroyMesh: do not destroy meshes between BeginFrame and EndFrame");
+    }
+    if (mesh.id == 0 || mesh.id > impl_->meshes.size() || impl_->meshes[mesh.id - 1].vertex_buffer == nullptr) {
+        FatalError("Renderer::DestroyMesh: invalid or already destroyed mesh handle");
+    }
+    Mesh& entry = impl_->meshes[mesh.id - 1];
+    SDL_ReleaseGPUBuffer(impl_->device, entry.vertex_buffer);
+    SDL_ReleaseGPUBuffer(impl_->device, entry.index_buffer);
+    entry = Mesh{};
+}
+
+void Renderer::DestroyTexture(TextureHandle texture) {
+    if (impl_->in_frame) {
+        FatalError("Renderer::DestroyTexture: do not destroy textures between BeginFrame and EndFrame");
+    }
+    if (texture.id == 0 || texture.id > impl_->textures.size() || impl_->textures[texture.id - 1] == nullptr) {
+        FatalError("Renderer::DestroyTexture: invalid or already destroyed texture handle");
+    }
+    SDL_ReleaseGPUTexture(impl_->device, impl_->textures[texture.id - 1]);
+    impl_->textures[texture.id - 1] = nullptr;
+}
+
 void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, const Environment& environment) {
     if (impl_->in_frame) {
         FatalError("Renderer::BeginFrame: the previous frame was not finished with EndFrame");
@@ -879,13 +907,14 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawMesh: call BeginFrame first");
     }
-    if (mesh_handle.id == 0 || mesh_handle.id > impl_->meshes.size()) {
-        FatalError("Renderer::DrawMesh: invalid mesh handle");
+    if (mesh_handle.id == 0 || mesh_handle.id > impl_->meshes.size() ||
+        impl_->meshes[mesh_handle.id - 1].vertex_buffer == nullptr) {
+        FatalError("Renderer::DrawMesh: invalid or destroyed mesh handle");
     }
-    const size_t texture_count = impl_->textures.size();
-    if (material.texture.id > texture_count || material.normal_texture.id > texture_count ||
-        material.orm_texture.id > texture_count) {
-        FatalError("Renderer::DrawMesh: invalid texture handle");
+    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+        if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
+            FatalError("Renderer::DrawMesh: invalid or destroyed texture handle");
+        }
     }
     impl_->draw_commands.push_back(DrawCommand{mesh_handle.id, transform, material});
 }
@@ -1201,6 +1230,12 @@ int Renderer::GetHeight() const {
 
 int Renderer::GetMsaaSamples() const {
     return impl_->msaa_samples;
+}
+
+void Renderer::SetWindowTitle(const char* title) {
+    if (impl_->window != nullptr) {
+        SDL_SetWindowTitle(impl_->window, title);
+    }
 }
 
 } // namespace poligon

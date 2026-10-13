@@ -290,6 +290,20 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
     return result;
 }
 
+void DestroyRenderModel(Renderer& renderer, RenderModel& model) {
+    for (const MeshHandle mesh : model.meshes) {
+        renderer.DestroyMesh(mesh);
+    }
+    for (const Material& material : model.materials) {
+        for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+            if (texture.id != 0) {
+                renderer.DestroyTexture(texture);
+            }
+        }
+    }
+    model = RenderModel{};
+}
+
 void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform) {
     for (const ModelInstance& instance : model.instances) {
         const size_t mesh_index = static_cast<size_t>(instance.mesh_index);

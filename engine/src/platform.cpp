@@ -21,4 +21,8 @@ bool ProcessPlatformEvents() {
     return keep_running;
 }
 
+void ShowMessageBox(const char* title, const char* message) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, title, message, nullptr);
+}
+
 } // namespace poligon

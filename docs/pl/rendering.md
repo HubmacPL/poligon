@@ -64,7 +64,7 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Plik modelu to drzewo węzłów z przekształceniami. Wczytanie spłaszcza je do **instancji**: „narysuj tę siatkę z tym przekształceniem". `Model::bounds_min/max` to pudełko wokół całości.
 - Każdy materiał ma kolor bazowy i, jeśli jest, zdekodowaną teksturę koloru (z pliku obok modelu albo osadzoną w nim). Tekstura, której nie da się wczytać, daje wpis w `Model::warnings`, a nie błąd.
 - `UploadModel(renderer, model)` kopiuje siatki i tekstury na kartę; `DrawModel(renderer, render_model, transform)` je rysuje.
-- `model_viewer PLIK` pokazuje model na podłodze w szachownicę z kamerą krążącą wokół (przeciąganie lewym przyciskiem myszy, A/D, W/S, Q/E). `model_viewer PLIK --headless --dump-frame out.png` zapisuje jeden obraz i wypisuje liczbę trójkątów, rozmiar i ostrzeżenia; tak agent ogląda model.
+- `model_viewer` uruchomiony dwuklikiem przegląda modele z `poligon-assets` (N i P przełączają na następny i poprzedni); `model_viewer FOLDER` przegląda folder; `model_viewer PLIK` pokazuje jeden model. Kamera: przeciąganie lewym przyciskiem myszy, A/D, W/S, Q/E. `model_viewer PLIK --headless --dump-frame out.png` zapisuje jeden obraz i wypisuje liczbę trójkątów, rozmiar i ostrzeżenia; tak agent ogląda model.
 - Za ciężki model (drzewa filmowej jakości mają miliony trójkątów): `tools/assets/simplify_model.py` działa w Blenderze bez okna i zapisuje glTF z zachowaną zadaną częścią trójkątów: `blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚCIE.gltf 0.1`. Blender to narzędzie zewnętrzne; nic z niego nie jest linkowane.
 - Drzewa generowane: `tools/assets/make_tree.mjs` uruchamia bibliotekę EZ-Tree (MIT) w Node.js i zapisuje glTF z teksturami kory i gałązek: `node tools/assets/make_tree.mjs NODE_MODULES KATALOG NAZWA PRESET WYSOKOŚĆ`. PRESET to wbudowana nazwa („Pine Large", „Oak Medium", „Bush 1"...) albo plik `.json`; nasze są w `tools/assets/tree_presets/`. EZ-Tree i three.js są zainstalowane poza repozytorium (`poligon-assets/tools/eztree`).
 - `model_viewer PLIK OBRÓT POCHYLENIE ODLEGŁOŚĆ` ustawia widok początkowy, do obrazków z bliska.
@@ -102,7 +102,6 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 
 - Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny i bez przebiegu zacienienia otoczenia.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
-- Siatek i tekstur nie da się zwolnić przed zniszczeniem renderera.
 - Tekstury są nieskompresowane (4 bajty na piksel plus mipmapy), co przy 4 GB pamięci karty wystarczy na testy, nie na duży świat.
 - Kanał alfa tekstury jest ignorowany.
 - Okno ma stały rozmiar; zmiana rozmiaru nie jest obsługiwana.

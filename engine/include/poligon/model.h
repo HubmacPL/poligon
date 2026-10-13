@@ -81,6 +81,9 @@ struct RenderModel {
 // Copies meshes and textures to the graphics card. Call outside BeginFrame/EndFrame.
 RenderModel UploadModel(Renderer& renderer, const Model& model);
 
+// Frees the model's meshes and textures on the graphics card and empties `model`.
+void DestroyRenderModel(Renderer& renderer, RenderModel& model);
+
 // Draws every instance of the model. `transform` places the whole model in the world.
 void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform);
 

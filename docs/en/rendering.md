@@ -62,7 +62,7 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - A model file is a tree of nodes with transforms. Loading flattens it into **instances**: "draw this mesh with this transform". `Model::bounds_min/max` is the box around everything.
 - Each material has a base color and, if present, a decoded base color texture (from a file next to the model or embedded in it). A texture that cannot be loaded gives an entry in `Model::warnings`, not an error.
 - `UploadModel(renderer, model)` copies meshes and textures to the card; `DrawModel(renderer, render_model, transform)` draws them.
-- `model_viewer FILE` shows a model on a checkered floor with a circling camera (left mouse drag, A/D, W/S, Q/E). `model_viewer FILE --headless --dump-frame out.png` writes one picture and prints triangle counts, size and warnings; this is how the agent looks at a model.
+- `model_viewer` started with a double click browses the models in `poligon-assets` (N and P switch to the next and previous one); `model_viewer FOLDER` browses a folder; `model_viewer FILE` shows one model. Camera: left mouse drag, A/D, W/S, Q/E. `model_viewer FILE --headless --dump-frame out.png` writes one picture and prints triangle counts, size and warnings; this is how the agent looks at a model.
 - Too heavy a model (film-quality trees have millions of triangles): `tools/assets/simplify_model.py` runs in Blender without its window and writes a glTF with a given part of the triangles kept: `blender -b --factory-startup -P tools/assets/simplify_model.py -- INPUT OUTPUT.gltf 0.1`. Blender is an external tool; nothing from it is linked.
 - Generated trees: `tools/assets/make_tree.mjs` runs the EZ-Tree library (MIT) under Node.js and writes a glTF with bark and twig textures: `node tools/assets/make_tree.mjs NODE_MODULES OUTPUT_DIR NAME PRESET HEIGHT`. PRESET is a built-in name ("Pine Large", "Oak Medium", "Bush 1"...) or a `.json` file; ours are in `tools/assets/tree_presets/`. EZ-Tree and three.js are installed outside the repository (`poligon-assets/tools/eztree`).
 - `model_viewer FILE TURN TILT DISTANCE` sets the starting view, for close-up pictures.
@@ -100,7 +100,6 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 
 - One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene, no ambient occlusion pass.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
-- Meshes and textures cannot be released before the renderer is destroyed.
 - Textures are uncompressed (4 bytes per pixel plus mipmaps): enough for tests with 4 GB of card memory, not for a large world.
 - The alpha channel of a texture is ignored.
 - The window has a fixed size; resizing is not handled.
