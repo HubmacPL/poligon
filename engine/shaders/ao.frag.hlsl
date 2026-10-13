@@ -24,9 +24,9 @@ struct FragmentInput {
     float2 ndc : TEXCOORD1;
 };
 
-static const int kSampleCount = 12;
+static const int kSampleCount = 20;
 static const float kSpiralTurns = 7.0;
-static const float kMaxPixelRadius = 96.0;
+static const float kMaxPixelRadius = 64.0;
 
 float3 PositionAt(int2 pixel) {
     pixel = clamp(pixel, int2(0, 0), int2(screen.xy) - 1);
@@ -61,7 +61,7 @@ float main(FragmentInput input) : SV_Target0 {
 
     float start_angle = InterleavedGradientNoise(input.clip_position.xy) * 6.2831853;
     // Depth precision falls with distance; the bias keeps flat distant surfaces from darkening themselves.
-    float bias = 0.01 + 0.002 * distance_to_camera;
+    float bias = 0.03 * radius + 0.002 * distance_to_camera;
     float radius_squared = radius * radius;
     float sum = 0.0;
     for (int i = 0; i < kSampleCount; ++i) {

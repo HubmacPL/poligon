@@ -55,6 +55,7 @@ struct ObjectUniforms {
 struct FragmentFrameUniforms {
     glm::mat4 shadow_matrices[kCascadeCount];
     glm::vec4 cascade_far;
+    glm::vec4 cascade_texel;
     glm::vec4 camera_position;
     glm::vec4 camera_forward;
     glm::vec4 light_direction;
@@ -755,6 +756,8 @@ struct Renderer::Impl {
         glm::mat4 light_view_projection[kCascadeCount];
         glm::mat4 shadow_matrix[kCascadeCount];
         glm::vec4 far_distance;
+        // Size in meters of one shadow image pixel.
+        glm::vec4 texel_size;
     };
 
     Cascades ComputeCascades() const {
@@ -808,6 +811,7 @@ struct Renderer::Impl {
 
             // Move the center in whole shadow texels only; otherwise shadows shimmer as the camera moves.
             const float texel_size = radius * 2.0f / static_cast<float>(config.shadow_map_size);
+            cascades.texel_size[i] = texel_size;
             glm::vec3 center_in_light = glm::vec3(light_rotation * glm::vec4(sphere_center, 1.0f));
             center_in_light.x = std::floor(center_in_light.x / texel_size) * texel_size;
             center_in_light.y = std::floor(center_in_light.y / texel_size) * texel_size;
@@ -1371,6 +1375,7 @@ void Renderer::EndFrame() {
             frame_uniforms.shadow_matrices[i] = cascades.shadow_matrix[i];
         }
         frame_uniforms.cascade_far = cascades.far_distance;
+        frame_uniforms.cascade_texel = cascades.texel_size;
         frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
         frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
         frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);

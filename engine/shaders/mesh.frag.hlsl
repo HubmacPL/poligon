@@ -40,6 +40,7 @@ SamplerState ao_sampler : register(s4, space2);
 cbuffer FrameUniforms : register(b0, space3) {
     float4x4 shadow_matrices[4];  // world position -> shadow image coordinates and depth, per cascade
     float4 cascade_far;           // distance from the camera where each cascade ends
+    float4 cascade_texel;         // size in meters of one shadow image pixel, per cascade
     float4 camera_position;
     float4 camera_forward;
     float4 light_direction;       // xyz: direction the light travels, normalized
@@ -97,6 +98,25 @@ float3 ApplyNormalMap(float3 normal, float3 world_position, float2 uv) {
     return normalize(tangent * (map.x * inverse_length) + bitangent * (map.y * inverse_length) + normal * map.z);
 }
 
+// Shadow lookup in one cascade: 1 = lit, 0 = in shadow.
+float CascadeVisibility(int cascade, float3 world_position, float3 normal) {
+    // Move the lookup point off the surface by two shadow pixels, so that a surface does
+    // not shadow itself. Fine cascades need (and get) a much smaller shift than coarse ones.
+    float3 offset_position = world_position + normal * (cascade_texel[cascade] * 2.0);
+    float4 shadow_position = mul(shadow_matrices[cascade], float4(offset_position, 1.0));
+    float texel = options.w;
+
+    // Average 3 x 3 comparisons for a soft edge.
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            lit += shadow_texture.SampleCmpLevelZero(shadow_sampler, shadow_position.xy + float2(x, y) * texel,
+                                                     shadow_position.z - 0.0002);
+        }
+    }
+    return lit / 9.0;
+}
+
 // Part of the sun's light that reaches this point: 1 = fully lit, 0 = in shadow.
 float SunVisibility(float3 world_position, float3 normal) {
     if (options.x < 0.5) {
@@ -113,21 +133,16 @@ float SunVisibility(float3 world_position, float3 normal) {
         return 1.0;  // beyond the shadow distance
     }
 
-    // Move the lookup point a little off the surface, more in the coarser cascades,
-    // so that a surface does not shadow itself.
-    float3 offset_position = world_position + normal * (0.03 * (cascade + 1.0));
-    float4 shadow_position = mul(shadow_matrices[cascade], float4(offset_position, 1.0));
-    float texel = options.w;
-
-    // Average 3 x 3 comparisons for a soft edge.
-    float lit = 0.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            lit += shadow_texture.SampleCmpLevelZero(shadow_sampler, shadow_position.xy + float2(x, y) * texel,
-                                                     shadow_position.z - 0.0008);
+    float lit = CascadeVisibility(cascade, world_position, normal);
+    // Over the last tenth of a cascade's range, fade into the next (coarser) one, so that
+    // no line shows on the ground where shadows change sharpness.
+    if (cascade < 3) {
+        float fade = saturate((view_depth - cascade_far[cascade] * 0.9) / (cascade_far[cascade] * 0.1));
+        if (fade > 0.0) {
+            lit = lerp(lit, CascadeVisibility(cascade + 1, world_position, normal), fade);
         }
     }
-    return lit / 9.0;
+    return lit;
 }
 
 float4 main(FragmentInput input) : SV_Target0 {

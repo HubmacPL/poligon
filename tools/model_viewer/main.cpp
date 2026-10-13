@@ -240,6 +240,8 @@ public:
         environment.sky_ground = {0.42f, 0.44f, 0.46f, 1.0f};  // haze below the horizon, past the floor's edge
         environment.shadow_distance = std::max(distance_ + radius_ * 3.0f, 5.0f);
         environment.ambient_occlusion = true;
+        // The reach follows the model's size: a 30 cm plant must not darken half a meter of floor.
+        environment.ambient_occlusion_radius = std::clamp(radius_ * 0.15f, 0.03f, 0.6f);
         environment.volumetric_fog = true;
         environment.fog_density = 0.0015f;
         environment.fog_height_falloff = 0.03f;

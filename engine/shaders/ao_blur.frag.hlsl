@@ -25,14 +25,14 @@ struct FragmentInput {
 };
 
 float main(FragmentInput input) : SV_Target0 {
-    static const float kWeights[4] = {0.324, 0.232, 0.0855, 0.0205};
+    static const float kWeights[7] = {1.0, 0.92, 0.73, 0.49, 0.28, 0.14, 0.06};
     int2 pixel = int2(input.clip_position.xy);
     int2 last_pixel = int2(direction.zw) - 1;
     float center_distance = ViewDistance(depth_texture.Load(int3(pixel, 0)), projection_info);
 
     float sum = 0.0;
     float weight_sum = 0.0;
-    for (int i = -3; i <= 3; ++i) {
+    for (int i = -6; i <= 6; ++i) {
         int2 tap = clamp(pixel + int2(direction.xy) * i, int2(0, 0), last_pixel);
         float tap_distance = ViewDistance(depth_texture.Load(int3(tap, 0)), projection_info);
         float depth_weight = saturate(1.0 - abs(tap_distance - center_distance) / (0.05 * center_distance + 0.02));
