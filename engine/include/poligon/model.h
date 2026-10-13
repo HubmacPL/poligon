@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "poligon/animation.h"
 #include "poligon/image.h"
 #include "poligon/math.h"
 #include "poligon/renderer.h"
@@ -16,7 +17,7 @@ namespace poligon {
 // Files are read with the Assimp library, which understands glTF/GLB, FBX, OBJ, DAE and about
 // forty other formats. Whatever the file used, the loaded data follows Poligon's conventions:
 // right-handed, +Y up, counter-clockwise front faces, texture coordinate (0, 0) at the top-left.
-// Static geometry only for now: skeletons and animations in the file are ignored.
+// A file's skeleton and animation clips are loaded too (see poligon/animation.h).
 
 struct ModelMaterial {
     std::string name;
@@ -43,6 +44,9 @@ struct ModelMesh {
     std::vector<MeshVertex> vertices;
     std::vector<std::uint32_t> indices;
     int material_index = 0;
+    // For a mesh that bends with the model's skeleton: one entry per vertex, saying which
+    // joints it follows. Empty for a rigid mesh.
+    std::vector<SkinVertex> skin;
 };
 
 // Says "draw this mesh here". A model file is a tree of named nodes with transforms; the tree
@@ -57,7 +61,12 @@ struct Model {
     std::vector<ModelMesh> meshes;
     std::vector<ModelMaterial> materials;
     std::vector<ModelInstance> instances;
-    // Axis-aligned box around all instances, in model space.
+    // Joints of the file's skeleton, and its animation clips. Empty when the file has no
+    // skinned mesh. Joints are the bones plus every node above them in the file's tree.
+    Skeleton skeleton;
+    std::vector<AnimationClip> animations;
+
+    // Axis-aligned box around all instances, in model space (skinned meshes in their rest pose).
     glm::vec3 bounds_min;
     glm::vec3 bounds_max;
     // Things that loaded but not fully, for example a missing texture file.
@@ -75,7 +84,10 @@ struct RenderModel {
     std::vector<MeshHandle> meshes;       // parallel to Model::meshes
     std::vector<Material> materials;      // parallel to Model::materials
     std::vector<int> mesh_material_index; // parallel to Model::meshes
+    std::vector<char> mesh_is_skinned;    // parallel to Model::meshes, 1 = bends with the skeleton
     std::vector<ModelInstance> instances;
+    // Joint matrices of the rest pose, used when a skinned model is drawn without a pose.
+    std::vector<glm::mat4> rest_joint_matrices;
 };
 
 // Copies meshes and textures to the graphics card. Call outside BeginFrame/EndFrame.
@@ -85,6 +97,11 @@ RenderModel UploadModel(Renderer& renderer, const Model& model);
 void DestroyRenderModel(Renderer& renderer, RenderModel& model);
 
 // Draws every instance of the model. `transform` places the whole model in the world.
+// A skinned model is drawn in its rest pose.
 void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform);
+// Draws a skinned model in a pose: `joint_matrices` from ComputeJointMatrices, one per joint
+// of Model::skeleton. Rigid meshes of the model are drawn as usual.
+void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform,
+               const std::vector<glm::mat4>& joint_matrices);
 
 } // namespace poligon

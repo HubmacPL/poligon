@@ -75,7 +75,8 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - `forest_scene` (in `tools/`) builds a piece of forest from the models and ground texture in `poligon-assets` and lets you walk through it (W/S/A/D, Shift to run, drag the mouse to look). It is the showcase for the renderer and the place to measure frame time: `forest_scene X Z TURN TILT --headless --ticks 60 --dump-frame out.png` prints milliseconds per frame and how many meshes were drawn. Measured on a GTX 980 at 1280 x 720 with every effect on: about 34 ms per frame in the `release` build. The forest is the same on every run (fixed random seed). Models that are missing are skipped.
 - Downloaded and simplified assets live in `poligon-assets/` next to the project (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), never in the repository.
 - Leaves with a solid background around them: some packages (Poly Haven glTF) ship the leaf color as a JPG with no transparency and the mask as a separate file. The loader then warns that a cut-out material's texture has no transparent pixels. Repair: `image_tool merge-alpha COLOR ALPHA OUT.png` joins the two into one PNG (and spreads leaf colors into the transparent pixels, so edges get no dark rim), then `node tools/assets/set_gltf_cutout.mjs MODEL.gltf OLD_IMAGE_URI NEW_IMAGE_URI` points the model at it and marks the material as cut-out and double-sided. The untouched file stays as `MODEL.gltf.original`.
-- Not loaded yet: skeletons, animations, emissive textures, cameras and lights from the file. Mirrored transforms (negative scale) would flip triangle winding.
+- Skeletons and animation clips are loaded; see [animation.md](animation.md).
+- Not loaded yet: emissive textures, cameras and lights from the file, animations of rigid parts. Mirrored transforms (negative scale) would flip triangle winding.
 
 ## Backend
 

@@ -13,6 +13,7 @@ This file is the table of contents and the rule book. Details live in topic file
 - Determinism: what is guaranteed, how to compare two runs and find the tick where they diverge, what breaks it: [docs/en/determinism.md](docs/en/determinism.md)
 - Crashes: report with call stack, program exit codes, how to read a report: [docs/en/crashes.md](docs/en/crashes.md)
 - Debug windows (Dear ImGui), render settings file, debug views, free camera: [docs/en/debug_tools.md](docs/en/debug_tools.md)
+- Skeletal animation: skeleton and clips from model files, skinned meshes, joint matrices: [docs/en/animation.md](docs/en/animation.md)
 - Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`, `model_viewer`, `forest_scene`, `image_tool`), `cmake/`, `docs/en/` and `docs/pl/`.
 - After every code change run `powershell -ExecutionPolicy Bypass -File tools\check.ps1`. Only `CHECK PASSED` means it works.
 
@@ -22,7 +23,7 @@ This file is the table of contents and the rule book. Details live in topic file
 - Milestone 2 (models and textures) is complete: GLM, textures and materials, model import through Assimp, the `model_viewer` gallery, and an asset pipeline outside the repository (Poly Haven downloads, Blender simplification, EZ-Tree generated trees, alpha repair with `image_tool`).
 - Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure, frustum culling, and the showcase `forest_scene` (about 34 ms per frame on the GTX 980 in the `release` preset). Known cost to remove in the vegetation milestone: every tree is drawn at full detail in every shadow cascade (no levels of detail, no instancing).
 - Milestone 4 (in-game tools) is complete: debug windows with Dear ImGui (render settings, frame statistics, world state), a render settings file with the option `--render-settings`, debug views of single frame stages, a free camera.
-- Next: milestone 5 (skeletal animation).
+- Milestone 5 (skeletal animation) is in progress. Done: skeleton, skin weights and clips are loaded from model files; skinned meshes are drawn in any pose in all passes. Open: the player that samples and blends clips (decision pending between ozz-animation and our own). Test model: the Khronos "Fox" sample in `poligon-assets/khronos/fox` (CC0 model, CC-BY 4.0 animations).
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap

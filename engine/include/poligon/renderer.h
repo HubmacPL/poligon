@@ -165,6 +165,14 @@ struct MeshVertex {
     glm::vec2 uv;
 };
 
+// Which joints of a skeleton a vertex follows, and how strongly. One per vertex of a
+// skinned mesh, next to its MeshVertex. Weights add up to 1; unused slots have weight 0.
+// See poligon/animation.h.
+struct SkinVertex {
+    std::uint8_t joints[4] = {0, 0, 0, 0};
+    float weights[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+};
+
 // Identifies a mesh created by Renderer. An id of 0 is never a valid mesh.
 struct MeshHandle {
     std::uint32_t id = 0;
@@ -246,6 +254,10 @@ public:
     // Triangle list, counter-clockwise front faces.
     MeshHandle CreateMesh(const MeshVertex* vertices, int vertex_count, const std::uint32_t* indices,
                           int index_count);
+    // A mesh that bends with a skeleton: `skin` holds one entry per vertex. A skeleton can
+    // have at most 256 joints. Draw it with DrawSkinnedMesh.
+    MeshHandle CreateSkinnedMesh(const MeshVertex* vertices, const SkinVertex* skin, int vertex_count,
+                                 const std::uint32_t* indices, int index_count);
     // Cube with edge length 1, centered at the origin. Every face shows the whole texture.
     MeshHandle CreateCubeMesh();
     // Square with edge length 1 in the XZ plane, centered at the origin, facing +Y.
@@ -266,6 +278,11 @@ public:
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material);
     // Same, with a plain color and no texture.
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
+    // Draws a mesh made by CreateSkinnedMesh in a pose. `joint_matrices` come from
+    // ComputeJointMatrices (poligon/animation.h), one per joint of the skeleton; they are
+    // copied, so the array need not outlive the call. `transform` places the whole model.
+    void DrawSkinnedMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material,
+                         const glm::mat4* joint_matrices, int joint_count);
     void EndFrame();
 
     // Copies the last finished frame from the graphics card into `image`.

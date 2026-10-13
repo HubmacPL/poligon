@@ -77,7 +77,8 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - `forest_scene` (w `tools/`) buduje kawałek lasu z modeli i tekstury podłoża z `poligon-assets` i pozwala po nim chodzić (W/S/A/D, Shift to bieg, przeciąganie myszą to rozglądanie). To scena pokazowa renderera i miejsce pomiaru czasu klatki: `forest_scene X Z OBRÓT POCHYLENIE --headless --ticks 60 --dump-frame out.png` wypisuje milisekundy na klatkę i liczbę narysowanych siatek. Zmierzone na GTX 980 w 1280 x 720 ze wszystkimi efektami: około 34 ms na klatkę w budowie `release`. Las jest taki sam przy każdym uruchomieniu (stałe ziarno losowania). Brakujące modele są pomijane.
 - Pobrane i odchudzone zasoby leżą w `poligon-assets/` obok projektu (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), nigdy w repozytorium.
 - Liście z jednolitym tłem dookoła: część paczek (glTF z Poly Haven) ma kolor liści w JPG bez przezroczystości, a maskę w osobnym pliku. Loader ostrzega wtedy, że tekstura materiału wycinanego nie ma przezroczystych pikseli. Naprawa: `image_tool merge-alpha KOLOR ALFA WYJŚCIE.png` łączy oba pliki w jeden PNG (i rozlewa kolory liści na przezroczyste piksele, żeby krawędzie nie miały ciemnej obwódki), potem `node tools/assets/set_gltf_cutout.mjs MODEL.gltf STARY_URI NOWY_URI` podpina go w modelu i oznacza materiał jako wycinany i dwustronny. Nietknięty plik zostaje jako `MODEL.gltf.original`.
-- Jeszcze nie wczytujemy: szkieletów, animacji, tekstur emisji, kamer i świateł z pliku. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
+- Szkielety i klipy animacji są wczytywane; patrz [animation.md](animation.md).
+- Jeszcze nie wczytujemy: tekstur emisji, kamer i świateł z pliku, animacji części sztywnych. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
 
 ## Backend
 

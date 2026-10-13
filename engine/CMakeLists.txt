@@ -9,6 +9,7 @@ find_package(assimp CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 
 add_library(poligon_engine STATIC
+  src/animation.cpp
   src/command_line.cpp
   src/crash_handler.cpp
   src/debug_ui.cpp
@@ -88,6 +89,7 @@ endfunction()
 
 target_include_directories(poligon_engine PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 poligon_embed_shader(shaders/mesh.vert.hlsl vertex kMeshVert mesh_vert)
+poligon_embed_shader(shaders/mesh_skinned.vert.hlsl vertex kMeshSkinnedVert mesh_skinned_vert)
 poligon_embed_shader(shaders/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
 poligon_embed_shader(shaders/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
 poligon_embed_shader(shaders/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)

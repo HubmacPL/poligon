@@ -29,6 +29,8 @@
 #include "poligon_shaders/luminance_frag_spirv.h"
 #include "poligon_shaders/mesh_frag_dxil.h"
 #include "poligon_shaders/mesh_frag_spirv.h"
+#include "poligon_shaders/mesh_skinned_vert_dxil.h"
+#include "poligon_shaders/mesh_skinned_vert_spirv.h"
 #include "poligon_shaders/mesh_vert_dxil.h"
 #include "poligon_shaders/mesh_vert_spirv.h"
 #include "poligon_shaders/shadow_frag_dxil.h"
@@ -133,6 +135,10 @@ static_assert(sizeof(glm::vec3) == 3 * sizeof(float), "glm::vec3 must be three f
 static_assert(sizeof(glm::vec4) == 4 * sizeof(float), "glm::vec4 must be four floats");
 static_assert(sizeof(glm::mat4) == 16 * sizeof(float), "glm::mat4 must be sixteen floats");
 static_assert(sizeof(MeshVertex) == 8 * sizeof(float), "MeshVertex must have no padding");
+static_assert(sizeof(SkinVertex) == 20 && offsetof(SkinVertex, weights) == 4, "SkinVertex must have no padding");
+
+// A vertex stores a joint number in one byte.
+constexpr int kMaxJoints = 256;
 
 // The scene is drawn in linear colors with a wide range (values above 1 are kept), so that
 // lighting adds up correctly and bright areas can be tone mapped instead of clipped.
@@ -157,6 +163,8 @@ struct Mesh {
     SDL_GPUBuffer* vertex_buffer = nullptr;
     SDL_GPUBuffer* index_buffer = nullptr;
     Uint32 index_count = 0;
+    // Joints and weights per vertex; null for a mesh that does not bend.
+    SDL_GPUBuffer* skin_buffer = nullptr;
     // Box around all vertices, in the mesh's own coordinates.
     glm::vec3 bounds_min;
     glm::vec3 bounds_max;
@@ -182,7 +190,17 @@ struct DrawCommand {
     std::uint32_t mesh_id;
     glm::mat4 transform;
     Material material;
+    // Box around the mesh before `transform`, used for culling. For a skinned mesh it
+    // encloses the mesh in its current pose.
+    glm::vec3 bounds_min;
+    glm::vec3 bounds_max;
+    // Skinned meshes: where this draw's joint matrices start in the frame's joint buffer.
+    std::uint32_t first_joint = 0;
+    bool skinned = false;
 };
+
+// The three passes that draw meshes.
+enum MeshPass { kScenePass, kShadowPass, kDepthPass, kMeshPassCount };
 
 // True when the box, after `clip_from_mesh`, lies entirely outside the visible volume: all
 // eight corners are beyond the same side of it. A box that is only partly outside, or that
@@ -302,6 +320,14 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* bloom_up_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* luminance_pipeline = nullptr;
 
+    // Indexed by pass, by "is the mesh skinned" and by "is the material double-sided".
+    SDL_GPUGraphicsPipeline* mesh_pipelines[kMeshPassCount][2][2] = {};
+    // The joint matrices of every skinned mesh drawn this frame, one after another, and
+    // the buffer on the graphics card they are copied to in EndFrame.
+    std::vector<glm::mat4> joint_palette;
+    SDL_GPUBuffer* joint_buffer = nullptr;
+    Uint32 joint_buffer_capacity = 0;
+
     SDL_GPUGraphicsPipeline* mesh_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* mesh_pipeline_double_sided = nullptr;
     SDL_GPUGraphicsPipeline* shadow_pipeline = nullptr;
@@ -335,7 +361,7 @@ struct Renderer::Impl {
 
     SDL_GPUShader* CreateShader(SDL_GPUShaderStage stage, Uint32 sampler_count, Uint32 uniform_buffer_count,
                                 const unsigned char* dxil, size_t dxil_size, const unsigned char* spirv,
-                                size_t spirv_size) {
+                                size_t spirv_size, Uint32 storage_buffer_count = 0) {
         const SDL_GPUShaderFormat supported_formats = SDL_GetGPUShaderFormats(device);
 
         SDL_GPUShaderCreateInfo info{};
@@ -354,6 +380,7 @@ struct Renderer::Impl {
         info.stage = stage;
         info.num_samplers = sampler_count;
         info.num_uniform_buffers = uniform_buffer_count;
+        info.num_storage_buffers = storage_buffer_count;
 
         SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
         if (shader == nullptr) {
@@ -657,6 +684,56 @@ struct Renderer::Impl {
         prepass_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
         prepass_pipeline_double_sided = SDL_CreateGPUGraphicsPipeline(device, &prepass_info);
 
+        // --- The same five pipelines for skinned meshes: another vertex shader, fed by a
+        // second vertex buffer with joints and weights ---
+        SDL_GPUShader* skinned_vertex =
+            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshSkinnedVertDxil, sizeof(kMeshSkinnedVertDxil),
+                         kMeshSkinnedVertSpirv, sizeof(kMeshSkinnedVertSpirv), 1);
+        SDL_GPUVertexBufferDescription skinned_buffers[2]{};
+        skinned_buffers[0] = vertex_buffer;
+        skinned_buffers[1].slot = 1;
+        skinned_buffers[1].pitch = sizeof(SkinVertex);
+        skinned_buffers[1].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        SDL_GPUVertexAttribute skinned_attributes[5]{};
+        skinned_attributes[0] = attributes[0];
+        skinned_attributes[1] = attributes[1];
+        skinned_attributes[2] = attributes[2];
+        skinned_attributes[3].location = 3;
+        skinned_attributes[3].buffer_slot = 1;
+        skinned_attributes[3].format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4;
+        skinned_attributes[3].offset = offsetof(SkinVertex, joints);
+        skinned_attributes[4].location = 4;
+        skinned_attributes[4].buffer_slot = 1;
+        skinned_attributes[4].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        skinned_attributes[4].offset = offsetof(SkinVertex, weights);
+        const auto create_skinned = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUCullMode cull_mode) {
+            info.vertex_shader = skinned_vertex;
+            info.vertex_input_state.vertex_buffer_descriptions = skinned_buffers;
+            info.vertex_input_state.num_vertex_buffers = 2;
+            info.vertex_input_state.vertex_attributes = skinned_attributes;
+            info.vertex_input_state.num_vertex_attributes = 5;
+            info.rasterizer_state.cull_mode = cull_mode;
+            SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+            if (pipeline == nullptr) {
+                FatalSdlError("cannot create skinned mesh pipeline");
+            }
+            return pipeline;
+        };
+        mesh_pipelines[kScenePass][0][0] = mesh_pipeline;
+        mesh_pipelines[kScenePass][0][1] = mesh_pipeline_double_sided;
+        mesh_pipelines[kScenePass][1][0] = create_skinned(mesh_info, SDL_GPU_CULLMODE_BACK);
+        mesh_pipelines[kScenePass][1][1] = create_skinned(mesh_info, SDL_GPU_CULLMODE_NONE);
+        // Shadows are drawn without culling whatever the material.
+        mesh_pipelines[kShadowPass][0][0] = shadow_pipeline;
+        mesh_pipelines[kShadowPass][0][1] = shadow_pipeline;
+        mesh_pipelines[kShadowPass][1][0] = create_skinned(shadow_info, SDL_GPU_CULLMODE_NONE);
+        mesh_pipelines[kShadowPass][1][1] = mesh_pipelines[kShadowPass][1][0];
+        mesh_pipelines[kDepthPass][0][0] = prepass_pipeline;
+        mesh_pipelines[kDepthPass][0][1] = prepass_pipeline_double_sided;
+        mesh_pipelines[kDepthPass][1][0] = create_skinned(prepass_info, SDL_GPU_CULLMODE_BACK);
+        mesh_pipelines[kDepthPass][1][1] = create_skinned(prepass_info, SDL_GPU_CULLMODE_NONE);
+        SDL_ReleaseGPUShader(device, skinned_vertex);
+
         // --- Sky: covers the whole image behind the scene ---
         SDL_GPUGraphicsPipelineCreateInfo sky_info{};
         sky_info.vertex_shader = fullscreen_vertex;
@@ -879,9 +956,10 @@ struct Renderer::Impl {
 
     void DrawCommandGeometry(SDL_GPURenderPass* pass, const DrawCommand& command) {
         const Mesh& mesh = meshes[command.mesh_id - 1];
-        SDL_GPUBufferBinding vertex_binding{};
-        vertex_binding.buffer = mesh.vertex_buffer;
-        SDL_BindGPUVertexBuffers(pass, 0, &vertex_binding, 1);
+        SDL_GPUBufferBinding vertex_bindings[2]{};
+        vertex_bindings[0].buffer = mesh.vertex_buffer;
+        vertex_bindings[1].buffer = mesh.skin_buffer;
+        SDL_BindGPUVertexBuffers(pass, 0, vertex_bindings, command.skinned ? 2 : 1);
         SDL_GPUBufferBinding index_binding{};
         index_binding.buffer = mesh.index_buffer;
         SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
@@ -892,8 +970,57 @@ struct Renderer::Impl {
         ObjectUniforms uniforms;
         uniforms.model = command.transform;
         uniforms.color = ToVec4(command.material.color);
-        uniforms.uv_scale = glm::vec4(command.material.uv_scale.x, command.material.uv_scale.y, 0.0f, 0.0f);
+        uniforms.uv_scale = glm::vec4(command.material.uv_scale.x, command.material.uv_scale.y,
+                                      static_cast<float>(command.first_joint), 0.0f);
         return uniforms;
+    }
+
+    // Binds the pipeline a draw command needs in the given pass, unless it is bound already.
+    void BindMeshPipeline(SDL_GPURenderPass* pass, MeshPass mesh_pass, const DrawCommand& command,
+                          SDL_GPUGraphicsPipeline*& bound_pipeline) {
+        SDL_GPUGraphicsPipeline* pipeline =
+            mesh_pipelines[mesh_pass][command.skinned ? 1 : 0][command.material.double_sided ? 1 : 0];
+        if (pipeline != bound_pipeline) {
+            SDL_BindGPUGraphicsPipeline(pass, pipeline);
+            bound_pipeline = pipeline;
+            if (command.skinned) {
+                SDL_BindGPUVertexStorageBuffers(pass, 0, &joint_buffer, 1);
+            }
+        }
+    }
+
+    // Copies this frame's joint matrices to the graphics card.
+    void UploadJointMatrices(SDL_GPUCommandBuffer* commands) {
+        if (joint_palette.empty()) {
+            return;
+        }
+        const Uint32 count = static_cast<Uint32>(joint_palette.size());
+        if (count > joint_buffer_capacity) {
+            if (joint_buffer != nullptr) {
+                SDL_ReleaseGPUBuffer(device, joint_buffer);
+            }
+            joint_buffer_capacity = count < 1024 ? 1024 : count * 2;
+            SDL_GPUBufferCreateInfo buffer_info{};
+            buffer_info.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+            buffer_info.size = joint_buffer_capacity * static_cast<Uint32>(sizeof(glm::mat4));
+            joint_buffer = SDL_CreateGPUBuffer(device, &buffer_info);
+            if (joint_buffer == nullptr) {
+                FatalSdlError("cannot create joint buffer");
+            }
+        }
+        const Uint32 size = count * static_cast<Uint32>(sizeof(glm::mat4));
+        SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(joint_palette.data(), size);
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        SDL_GPUTransferBufferLocation source{};
+        source.transfer_buffer = transfer;
+        SDL_GPUBufferRegion destination{};
+        destination.buffer = joint_buffer;
+        destination.size = size;
+        // cycle = true: the previous frame may still be reading the old contents.
+        SDL_UploadToGPUBuffer(copy_pass, &source, &destination, true);
+        SDL_EndGPUCopyPass(copy_pass);
+        // Released once the copy has run.
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
     }
 
     static MaterialUniforms MakeMaterialUniforms(const Material& material) {
@@ -1007,6 +1134,9 @@ Renderer::~Renderer() {
             if (mesh.vertex_buffer != nullptr) {
                 SDL_ReleaseGPUBuffer(impl_->device, mesh.vertex_buffer);
                 SDL_ReleaseGPUBuffer(impl_->device, mesh.index_buffer);
+                if (mesh.skin_buffer != nullptr) {
+                    SDL_ReleaseGPUBuffer(impl_->device, mesh.skin_buffer);
+                }
             }
         }
         for (SDL_GPUTexture* texture : impl_->textures) {
@@ -1030,6 +1160,16 @@ Renderer::~Renderer() {
         }
         for (const BloomLevel& level : impl_->bloom_levels) {
             SDL_ReleaseGPUTexture(impl_->device, level.texture);
+        }
+        for (int pass = 0; pass < kMeshPassCount; ++pass) {
+            // The shadow pass uses one skinned pipeline for both kinds of material.
+            SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][1][0]);
+            if (impl_->mesh_pipelines[pass][1][1] != impl_->mesh_pipelines[pass][1][0]) {
+                SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][1][1]);
+            }
+        }
+        if (impl_->joint_buffer != nullptr) {
+            SDL_ReleaseGPUBuffer(impl_->device, impl_->joint_buffer);
         }
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline_double_sided);
@@ -1079,6 +1219,17 @@ MeshHandle Renderer::CreateMesh(const MeshVertex* vertices, int vertex_count, co
 
     MeshHandle handle;
     handle.id = static_cast<std::uint32_t>(impl_->meshes.size());
+    return handle;
+}
+
+MeshHandle Renderer::CreateSkinnedMesh(const MeshVertex* vertices, const SkinVertex* skin, int vertex_count,
+                                       const std::uint32_t* indices, int index_count) {
+    if (skin == nullptr) {
+        FatalError("Renderer::CreateSkinnedMesh: needs joints and weights for every vertex");
+    }
+    const MeshHandle handle = CreateMesh(vertices, vertex_count, indices, index_count);
+    impl_->meshes[handle.id - 1].skin_buffer = impl_->CreateBufferWithData(
+        SDL_GPU_BUFFERUSAGE_VERTEX, skin, static_cast<Uint32>(static_cast<size_t>(vertex_count) * sizeof(SkinVertex)));
     return handle;
 }
 
@@ -1212,6 +1363,9 @@ void Renderer::DestroyMesh(MeshHandle mesh) {
     Mesh& entry = impl_->meshes[mesh.id - 1];
     SDL_ReleaseGPUBuffer(impl_->device, entry.vertex_buffer);
     SDL_ReleaseGPUBuffer(impl_->device, entry.index_buffer);
+    if (entry.skin_buffer != nullptr) {
+        SDL_ReleaseGPUBuffer(impl_->device, entry.skin_buffer);
+    }
     entry = Mesh{};
 }
 
@@ -1235,6 +1389,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->light = light;
     impl_->environment = environment;
     impl_->draw_commands.clear();
+    impl_->joint_palette.clear();
     if (impl_->debug_ui_active) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
@@ -1255,7 +1410,61 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
             FatalError("Renderer::DrawMesh: invalid or destroyed texture handle");
         }
     }
-    impl_->draw_commands.push_back(DrawCommand{mesh_handle.id, transform, material});
+    const Mesh& mesh = impl_->meshes[mesh_handle.id - 1];
+    if (mesh.skin_buffer != nullptr) {
+        FatalError("Renderer::DrawMesh: this mesh is skinned, draw it with DrawSkinnedMesh");
+    }
+    DrawCommand command;
+    command.mesh_id = mesh_handle.id;
+    command.transform = transform;
+    command.material = material;
+    command.bounds_min = mesh.bounds_min;
+    command.bounds_max = mesh.bounds_max;
+    impl_->draw_commands.push_back(command);
+}
+
+void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material,
+                               const glm::mat4* joint_matrices, int joint_count) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
+    }
+    if (mesh_handle.id == 0 || mesh_handle.id > impl_->meshes.size() ||
+        impl_->meshes[mesh_handle.id - 1].skin_buffer == nullptr) {
+        FatalError("Renderer::DrawSkinnedMesh: not a mesh made by CreateSkinnedMesh");
+    }
+    if (joint_matrices == nullptr || joint_count < 1 || joint_count > kMaxJoints) {
+        FatalError("Renderer::DrawSkinnedMesh: needs between 1 and 256 joint matrices");
+    }
+    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+        if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
+            FatalError("Renderer::DrawSkinnedMesh: invalid or destroyed texture handle");
+        }
+    }
+    const Mesh& mesh = impl_->meshes[mesh_handle.id - 1];
+
+    DrawCommand command;
+    command.mesh_id = mesh_handle.id;
+    command.transform = transform;
+    command.material = material;
+    command.skinned = true;
+    command.first_joint = static_cast<std::uint32_t>(impl_->joint_palette.size());
+    impl_->joint_palette.insert(impl_->joint_palette.end(), joint_matrices, joint_matrices + joint_count);
+
+    // A posed vertex is a weighted mix of where each joint would put it, so the posed mesh
+    // lies inside the box around the mesh's box as moved by every joint.
+    command.bounds_min = glm::vec3(1.0e30f);
+    command.bounds_max = glm::vec3(-1.0e30f);
+    for (int joint = 0; joint < joint_count; ++joint) {
+        for (int corner = 0; corner < 8; ++corner) {
+            const glm::vec4 point((corner & 1) ? mesh.bounds_max.x : mesh.bounds_min.x,
+                                  (corner & 2) ? mesh.bounds_max.y : mesh.bounds_min.y,
+                                  (corner & 4) ? mesh.bounds_max.z : mesh.bounds_min.z, 1.0f);
+            const glm::vec3 moved = glm::vec3(joint_matrices[joint] * point);
+            command.bounds_min = glm::min(command.bounds_min, moved);
+            command.bounds_max = glm::max(command.bounds_max, moved);
+        }
+    }
+    impl_->draw_commands.push_back(command);
 }
 
 void Renderer::DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color) {
@@ -1291,11 +1500,11 @@ void Renderer::EndFrame() {
     impl.visible_commands.clear();
     for (std::uint32_t i = 0; i < impl.draw_commands.size(); ++i) {
         const DrawCommand& command = impl.draw_commands[i];
-        const Mesh& mesh = impl.meshes[command.mesh_id - 1];
-        if (!IsBoxOutside(view_projection * command.transform, mesh.bounds_min, mesh.bounds_max, true)) {
+        if (!IsBoxOutside(view_projection * command.transform, command.bounds_min, command.bounds_max, true)) {
             impl.visible_commands.push_back(i);
         }
     }
+    impl.UploadJointMatrices(commands);
     impl.stats = FrameStats{};
     impl.stats.meshes_submitted = static_cast<int>(impl.draw_commands.size());
     impl.stats.meshes_drawn = static_cast<int>(impl.visible_commands.size());
@@ -1310,9 +1519,8 @@ void Renderer::EndFrame() {
             impl.cascade_commands[cascade].clear();
             for (std::uint32_t i = 0; i < impl.draw_commands.size(); ++i) {
                 const DrawCommand& command = impl.draw_commands[i];
-                const Mesh& mesh = impl.meshes[command.mesh_id - 1];
-                if (!IsBoxOutside(cascades.light_view_projection[cascade] * command.transform, mesh.bounds_min,
-                                  mesh.bounds_max, false)) {
+                if (!IsBoxOutside(cascades.light_view_projection[cascade] * command.transform, command.bounds_min,
+                                  command.bounds_max, false)) {
                     impl.cascade_commands[cascade].push_back(i);
                 }
             }
@@ -1330,7 +1538,7 @@ void Renderer::EndFrame() {
         if (pass == nullptr) {
             FatalSdlError("cannot begin shadow pass");
         }
-        SDL_BindGPUGraphicsPipeline(pass, impl.shadow_pipeline);
+        SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
         const float tile_size = static_cast<float>(impl.config.shadow_map_size);
         for (int cascade = 0; cascade < kCascadeCount; ++cascade) {
             SDL_GPUViewport viewport{};
@@ -1348,6 +1556,7 @@ void Renderer::EndFrame() {
 
             for (const std::uint32_t command_index : impl.cascade_commands[cascade]) {
                 const DrawCommand& command = impl.draw_commands[command_index];
+                impl.BindMeshPipeline(pass, kShadowPass, command, bound_pipeline);
                 const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
                 SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
                 const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
@@ -1389,12 +1598,7 @@ void Renderer::EndFrame() {
         SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
         for (const std::uint32_t command_index : impl.visible_commands) {
             const DrawCommand& command = impl.draw_commands[command_index];
-            SDL_GPUGraphicsPipeline* pipeline =
-                command.material.double_sided ? impl.prepass_pipeline_double_sided : impl.prepass_pipeline;
-            if (pipeline != bound_pipeline) {
-                SDL_BindGPUGraphicsPipeline(pass, pipeline);
-                bound_pipeline = pipeline;
-            }
+            impl.BindMeshPipeline(pass, kDepthPass, command, bound_pipeline);
             const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
             const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
@@ -1517,12 +1721,7 @@ void Renderer::EndFrame() {
         for (const std::uint32_t command_index : impl.visible_commands) {
             const DrawCommand& command = impl.draw_commands[command_index];
             const Material& material = command.material;
-            SDL_GPUGraphicsPipeline* pipeline =
-                material.double_sided ? impl.mesh_pipeline_double_sided : impl.mesh_pipeline;
-            if (pipeline != bound_pipeline) {
-                SDL_BindGPUGraphicsPipeline(pass, pipeline);
-                bound_pipeline = pipeline;
-            }
+            impl.BindMeshPipeline(pass, kScenePass, command, bound_pipeline);
 
             const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));

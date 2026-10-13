@@ -141,6 +141,13 @@ void PrintModelSummary(const char* path, const poligon::Model& model) {
                         material.base_color.r, material.base_color.g, material.base_color.b);
         }
     }
+    if (!model.skeleton.joints.empty()) {
+        std::printf("skeleton: %zu joints\n", model.skeleton.joints.size());
+    }
+    for (const poligon::AnimationClip& clip : model.animations) {
+        std::printf("animation \"%s\": %.3f s, %zu channels\n", clip.name.c_str(),
+                    static_cast<double>(clip.duration_seconds), clip.channels.size());
+    }
     for (const std::string& warning : model.warnings) {
         std::printf("warning: %s\n", warning.c_str());
     }

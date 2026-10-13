@@ -2,12 +2,16 @@
 
 #include <cstring>
 #include <filesystem>
+#include <map>
+#include <set>
 
 #include <assimp/GltfMaterial.h>
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+
+#include "poligon/fatal_error.h"
 
 namespace poligon {
 
@@ -136,6 +140,126 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     }
     return material;
 }
+// True if this node is a bone of some mesh or has one below it. Fills `is_joint` for the
+// whole subtree, keyed by node.
+bool MarkJointNodes(const aiNode& node, const std::set<std::string>& bone_names,
+                    std::map<const aiNode*, bool>& is_joint) {
+    bool joint = bone_names.count(node.mName.C_Str()) > 0;
+    for (unsigned int i = 0; i < node.mNumChildren; ++i) {
+        joint |= MarkJointNodes(*node.mChildren[i], bone_names, is_joint);
+    }
+    is_joint[&node] = joint;
+    return joint;
+}
+
+// Adds the marked nodes to the skeleton, parents before children.
+void CollectJoints(const aiNode& node, int parent, const std::map<const aiNode*, bool>& is_joint, Skeleton& skeleton) {
+    if (!is_joint.at(&node)) {
+        return;
+    }
+    aiVector3D scaling;
+    aiQuaternion rotation;
+    aiVector3D position;
+    node.mTransformation.Decompose(scaling, rotation, position);
+    Joint joint;
+    joint.name = node.mName.C_Str();
+    joint.parent = parent;
+    joint.rest.translation = {position.x, position.y, position.z};
+    joint.rest.rotation = glm::quat(rotation.w, rotation.x, rotation.y, rotation.z);
+    joint.rest.scale = {scaling.x, scaling.y, scaling.z};
+    const int index = static_cast<int>(skeleton.joints.size());
+    skeleton.joints.push_back(joint);
+    for (unsigned int i = 0; i < node.mNumChildren; ++i) {
+        CollectJoints(*node.mChildren[i], index, is_joint, skeleton);
+    }
+}
+
+// Reads which joints each vertex follows. Keeps the four strongest per vertex and makes
+// their weights add up to 1.
+void ConvertSkin(const aiMesh& source, ModelMesh& mesh, Skeleton& skeleton, std::vector<std::string>& warnings) {
+    mesh.skin.assign(mesh.vertices.size(), SkinVertex{});
+    for (unsigned int b = 0; b < source.mNumBones; ++b) {
+        const aiBone& bone = *source.mBones[b];
+        const int joint = skeleton.FindJoint(bone.mName.C_Str());
+        if (joint < 0) {
+            continue;
+        }
+        skeleton.joints[static_cast<size_t>(joint)].inverse_bind = ToGlm(bone.mOffsetMatrix);
+        for (unsigned int w = 0; w < bone.mNumWeights; ++w) {
+            const aiVertexWeight& weight = bone.mWeights[w];
+            if (weight.mVertexId >= mesh.skin.size() || weight.mWeight <= 0.0f) {
+                continue;
+            }
+            // Put it in the weakest slot if it is stronger than what is there.
+            SkinVertex& skin = mesh.skin[weight.mVertexId];
+            int weakest = 0;
+            for (int slot = 1; slot < 4; ++slot) {
+                if (skin.weights[slot] < skin.weights[weakest]) {
+                    weakest = slot;
+                }
+            }
+            if (weight.mWeight > skin.weights[weakest]) {
+                skin.joints[weakest] = static_cast<std::uint8_t>(joint);
+                skin.weights[weakest] = weight.mWeight;
+            }
+        }
+    }
+    int loose_vertices = 0;
+    for (SkinVertex& skin : mesh.skin) {
+        const float sum = skin.weights[0] + skin.weights[1] + skin.weights[2] + skin.weights[3];
+        if (sum <= 0.0f) {
+            // Follows no joint: tie it to the root, so that it at least stays in place.
+            skin.weights[0] = 1.0f;
+            ++loose_vertices;
+        } else {
+            for (float& weight : skin.weights) {
+                weight /= sum;
+            }
+        }
+    }
+    if (loose_vertices > 0) {
+        warnings.push_back("mesh \"" + mesh.name + "\": " + std::to_string(loose_vertices) +
+                           " vertices follow no joint and were tied to the root");
+    }
+}
+
+AnimationClip ConvertAnimation(const aiAnimation& source, const Skeleton& skeleton, bool& has_foreign_channels) {
+    // Key times are in "ticks"; a file that does not say how long a tick is means 1/25 s.
+    const double ticks_per_second = source.mTicksPerSecond > 0.0 ? source.mTicksPerSecond : 25.0;
+    const auto to_seconds = [ticks_per_second](double ticks) { return static_cast<float>(ticks / ticks_per_second); };
+
+    AnimationClip clip;
+    clip.name = source.mName.C_Str();
+    clip.duration_seconds = to_seconds(source.mDuration);
+    for (unsigned int c = 0; c < source.mNumChannels; ++c) {
+        const aiNodeAnim& node = *source.mChannels[c];
+        const int joint = skeleton.FindJoint(node.mNodeName.C_Str());
+        if (joint < 0) {
+            has_foreign_channels = true;
+            continue;
+        }
+        AnimationChannel channel;
+        channel.joint = joint;
+        for (unsigned int k = 0; k < node.mNumPositionKeys; ++k) {
+            const aiVectorKey& key = node.mPositionKeys[k];
+            channel.translation_times.push_back(to_seconds(key.mTime));
+            channel.translations.push_back({key.mValue.x, key.mValue.y, key.mValue.z});
+        }
+        for (unsigned int k = 0; k < node.mNumRotationKeys; ++k) {
+            const aiQuatKey& key = node.mRotationKeys[k];
+            channel.rotation_times.push_back(to_seconds(key.mTime));
+            channel.rotations.push_back(glm::quat(key.mValue.w, key.mValue.x, key.mValue.y, key.mValue.z));
+        }
+        for (unsigned int k = 0; k < node.mNumScalingKeys; ++k) {
+            const aiVectorKey& key = node.mScalingKeys[k];
+            channel.scale_times.push_back(to_seconds(key.mTime));
+            channel.scales.push_back({key.mValue.x, key.mValue.y, key.mValue.z});
+        }
+        clip.channels.push_back(std::move(channel));
+    }
+    return clip;
+}
+
 ModelMesh ConvertMesh(const aiMesh& source) {
     ModelMesh mesh;
     mesh.name = source.mName.C_Str();
@@ -185,10 +309,22 @@ void CollectInstances(const aiNode& node, const glm::mat4& parent_transform, con
 }
 
 void ComputeBounds(Model& model) {
+    const std::vector<glm::mat4> rest_matrices = ComputeJointMatrices(model.skeleton, GetRestPose(model.skeleton));
     bool first = true;
     for (const ModelInstance& instance : model.instances) {
-        for (const MeshVertex& vertex : model.meshes[static_cast<size_t>(instance.mesh_index)].vertices) {
-            const glm::vec3 point = glm::vec3(instance.transform * glm::vec4(vertex.position, 1.0f));
+        const ModelMesh& mesh = model.meshes[static_cast<size_t>(instance.mesh_index)];
+        for (size_t v = 0; v < mesh.vertices.size(); ++v) {
+            const glm::vec4 position(mesh.vertices[v].position, 1.0f);
+            glm::vec3 point;
+            if (mesh.skin.empty()) {
+                point = glm::vec3(instance.transform * position);
+            } else {
+                // A skinned vertex is placed by its joints, not by the node the mesh hangs on.
+                point = glm::vec3(0.0f);
+                for (int slot = 0; slot < 4; ++slot) {
+                    point += mesh.skin[v].weights[slot] * glm::vec3(rest_matrices[mesh.skin[v].joints[slot]] * position);
+                }
+            }
             if (first) {
                 model.bounds_min = point;
                 model.bounds_max = point;
@@ -231,6 +367,7 @@ bool LoadModelFromFile(const char* path, Model& model, std::string& error) {
                   | aiProcess_GenSmoothNormals // only for meshes that have no normals
                   | aiProcess_JoinIdenticalVertices
                   | aiProcess_ImproveCacheLocality
+                  | aiProcess_LimitBoneWeights // at most four joints per vertex
                   | aiProcess_FlipUVs);        // Assimp's (0, 0) is bottom-left, ours is top-left
     if (scene == nullptr || scene->mRootNode == nullptr) {
         error = std::string("cannot load model ") + path + ": " + importer.GetErrorString();
@@ -245,12 +382,33 @@ bool LoadModelFromFile(const char* path, Model& model, std::string& error) {
         model.materials.push_back(ModelMaterial{});
     }
 
+    // The skeleton: every node that is a bone of some mesh, plus the nodes above those.
+    std::set<std::string> bone_names;
+    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+        for (unsigned int b = 0; b < scene->mMeshes[i]->mNumBones; ++b) {
+            bone_names.insert(scene->mMeshes[i]->mBones[b]->mName.C_Str());
+        }
+    }
+    if (!bone_names.empty()) {
+        std::map<const aiNode*, bool> is_joint;
+        MarkJointNodes(*scene->mRootNode, bone_names, is_joint);
+        CollectJoints(*scene->mRootNode, -1, is_joint, model.skeleton);
+        if (model.skeleton.joints.size() > 256) {
+            model.warnings.push_back("the skeleton has " + std::to_string(model.skeleton.joints.size()) +
+                                     " joints, more than the 256 supported; the model is loaded without it");
+            model.skeleton = Skeleton{};
+        }
+    }
+
     // Maps Assimp's mesh numbers to ours; -1 for meshes without triangles.
     std::vector<int> mesh_map(scene->mNumMeshes, -1);
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         ModelMesh mesh = ConvertMesh(*scene->mMeshes[i]);
         if (mesh.indices.empty() || mesh.vertices.empty()) {
             continue;
+        }
+        if (scene->mMeshes[i]->mNumBones > 0 && !model.skeleton.joints.empty()) {
+            ConvertSkin(*scene->mMeshes[i], mesh, model.skeleton, model.warnings);
         }
         if (mesh.material_index < 0 || mesh.material_index >= static_cast<int>(model.materials.size())) {
             mesh.material_index = 0;
@@ -264,8 +422,16 @@ bool LoadModelFromFile(const char* path, Model& model, std::string& error) {
         error = std::string("model ") + path + " contains no triangles";
         return false;
     }
-    if (scene->mNumAnimations > 0) {
-        model.warnings.push_back("the file contains animations, which are not loaded yet");
+    if (!model.skeleton.joints.empty()) {
+        bool has_foreign_channels = false;
+        for (unsigned int i = 0; i < scene->mNumAnimations; ++i) {
+            model.animations.push_back(ConvertAnimation(*scene->mAnimations[i], model.skeleton, has_foreign_channels));
+        }
+        if (has_foreign_channels) {
+            model.warnings.push_back("some animations move nodes outside the skeleton; those parts are ignored");
+        }
+    } else if (scene->mNumAnimations > 0) {
+        model.warnings.push_back("the file has animations but no skinned mesh; animations of rigid parts are not loaded");
     }
 
     ComputeBounds(model);
@@ -298,11 +464,19 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
         result.materials.push_back(material);
     }
     for (const ModelMesh& mesh : model.meshes) {
-        result.meshes.push_back(renderer.CreateMesh(mesh.vertices.data(), static_cast<int>(mesh.vertices.size()),
-                                                    mesh.indices.data(), static_cast<int>(mesh.indices.size())));
+        const int vertex_count = static_cast<int>(mesh.vertices.size());
+        const int index_count = static_cast<int>(mesh.indices.size());
+        if (mesh.skin.empty()) {
+            result.meshes.push_back(renderer.CreateMesh(mesh.vertices.data(), vertex_count, mesh.indices.data(), index_count));
+        } else {
+            result.meshes.push_back(renderer.CreateSkinnedMesh(mesh.vertices.data(), mesh.skin.data(), vertex_count,
+                                                               mesh.indices.data(), index_count));
+        }
         result.mesh_material_index.push_back(mesh.material_index);
+        result.mesh_is_skinned.push_back(mesh.skin.empty() ? 0 : 1);
     }
     result.instances = model.instances;
+    result.rest_joint_matrices = ComputeJointMatrices(model.skeleton, GetRestPose(model.skeleton));
     return result;
 }
 
@@ -321,10 +495,24 @@ void DestroyRenderModel(Renderer& renderer, RenderModel& model) {
 }
 
 void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform) {
+    DrawModel(renderer, model, transform, model.rest_joint_matrices);
+}
+
+void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform,
+               const std::vector<glm::mat4>& joint_matrices) {
     for (const ModelInstance& instance : model.instances) {
         const size_t mesh_index = static_cast<size_t>(instance.mesh_index);
-        renderer.DrawMesh(model.meshes[mesh_index], transform * instance.transform,
-                          model.materials[static_cast<size_t>(model.mesh_material_index[mesh_index])]);
+        const Material& material = model.materials[static_cast<size_t>(model.mesh_material_index[mesh_index])];
+        if (model.mesh_is_skinned[mesh_index] != 0) {
+            if (joint_matrices.size() != model.rest_joint_matrices.size()) {
+                FatalError("DrawModel: the pose must have one matrix per joint of the model's skeleton");
+            }
+            // The joints place a skinned mesh; the node it hangs on in the file does not.
+            renderer.DrawSkinnedMesh(model.meshes[mesh_index], transform, material, joint_matrices.data(),
+                                     static_cast<int>(joint_matrices.size()));
+        } else {
+            renderer.DrawMesh(model.meshes[mesh_index], transform * instance.transform, material);
+        }
     }
 }
 
