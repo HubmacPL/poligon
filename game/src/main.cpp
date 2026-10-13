@@ -16,6 +16,32 @@
 
 namespace {
 
+// A light square with a darker frame and two diagonal planks, like the side of a wooden crate.
+// It is asymmetric on purpose (one corner is marked), so a flipped or rotated texture is visible.
+poligon::Image MakeCrateImage() {
+    const int size = 64;
+    poligon::Image image = poligon::MakeSolidImage(size, size, 235, 235, 235);
+    const auto set_gray = [&](int x, int y, std::uint8_t value) {
+        std::uint8_t* pixel = &image.pixels[static_cast<size_t>(y * size + x) * 4];
+        pixel[0] = value;
+        pixel[1] = value;
+        pixel[2] = value;
+    };
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const bool frame = x < 6 || y < 6 || x >= size - 6 || y >= size - 6;
+            const bool diagonal = (x - y >= -3 && x - y <= 3) || (x + y >= size - 4 && x + y <= size + 2);
+            const bool corner_mark = x >= 8 && x < 20 && y >= 8 && y < 14;  // near the top-left corner
+            if (frame || corner_mark) {
+                set_gray(x, y, 120);
+            } else if (diagonal) {
+                set_gray(x, y, 170);
+            }
+        }
+    }
+    return image;
+}
+
 class ToyGame : public poligon::Game {
 public:
     ToyGame(flecs::world& world, poligon::Renderer& renderer, const poligon::Input& input,
@@ -31,6 +57,12 @@ public:
     void Start(poligon::GameLoop& /*loop*/) override {
         cube_mesh_ = renderer_.CreateCubeMesh();
         plane_mesh_ = renderer_.CreatePlaneMesh();
+
+        // Both textures are generated here, so the toy needs no image files.
+        const std::uint8_t light_gray[4] = {255, 255, 255, 255};
+        const std::uint8_t dark_gray[4] = {190, 190, 190, 255};
+        ground_texture_ = renderer_.CreateTexture(poligon::MakeCheckerImage(128, 128, 64, light_gray, dark_gray));
+        box_texture_ = renderer_.CreateTexture(MakeCrateImage());
     }
 
     void BeginFrame(poligon::GameLoop& loop) override {
@@ -60,8 +92,12 @@ public:
         renderer_.BeginFrame(camera, light);
 
         ground_query_.each([this](const toy::Ground& ground) {
-            renderer_.DrawMesh(plane_mesh_, glm::scale(glm::mat4(1.0f), {ground.size, 1.0f, ground.size}),
-                               ground.color);
+            poligon::Material material;
+            material.color = ground.color;
+            material.texture = ground_texture_;
+            // The checker image holds 2x2 squares; repeat it so that one square is one meter.
+            material.uv_scale = {ground.size * 0.5f, ground.size * 0.5f};
+            renderer_.DrawMesh(plane_mesh_, glm::scale(glm::mat4(1.0f), {ground.size, 1.0f, ground.size}), material);
         });
 
         box_query_.each([this](const toy::Position& position, const toy::Box& box) {
@@ -72,7 +108,10 @@ public:
             const glm::mat4 transform = glm::translate(identity, center) *
                                         glm::rotate(identity, glm::radians(box.rotation_y_degrees), {0.0f, 1.0f, 0.0f}) *
                                         glm::scale(identity, box.size);
-            renderer_.DrawMesh(cube_mesh_, transform, box.color);
+            poligon::Material material;
+            material.color = box.color;
+            material.texture = box_texture_;
+            renderer_.DrawMesh(cube_mesh_, transform, material);
         });
 
         renderer_.EndFrame();
@@ -88,6 +127,8 @@ private:
     flecs::query<const toy::Ground> ground_query_;
     poligon::MeshHandle cube_mesh_;
     poligon::MeshHandle plane_mesh_;
+    poligon::TextureHandle ground_texture_;
+    poligon::TextureHandle box_texture_;
 };
 
 } // namespace

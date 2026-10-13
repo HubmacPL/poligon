@@ -10,6 +10,21 @@ poligon_add_test(fixed_step_clock_test)
 poligon_add_test(game_loop_test)
 poligon_add_test(math_test)
 
+find_package(Stb REQUIRED)
+add_executable(image_test image_test.cpp)
+target_include_directories(image_test SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
+target_link_libraries(image_test PRIVATE poligon_engine poligon_build_options)
+add_test(NAME image_test COMMAND image_test ${CMAKE_BINARY_DIR}/test_output)
+
+# Pixel-level checks of textured rendering, on both graphics backends, with the debug layer on.
+add_executable(texture_render_test texture_render_test.cpp)
+target_link_libraries(texture_render_test PRIVATE poligon_engine poligon_build_options)
+foreach(backend d3d12 vulkan)
+  add_test(NAME texture_render_test_${backend} COMMAND texture_render_test ${backend})
+  set_tests_properties(texture_render_test_${backend} PROPERTIES
+    FAIL_REGULAR_EXPRESSION "D3D12 ERROR;D3D12 WARNING;D3D12 CORRUPTION;Validation Error;VUID-")
+endforeach()
+
 add_executable(input_test input_test.cpp)
 target_link_libraries(input_test PRIVATE poligon_engine poligon_build_options)
 add_test(NAME input_test COMMAND input_test ${CMAKE_BINARY_DIR}/test_output)

@@ -21,7 +21,7 @@ Ten plik to spis treści i zasady. Szczegóły tematów trafiają do osobnych pl
 - Kamień milowy 1: scena-zabawka uruchamiana bez okna na N klatek ze stałym krokiem czasu, nagranie i odtworzenie wejścia, zrzut stanu do JSON, zrzut klatki do PNG, test identyczności dwóch odtworzeń.
 - Kroki (po każdym raport i stop): 1 szkielet budowania, 2 pętla ze stałym krokiem i tryb bez okna, 3 SDL3 GPU i PNG (tu wybór backendu D3D12/Vulkan po teście obu), 4 flecs i zrzut JSON (w tym wczesny test: dwa uruchomienia tej samej sekwencji tworzenia, usuwania ze środka i doczepiania komponentów dają identyczny JSON; przy rozjeździe stop i raport), 5 nagrywanie i odtwarzanie wejścia, 6 test determinizmu, 7 zapis awarii, ctest, pierwszy przykład.
 - Kamień milowy 1 ukończony (kroki 1 do 7).
-- Kamień milowy 2, modele i tekstury (po każdym kroku raport i stop): 1 GLM zamiast własnej matematyki (zrobione), 2 tekstury, 3 modele glTF przez cgltf (tylko nieruchome), 4 zabawka z wczytanym modelem, błędy dla złych plików, dokumentacja. Poza zakresem: PBR i mapy normalnych, animacja szkieletowa, tekstury skompresowane.
+- Kamień milowy 2, modele i tekstury (po każdym kroku raport i stop): 1 GLM zamiast własnej matematyki (zrobione), 2 tekstury (zrobione), 3 modele glTF przez cgltf (tylko nieruchome), 4 zabawka z wczytanym modelem, błędy dla złych plików, dokumentacja. Poza zakresem: PBR i mapy normalnych, animacja szkieletowa, tekstury skompresowane.
 - Zasoby testowe generujemy sami; cudzych plików w repozytorium nie ma. Wczesny test kolejności flecs przeszedł (`tests/ecs_order_probe.cpp`), flecs zostaje.
 
 ## Czym to ma być

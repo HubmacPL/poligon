@@ -14,7 +14,9 @@ add_library(poligon_engine STATIC
   src/fatal_error.cpp
   src/fixed_step_clock.cpp
   src/game_loop.cpp
+  src/image.cpp
   src/input.cpp
+  src/stb_image_impl.cpp
   src/platform.cpp
   src/renderer.cpp
   src/stb_image_write_impl.cpp
@@ -61,7 +63,9 @@ function(poligon_embed_shader source stage symbol header)
   add_custom_command(
     OUTPUT ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h
     COMMAND ${CMAKE_COMMAND} -E make_directory ${output_dir}
-    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -T ${profile} -E main -Fo ${dxil} ${input}
+    # Shaders carry [[vk::...]] attributes that only matter for SPIR-V; the DXIL compile would
+    # report them as ignored, so that one warning is off here.
+    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -Wno-ignored-attributes -T ${profile} -E main -Fo ${dxil} ${input}
     COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -spirv -T ${profile} -E main -Fo ${spirv} ${input}
     COMMAND ${CMAKE_COMMAND} -DINPUT=${dxil} -DOUTPUT=${output_dir}/${header}_dxil.h -DSYMBOL=${symbol}Dxil -P ${embed}
     COMMAND ${CMAKE_COMMAND} -DINPUT=${spirv} -DOUTPUT=${output_dir}/${header}_spirv.h -DSYMBOL=${symbol}Spirv -P ${embed}
