@@ -47,6 +47,8 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Każdy materiał ma kolor bazowy i, jeśli jest, zdekodowaną teksturę koloru (z pliku obok modelu albo osadzoną w nim). Tekstura, której nie da się wczytać, daje wpis w `Model::warnings`, a nie błąd.
 - `UploadModel(renderer, model)` kopiuje siatki i tekstury na kartę; `DrawModel(renderer, render_model, transform)` je rysuje.
 - `model_viewer PLIK` pokazuje model na podłodze w szachownicę z kamerą krążącą wokół (przeciąganie lewym przyciskiem myszy, A/D, W/S, Q/E). `model_viewer PLIK --headless --dump-frame out.png` zapisuje jeden obraz i wypisuje liczbę trójkątów, rozmiar i ostrzeżenia; tak agent ogląda model.
+- Za ciężki model (drzewa filmowej jakości mają miliony trójkątów): `tools/assets/simplify_model.py` działa w Blenderze bez okna i zapisuje glTF z zachowaną zadaną częścią trójkątów: `blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚCIE.gltf 0.1`. Blender to narzędzie zewnętrzne; nic z niego nie jest linkowane.
+- Pobrane i odchudzone zasoby leżą w `poligon-assets/` obok projektu (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), nigdy w repozytorium.
 - Jeszcze nie wczytujemy: szkieletów, animacji, map normalnych i pozostałych tekstur materiału glTF, kamer i świateł z pliku. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
 
 ## Backend
