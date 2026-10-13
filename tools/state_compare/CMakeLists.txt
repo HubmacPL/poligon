@@ -1,0 +1,2 @@
+add_executable(state_compare main.cpp)
+target_link_libraries(state_compare PRIVATE poligon_build_options)

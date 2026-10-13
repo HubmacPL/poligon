@@ -1,0 +1,19 @@
+{
+  "name": "poligon",
+  "version": "0.1.0",
+  "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+  "dependencies": [
+    {
+      "name": "sdl3",
+      "features": [
+        "vulkan"
+      ]
+    },
+    "stb",
+    "flecs",
+    {
+      "name": "directx-dxc",
+      "host": true
+    }
+  ]
+}

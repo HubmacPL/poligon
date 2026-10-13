@@ -1,0 +1,3 @@
+# Text files are stored with LF in the repository; binary files are never converted.
+* text=auto
+*.png binary

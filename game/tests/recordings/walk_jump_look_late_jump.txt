@@ -1,0 +1,23 @@
+# Same as walk_jump_look.txt, except that the second jump starts one tick later (151 instead of 150).
+# Used to prove that the determinism test notices a difference and names the right tick.
+poligon-input 1
+ticks_per_second 60
+action move_x
+action move_z
+action jump
+action look_x
+action look_hold
+
+tick 30 move_x=1
+tick 60 jump=1
+tick 62 jump=0
+tick 120 move_x=0 move_z=-1
+tick 151 jump=1
+tick 152 jump=0
+tick 200 move_z=0
+tick 220 look_hold=1 look_x=3
+tick 260 look_x=-1.5
+tick 300 look_x=0 look_hold=0
+tick 330 move_x=-1 move_z=1
+tick 400 move_x=0 move_z=0
+end 480
