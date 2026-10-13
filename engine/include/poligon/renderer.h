@@ -50,6 +50,21 @@ struct RendererConfig {
     float exposure = 1.0f;
     // Width and height in pixels of each of the four shadow images (cascades).
     int shadow_map_size = 2048;
+
+    // Bloom: bright areas spread a soft glow over their surroundings, as in a camera lens.
+    // bloom_strength is the share of the blurred image in the final one.
+    bool bloom = false;
+    float bloom_strength = 0.05f;
+
+    // Automatic exposure: brightness is adjusted so that the average of the image comes out
+    // at auto_exposure_target, the way an eye adapts. `exposure` still multiplies the result.
+    // The multiplier stays between auto_exposure_min and auto_exposure_max. Each frame moves
+    // auto_exposure_speed of the way to the new value (the first frame goes all the way).
+    bool auto_exposure = false;
+    float auto_exposure_target = 0.25f;
+    float auto_exposure_min = 0.05f;
+    float auto_exposure_max = 8.0f;
+    float auto_exposure_speed = 0.05f;
 };
 
 struct Camera {
@@ -94,6 +109,28 @@ struct Environment {
     // Fog: 0 turns it off; 0.01 hides things about 300 m away. Distant objects fade into fog_color.
     float fog_density = 0.0f;
     Color fog_color{0.60f, 0.72f, 0.88f, 1.0f};
+
+    // Volumetric fog: the fog is computed along the line of sight of every pixel instead of
+    // from the distance alone. Fog in the sun's shadow is darker, so shafts of light show
+    // between trees; the fog glows around the sun; it can thin out with height; it also
+    // covers the sky. Uses fog_density and fog_color.
+    bool volumetric_fog = false;
+    // The fog is at full density up to fog_base_height (meters) and above it thins out by
+    // this factor per meter: 0 = same everywhere, 0.1 = a layer about 10 m thick.
+    float fog_height_falloff = 0.0f;
+    float fog_base_height = 0.0f;
+    // Brightness of fog in shadow relative to sunlit fog. Lower = stronger shafts.
+    float fog_shadow_brightness = 0.35f;
+    // Strength of the glow around the sun. 0 turns it off.
+    float fog_sun_glow = 1.0f;
+
+    // Ambient occlusion: crevices and places close to other surfaces (the inside of a tree
+    // crown, where a trunk meets the ground) receive less ambient light. Computed from what
+    // is on screen. Does not affect direct sunlight.
+    bool ambient_occlusion = false;
+    // How far (meters) a surface can be to still darken another.
+    float ambient_occlusion_radius = 0.6f;
+    float ambient_occlusion_strength = 1.0f;
 };
 
 struct MeshVertex {
@@ -151,8 +188,9 @@ struct Material {
     bool occlusion_in_orm = false;
 };
 
-// Draws lit meshes. A frame goes through these stages: shadows of the sun, the scene itself
-// (multisampled, in linear wide-range colors), tone mapping to an off-screen image.
+// Draws lit meshes. A frame goes through these stages: shadows of the sun, ambient occlusion,
+// the scene itself (multisampled, in linear wide-range colors), volumetric fog, bloom, tone
+// mapping to an off-screen image. Stages that are turned off are skipped.
 // With a window that image is then shown, without one it can only be saved or captured.
 // The same pixels are produced in both cases.
 //

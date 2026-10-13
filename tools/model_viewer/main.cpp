@@ -239,6 +239,10 @@ public:
         environment.sky_light = true;
         environment.sky_ground = {0.42f, 0.44f, 0.46f, 1.0f};  // haze below the horizon, past the floor's edge
         environment.shadow_distance = std::max(distance_ + radius_ * 3.0f, 5.0f);
+        environment.ambient_occlusion = true;
+        environment.volumetric_fog = true;
+        environment.fog_density = 0.0015f;
+        environment.fog_height_falloff = 0.03f;
 
         renderer_.BeginFrame(camera, sun, environment);
 
@@ -345,7 +349,8 @@ int main(int argc, char** argv) {
     renderer_config.enable_validation = options.gpu_validation;
     renderer_config.window_title = "Poligon model viewer";
     renderer_config.clear_color = {0.53f, 0.73f, 0.90f, 1.0f};
-    renderer_config.exposure = 0.6f;
+    renderer_config.bloom = true;
+    renderer_config.auto_exposure = true;
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;

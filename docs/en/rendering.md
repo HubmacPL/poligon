@@ -14,11 +14,14 @@ Examples: `examples/renderer`, `examples/texture`, `examples/environment`, `exam
 
 ## Frame stages
 
-A frame is recorded by `DrawMesh` calls and carried out in `EndFrame`, in three passes:
+A frame is recorded by `DrawMesh` calls and carried out in `EndFrame`, in these passes (those turned off are skipped):
 
 1. **Shadows.** The scene's depth as seen from the sun, four times (**cascades**): the visible range up to `Environment::shadow_distance` is cut into four parts, near ones sharp, far ones coarse. All four share one depth image as 2 x 2 tiles.
-2. **Scene.** Sky first, then meshes, in linear colors with a wide range (values above 1 are kept), with multisampling (`RendererConfig::msaa_samples`, 4 by default). Cut-out materials use **alpha to coverage**, so leaf edges are smooth.
-3. **Tone mapping.** The wide-range image is turned into displayable colors: `exposure` scales brightness, `ToneMapping::Aces` rolls bright areas off smoothly, `ToneMapping::None` clips (exact; used by tests).
+2. **Depth and ambient occlusion** (`Environment::ambient_occlusion`). The scene's depth as seen from the camera is drawn first, with one sample per pixel. From it the renderer works out, per pixel, how much nearby geometry blocks the surroundings (crevices, the inside of a tree crown, where a trunk meets the ground) and blurs the result. The scene pass then gives such places less ambient light; direct sunlight is not affected. `ambient_occlusion_radius` is the reach in meters.
+3. **Scene.** Sky first, then meshes, in linear colors with a wide range (values above 1 are kept), with multisampling (`RendererConfig::msaa_samples`, 4 by default). Cut-out materials use **alpha to coverage**, so leaf edges are smooth.
+4. **Volumetric fog** (`Environment::volumetric_fog`, uses `fog_density` and `fog_color`). At half resolution, every line of sight is walked in 32 steps; each step adds the light the fog scatters there and dims what lies behind. Steps in the sun's shadow add less (`fog_shadow_brightness`), which shows as **shafts of light** between trees. The fog glows around the sun (`fog_sun_glow`), can thin out with height (`fog_height_falloff`, `fog_base_height`) and also covers the sky. It replaces the simple distance fog of the scene pass.
+5. **Bloom** (`RendererConfig::bloom`, `bloom_strength`). The scene is shrunk into a chain of ever smaller, blurrier copies, which are then mixed back together and blended into the picture: bright areas get a soft glow.
+6. **Tone mapping.** The wide-range image is turned into displayable colors: `exposure` scales brightness, **automatic exposure** (`RendererConfig::auto_exposure`) first brings the average brightness of the picture to `auto_exposure_target`, moving `auto_exposure_speed` of the way each frame (all the way on the first frame), `ToneMapping::Aces` rolls bright areas off smoothly, `ToneMapping::None` clips (exact; used by tests).
 
 ## Materials and light
 
@@ -27,8 +30,9 @@ A frame is recorded by `DrawMesh` calls and carried out in `EndFrame`, in three 
 - `DirectionalLight` is the sun: `direction` it shines in, `color` (may exceed 1), and flat `ambient` light. Units: a white matte surface facing the sun reflects exactly the sun's color.
 - `Environment` (third argument of `BeginFrame`): `draw_sky` (gradient from `sky_horizon` to `sky_zenith`, `sky_ground` below, sun disc), `sky_light` (surfaces are lit by the sky from above and the ground from below instead of flat ambient; smooth surfaces mirror the sky), `shadows` and `shadow_distance`, `fog_density` and `fog_color`. The default is plain: no sky, no fog, shadows on.
 - Double-sided materials are treated as thin foliage: light from behind shines through a little.
-- A sunny scene has light values of 2 to 4, so use an exposure around 0.5 to 0.7.
-- `tests/scene_render_test.cpp` checks shadows, sky, fog, normal map orientation, multisampling and tone mapping by pixel values on both backends.
+- A sunny scene has light values of 2 to 4: turn on `auto_exposure`, or use an exposure around 0.5 to 0.7.
+- The new effects are off by default, so that a plain scene stays plain and exact; `examples/environment` turns all of them on.
+- `tests/scene_render_test.cpp` checks shadows, sky, fog, normal map orientation, multisampling and tone mapping by pixel values on both backends; `tests/effects_render_test.cpp` does the same for ambient occlusion, volumetric fog, bloom and automatic exposure.
 ## Conventions
 
 - Math is GLM, used directly (`glm::vec3`, `glm::mat4`, `glm::quat`, `glm::translate`, `glm::lookAt`...). Always through `#include "poligon/math.h"`, never through GLM headers, and without your own `GLM_FORCE_*`: the `poligon_engine` target sets the configuration.
@@ -99,7 +103,10 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 
 ## Known limits
 
-- One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene, no ambient occlusion pass.
+- One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene.
+- Ambient occlusion and fog see only what is on screen and only the nearest surface of each pixel. Fog is lit by the sun only within `shadow_distance` (beyond it, it counts as lit) and is walked at most 1000 m.
+- With ambient occlusion or volumetric fog on, the scene's geometry is drawn one more time (the depth pass).
+- Automatic exposure adapts per frame, not per second, so its speed depends on the frame rate.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
 - Textures are uncompressed (4 bytes per pixel plus mipmaps): enough for tests with 4 GB of card memory, not for a large world.
 - The alpha channel of a texture is used only for cut-out (`alpha_cutoff`), never for blending.

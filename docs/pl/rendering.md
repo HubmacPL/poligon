@@ -16,11 +16,14 @@ Dodatkowo `poligon/image.h` (obrazy w pamięci, PNG i JPEG) i przykład `example
 
 ## Etapy klatki
 
-Klatkę nagrywają wywołania `DrawMesh`, a wykonuje ją `EndFrame`, w trzech przebiegach:
+Klatkę nagrywają wywołania `DrawMesh`, a wykonuje ją `EndFrame`, w tych przebiegach (wyłączone są pomijane):
 
 1. **Cienie.** Głębia sceny widziana ze słońca, cztery razy (**kaskady**): widoczny zakres do `Environment::shadow_distance` jest pocięty na cztery części, bliskie ostre, dalekie zgrubne. Wszystkie cztery dzielą jeden obraz głębi jako kafelki 2 x 2.
-2. **Scena.** Najpierw niebo, potem siatki, w kolorach liniowych o szerokim zakresie (wartości powyżej 1 zostają), z multisamplingiem (`RendererConfig::msaa_samples`, domyślnie 4). Materiały wycinane alfą używają **alpha to coverage**, więc krawędzie liści są gładkie.
-3. **Mapowanie tonów.** Obraz o szerokim zakresie jest zamieniany na kolory do wyświetlenia: `exposure` skaluje jasność, `ToneMapping::Aces` łagodnie spłaszcza jasne partie, `ToneMapping::None` obcina (dokładne; używane w testach).
+2. **Głębia i przyciemnianie zagłębień** (ambient occlusion, `Environment::ambient_occlusion`). Najpierw rysowana jest głębia sceny widziana z kamery, z jedną próbką na piksel. Z niej renderer wylicza dla każdego piksela, na ile pobliska geometria zasłania otoczenie (szczeliny, wnętrze korony drzewa, styk pnia z ziemią), i rozmywa wynik. Przebieg sceny daje takim miejscom mniej światła otoczenia; bezpośrednie światło słońca się nie zmienia. `ambient_occlusion_radius` to zasięg w metrach.
+3. **Scena.** Najpierw niebo, potem siatki, w kolorach liniowych o szerokim zakresie (wartości powyżej 1 zostają), z multisamplingiem (`RendererConfig::msaa_samples`, domyślnie 4). Materiały wycinane alfą używają **alpha to coverage**, więc krawędzie liści są gładkie.
+4. **Mgła objętościowa** (`Environment::volumetric_fog`, używa `fog_density` i `fog_color`). W połowie rozdzielczości każda linia wzroku jest przechodzona w 32 krokach; każdy krok dodaje światło, które mgła tam rozprasza, i przyciemnia to, co leży za nim. Kroki w cieniu słońca dodają mniej (`fog_shadow_brightness`), co widać jako **snopy światła** między drzewami. Mgła jaśnieje wokół słońca (`fog_sun_glow`), może rzednąć z wysokością (`fog_height_falloff`, `fog_base_height`) i przykrywa też niebo. Zastępuje prostą mgłę od odległości z przebiegu sceny.
+5. **Poświata** (bloom, `RendererConfig::bloom`, `bloom_strength`). Scena jest zmniejszana do łańcucha coraz mniejszych, coraz bardziej rozmytych kopii, które potem są składane z powrotem i domieszane do obrazu: jasne miejsca dostają miękką poświatę.
+6. **Mapowanie tonów.** Obraz o szerokim zakresie jest zamieniany na kolory do wyświetlenia: `exposure` skaluje jasność, **automatyczna ekspozycja** (`RendererConfig::auto_exposure`) najpierw sprowadza średnią jasność obrazu do `auto_exposure_target`, w każdej klatce pokonując `auto_exposure_speed` drogi (w pierwszej klatce całą), `ToneMapping::Aces` łagodnie spłaszcza jasne partie, `ToneMapping::None` obcina (dokładne; używane w testach).
 
 ## Materiały i światło
 
@@ -29,8 +32,9 @@ Klatkę nagrywają wywołania `DrawMesh`, a wykonuje ją `EndFrame`, w trzech pr
 - `DirectionalLight` to słońce: kierunek `direction`, w którym świeci, kolor `color` (może przekraczać 1) i płaskie światło otoczenia `ambient`. Jednostki: biała matowa powierzchnia zwrócona do słońca odbija dokładnie kolor słońca.
 - `Environment` (trzeci argument `BeginFrame`): `draw_sky` (gradient od `sky_horizon` do `sky_zenith`, `sky_ground` poniżej, tarcza słońca), `sky_light` (powierzchnie oświetla niebo z góry i ziemia z dołu zamiast płaskiego otoczenia; gładkie powierzchnie odbijają niebo), `shadows` i `shadow_distance`, `fog_density` i `fog_color`. Domyślnie jest skromnie: bez nieba, bez mgły, cienie włączone.
 - Materiały dwustronne są traktowane jak cienkie liście: światło z tyłu trochę przez nie prześwieca.
-- Słoneczna scena ma wartości światła 2 do 4, więc ekspozycja powinna wynosić około 0,5 do 0,7.
-- `tests/scene_render_test.cpp` sprawdza cienie, niebo, mgłę, orientację map normalnych, multisampling i mapowanie tonów po wartościach pikseli na obu backendach.
+- Słoneczna scena ma wartości światła 2 do 4: włącz `auto_exposure` albo ustaw ekspozycję około 0,5 do 0,7.
+- Nowe efekty są domyślnie wyłączone, żeby prosta scena pozostała prosta i dokładna; `examples/environment` włącza wszystkie.
+- `tests/scene_render_test.cpp` sprawdza cienie, niebo, mgłę, orientację map normalnych, multisampling i mapowanie tonów po wartościach pikseli na obu backendach; `tests/effects_render_test.cpp` robi to samo dla przyciemniania zagłębień, mgły objętościowej, poświaty i automatycznej ekspozycji.
 ## Konwencje
 
 - Matematyka to GLM, używane wprost (`glm::vec3`, `glm::mat4`, `glm::quat`, `glm::translate`, `glm::lookAt`...). Zawsze przez `#include "poligon/math.h"`, nigdy przez nagłówki GLM, i bez własnych `GLM_FORCE_*`: konfigurację ustawia cel `poligon_engine`.
@@ -101,7 +105,10 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 
 ## Znane ograniczenia
 
-- Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny i bez przebiegu zacienienia otoczenia.
+- Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny.
+- Przyciemnianie zagłębień i mgła widzą tylko to, co jest na ekranie, i tylko najbliższą powierzchnię każdego piksela. Słońce oświetla mgłę tylko w zasięgu `shadow_distance` (dalej liczy się jako oświetlona), a linia wzroku jest przechodzona najwyżej na 1000 m.
+- Przy włączonym przyciemnianiu zagłębień albo mgle objętościowej geometria sceny jest rysowana jeszcze raz (przebieg głębi).
+- Automatyczna ekspozycja dostosowuje się na klatkę, nie na sekundę, więc jej tempo zależy od liczby klatek na sekundę.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
 - Tekstury są nieskompresowane (4 bajty na piksel plus mipmapy), co przy 4 GB pamięci karty wystarczy na testy, nie na duży świat.
 - Kanał alfa tekstury służy tylko do wycinania (`alpha_cutoff`), nigdy do mieszania kolorów.

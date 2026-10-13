@@ -8,8 +8,22 @@
 #include <SDL3/SDL.h>
 
 #include "poligon/fatal_error.h"
+#include "poligon_shaders/ao_blur_frag_dxil.h"
+#include "poligon_shaders/ao_blur_frag_spirv.h"
+#include "poligon_shaders/ao_frag_dxil.h"
+#include "poligon_shaders/ao_frag_spirv.h"
+#include "poligon_shaders/bloom_down_frag_dxil.h"
+#include "poligon_shaders/bloom_down_frag_spirv.h"
+#include "poligon_shaders/bloom_up_frag_dxil.h"
+#include "poligon_shaders/bloom_up_frag_spirv.h"
+#include "poligon_shaders/fog_composite_frag_dxil.h"
+#include "poligon_shaders/fog_composite_frag_spirv.h"
+#include "poligon_shaders/fog_frag_dxil.h"
+#include "poligon_shaders/fog_frag_spirv.h"
 #include "poligon_shaders/fullscreen_vert_dxil.h"
 #include "poligon_shaders/fullscreen_vert_spirv.h"
+#include "poligon_shaders/luminance_frag_dxil.h"
+#include "poligon_shaders/luminance_frag_spirv.h"
 #include "poligon_shaders/mesh_frag_dxil.h"
 #include "poligon_shaders/mesh_frag_spirv.h"
 #include "poligon_shaders/mesh_vert_dxil.h"
@@ -52,6 +66,7 @@ struct FragmentFrameUniforms {
     glm::vec4 sky_ground;
     glm::vec4 fog;
     glm::vec4 options;
+    glm::vec4 screen;
 };
 
 struct MaterialUniforms {
@@ -71,6 +86,41 @@ struct SkyUniforms {
 
 struct TonemapUniforms {
     glm::vec4 parameters;
+    glm::vec4 auto_exposure;
+};
+
+struct AoUniforms {
+    glm::vec4 projection_info;
+    glm::vec4 screen;
+    glm::vec4 ao;
+};
+
+struct AoBlurUniforms {
+    glm::vec4 projection_info;
+    glm::vec4 direction;
+};
+
+struct FogUniforms {
+    glm::mat4 inverse_view_projection;
+    glm::mat4 shadow_matrices[kCascadeCount];
+    glm::vec4 cascade_far;
+    glm::vec4 camera_position;
+    glm::vec4 camera_forward;
+    glm::vec4 light_direction;
+    glm::vec4 light_color;
+    glm::vec4 fog;
+    glm::vec4 fog_shape;
+    glm::vec4 options;
+};
+
+struct FogCompositeUniforms {
+    glm::vec4 projection_info;
+    glm::vec4 sizes;
+};
+
+// Shared by the bloom and luminance shaders.
+struct ParameterUniforms {
+    glm::vec4 parameters;
 };
 
 // The GPU reads these as tightly packed floats.
@@ -87,6 +137,14 @@ constexpr SDL_GPUTextureFormat kSceneFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16
 // converts automatically: shaders write linear values, the stored bytes are sRGB.
 constexpr SDL_GPUTextureFormat kOutputFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
 constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+constexpr SDL_GPUTextureFormat kAoFormat = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+constexpr SDL_GPUTextureFormat kLuminanceFormat = SDL_GPU_TEXTUREFORMAT_R16_FLOAT;
+
+// The fog is walked at most this far (meters) along each line of sight.
+constexpr float kFogWalkDistance = 1000.0f;
+// Share of each smaller (blurrier) bloom image when it is mixed into the next larger one.
+constexpr float kBloomSpread = 0.65f;
+constexpr int kMaxBloomLevels = 6;
 
 // Shadow casters this far behind the visible area (towards the sun) still cast shadows into it.
 constexpr float kShadowCasterDistance = 150.0f;
@@ -95,6 +153,22 @@ struct Mesh {
     SDL_GPUBuffer* vertex_buffer = nullptr;
     SDL_GPUBuffer* index_buffer = nullptr;
     Uint32 index_count = 0;
+};
+
+// One image of the bloom chain.
+struct BloomLevel {
+    SDL_GPUTexture* texture = nullptr;
+    int width = 0;
+    int height = 0;
+};
+
+// How a full-screen pass combines what it writes with what the target holds.
+enum class FullscreenBlend {
+    Replace,
+    // target = written color + target * written alpha
+    AddAndDim,
+    // target = mix(target, written color, written alpha)
+    Mix,
 };
 
 struct DrawCommand {
@@ -169,6 +243,29 @@ struct Renderer::Impl {
     SDL_GPUTexture* scene_resolved = nullptr;
     SDL_GPUTexture* output_target = nullptr;
     SDL_GPUTexture* shadow_atlas = nullptr;
+    // The scene's depth with one sample per pixel, drawn before the scene so that ambient
+    // occlusion and fog can read it.
+    SDL_GPUTexture* prepass_depth = nullptr;
+    SDL_GPUTexture* ao_target = nullptr;
+    SDL_GPUTexture* ao_scratch = nullptr;
+    SDL_GPUTexture* fog_target = nullptr;
+    int fog_width = 0;
+    int fog_height = 0;
+    std::vector<BloomLevel> bloom_levels;
+    // Two one-pixel images, written in turn: each frame reads the previous frame's value.
+    SDL_GPUTexture* luminance_targets[2] = {nullptr, nullptr};
+    int luminance_index = 0;
+    bool has_luminance_history = false;
+
+    SDL_GPUGraphicsPipeline* prepass_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* prepass_pipeline_double_sided = nullptr;
+    SDL_GPUGraphicsPipeline* ao_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* ao_blur_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* fog_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* fog_composite_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* bloom_down_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* bloom_up_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* luminance_pipeline = nullptr;
 
     SDL_GPUGraphicsPipeline* mesh_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* mesh_pipeline_double_sided = nullptr;
@@ -179,6 +276,7 @@ struct Renderer::Impl {
     SDL_GPUSampler* texture_sampler = nullptr;
     SDL_GPUSampler* shadow_sampler = nullptr;
     SDL_GPUSampler* clamp_sampler = nullptr;
+    SDL_GPUSampler* linear_clamp_sampler = nullptr;
 
     std::vector<Mesh> meshes;
     std::vector<SDL_GPUTexture*> textures;
@@ -286,6 +384,37 @@ struct Renderer::Impl {
         shadow_atlas = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
                                     config.shadow_map_size * 2, config.shadow_map_size * 2, SDL_GPU_SAMPLECOUNT_1,
                                     nullptr, "shadow image");
+
+        const SDL_GPUTextureUsageFlags drawn_and_read = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        prepass_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                     config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "depth image");
+        ao_target = CreateTarget(kAoFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                 "ambient occlusion image");
+        ao_scratch = CreateTarget(kAoFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                  "ambient occlusion image");
+        fog_width = (config.width + 1) / 2;
+        fog_height = (config.height + 1) / 2;
+        fog_target = CreateTarget(kSceneFormat, drawn_and_read, fog_width, fog_height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                  "fog image");
+
+        // Bloom chain: each image half the size of the one before, down to a few pixels.
+        int level_width = config.width;
+        int level_height = config.height;
+        do {
+            level_width = level_width > 1 ? level_width / 2 : 1;
+            level_height = level_height > 1 ? level_height / 2 : 1;
+            BloomLevel level;
+            level.width = level_width;
+            level.height = level_height;
+            level.texture = CreateTarget(kSceneFormat, drawn_and_read, level_width, level_height, SDL_GPU_SAMPLECOUNT_1,
+                                         nullptr, "bloom image");
+            bloom_levels.push_back(level);
+        } while (static_cast<int>(bloom_levels.size()) < kMaxBloomLevels && level_width >= 16 && level_height >= 16);
+
+        for (SDL_GPUTexture*& target : luminance_targets) {
+            target = CreateTarget(kLuminanceFormat, drawn_and_read, 1, 1, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                  "luminance image");
+        }
     }
 
     void CreateSamplers() {
@@ -324,15 +453,79 @@ struct Renderer::Impl {
         clamp_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         clamp_sampler = SDL_CreateGPUSampler(device, &clamp_info);
 
-        if (texture_sampler == nullptr || shadow_sampler == nullptr || clamp_sampler == nullptr) {
+        SDL_GPUSamplerCreateInfo linear_clamp_info = clamp_info;
+        linear_clamp_info.min_filter = SDL_GPU_FILTER_LINEAR;
+        linear_clamp_info.mag_filter = SDL_GPU_FILTER_LINEAR;
+        linear_clamp_sampler = SDL_CreateGPUSampler(device, &linear_clamp_info);
+
+        if (texture_sampler == nullptr || shadow_sampler == nullptr || clamp_sampler == nullptr ||
+            linear_clamp_sampler == nullptr) {
             FatalSdlError("cannot create sampler");
         }
+    }
+
+    // A pipeline for a pass that covers the whole target with one triangle (fullscreen.vert.hlsl).
+    SDL_GPUGraphicsPipeline* CreateFullscreenPipeline(SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader,
+                                                      SDL_GPUTextureFormat format, FullscreenBlend blend) {
+        SDL_GPUColorTargetDescription color_description{};
+        color_description.format = format;
+        if (blend != FullscreenBlend::Replace) {
+            SDL_GPUColorTargetBlendState& state = color_description.blend_state;
+            state.enable_blend = true;
+            state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+            state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+            if (blend == FullscreenBlend::AddAndDim) {
+                state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+                state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+            } else {
+                state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+                state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+            }
+            // The target's own alpha stays as it is.
+            state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        }
+
+        SDL_GPUGraphicsPipelineCreateInfo info{};
+        info.vertex_shader = vertex_shader;
+        info.fragment_shader = fragment_shader;
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        info.target_info.color_target_descriptions = &color_description;
+        info.target_info.num_color_targets = 1;
+        SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+        if (pipeline == nullptr) {
+            FatalSdlError("cannot create full-screen pipeline");
+        }
+        return pipeline;
+    }
+
+    // Draws one full-screen pass into `target`. keep_target: blend with what the target
+    // holds instead of overwriting it.
+    void DrawFullscreenPass(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, bool keep_target,
+                            SDL_GPUGraphicsPipeline* pipeline, const SDL_GPUTextureSamplerBinding* bindings,
+                            Uint32 binding_count, const void* uniforms, Uint32 uniform_size) {
+        SDL_GPUColorTargetInfo color_info{};
+        color_info.texture = target;
+        color_info.load_op = keep_target ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_DONT_CARE;
+        color_info.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, nullptr);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin full-screen pass");
+        }
+        SDL_BindGPUGraphicsPipeline(pass, pipeline);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, binding_count);
+        SDL_PushGPUFragmentUniformData(commands, 0, uniforms, uniform_size);
+        SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+        SDL_EndGPURenderPass(pass);
     }
 
     void CreatePipelines() {
         SDL_GPUShader* mesh_vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil),
                                                   kMeshVertSpirv, sizeof(kMeshVertSpirv));
-        SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kMeshFragDxil,
+        SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 2, kMeshFragDxil,
                                                     sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
         SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
                                                       sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
@@ -341,7 +534,7 @@ struct Renderer::Impl {
                          kFullscreenVertSpirv, sizeof(kFullscreenVertSpirv));
         SDL_GPUShader* sky_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1, kSkyFragDxil, sizeof(kSkyFragDxil),
                                                    kSkyFragSpirv, sizeof(kSkyFragSpirv));
-        SDL_GPUShader* tonemap_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kTonemapFragDxil,
+        SDL_GPUShader* tonemap_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1, kTonemapFragDxil,
                                                        sizeof(kTonemapFragDxil), kTonemapFragSpirv,
                                                        sizeof(kTonemapFragSpirv));
 
@@ -413,6 +606,18 @@ struct Renderer::Impl {
         shadow_info.target_info.num_color_targets = 0;
         shadow_pipeline = SDL_CreateGPUGraphicsPipeline(device, &shadow_info);
 
+        // --- Meshes in the depth pass: depth only, seen from the camera, one sample per pixel ---
+        SDL_GPUGraphicsPipelineCreateInfo prepass_info = mesh_info;
+        prepass_info.fragment_shader = shadow_fragment;
+        prepass_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+        prepass_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        prepass_info.multisample_state.enable_alpha_to_coverage = false;
+        prepass_info.target_info.color_target_descriptions = nullptr;
+        prepass_info.target_info.num_color_targets = 0;
+        prepass_pipeline = SDL_CreateGPUGraphicsPipeline(device, &prepass_info);
+        prepass_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        prepass_pipeline_double_sided = SDL_CreateGPUGraphicsPipeline(device, &prepass_info);
+
         // --- Sky: covers the whole image behind the scene ---
         SDL_GPUGraphicsPipelineCreateInfo sky_info{};
         sky_info.vertex_shader = fullscreen_vertex;
@@ -440,8 +645,43 @@ struct Renderer::Impl {
         tonemap_pipeline = SDL_CreateGPUGraphicsPipeline(device, &tonemap_info);
 
         if (mesh_pipeline == nullptr || mesh_pipeline_double_sided == nullptr || shadow_pipeline == nullptr ||
-            sky_pipeline == nullptr || tonemap_pipeline == nullptr) {
+            sky_pipeline == nullptr || tonemap_pipeline == nullptr || prepass_pipeline == nullptr ||
+            prepass_pipeline_double_sided == nullptr) {
             FatalSdlError("cannot create graphics pipeline");
+        }
+
+        // --- Full-screen passes: ambient occlusion, fog, bloom, automatic exposure ---
+        struct FullscreenPass {
+            SDL_GPUGraphicsPipeline** pipeline;
+            Uint32 sampler_count;
+            const unsigned char* dxil;
+            size_t dxil_size;
+            const unsigned char* spirv;
+            size_t spirv_size;
+            SDL_GPUTextureFormat format;
+            FullscreenBlend blend;
+        };
+        const FullscreenPass passes[] = {
+            {&ao_pipeline, 1, kAoFragDxil, sizeof(kAoFragDxil), kAoFragSpirv, sizeof(kAoFragSpirv), kAoFormat,
+             FullscreenBlend::Replace},
+            {&ao_blur_pipeline, 2, kAoBlurFragDxil, sizeof(kAoBlurFragDxil), kAoBlurFragSpirv, sizeof(kAoBlurFragSpirv),
+             kAoFormat, FullscreenBlend::Replace},
+            {&fog_pipeline, 2, kFogFragDxil, sizeof(kFogFragDxil), kFogFragSpirv, sizeof(kFogFragSpirv), kSceneFormat,
+             FullscreenBlend::Replace},
+            {&fog_composite_pipeline, 2, kFogCompositeFragDxil, sizeof(kFogCompositeFragDxil), kFogCompositeFragSpirv,
+             sizeof(kFogCompositeFragSpirv), kSceneFormat, FullscreenBlend::AddAndDim},
+            {&bloom_down_pipeline, 1, kBloomDownFragDxil, sizeof(kBloomDownFragDxil), kBloomDownFragSpirv,
+             sizeof(kBloomDownFragSpirv), kSceneFormat, FullscreenBlend::Replace},
+            {&bloom_up_pipeline, 1, kBloomUpFragDxil, sizeof(kBloomUpFragDxil), kBloomUpFragSpirv,
+             sizeof(kBloomUpFragSpirv), kSceneFormat, FullscreenBlend::Mix},
+            {&luminance_pipeline, 2, kLuminanceFragDxil, sizeof(kLuminanceFragDxil), kLuminanceFragSpirv,
+             sizeof(kLuminanceFragSpirv), kLuminanceFormat, FullscreenBlend::Replace},
+        };
+        for (const FullscreenPass& pass : passes) {
+            SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, pass.sampler_count, 1, pass.dxil,
+                                                   pass.dxil_size, pass.spirv, pass.spirv_size);
+            *pass.pipeline = CreateFullscreenPipeline(fullscreen_vertex, fragment, pass.format, pass.blend);
+            SDL_ReleaseGPUShader(device, fragment);
         }
 
         // Pipelines keep what they need; the shader objects can go.
@@ -703,6 +943,20 @@ Renderer::~Renderer() {
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
+        SDL_ReleaseGPUSampler(impl_->device, impl_->linear_clamp_sampler);
+        for (SDL_GPUGraphicsPipeline* pipeline :
+             {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
+              impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
+              impl_->luminance_pipeline}) {
+            SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
+        }
+        for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
+                                        impl_->luminance_targets[0], impl_->luminance_targets[1]}) {
+            SDL_ReleaseGPUTexture(impl_->device, texture);
+        }
+        for (const BloomLevel& level : impl_->bloom_levels) {
+            SDL_ReleaseGPUTexture(impl_->device, level.texture);
+        }
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline_double_sided);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->shadow_pipeline);
@@ -996,7 +1250,78 @@ void Renderer::EndFrame() {
         SDL_EndGPURenderPass(pass);
     }
 
-    // --- Pass 2: the scene, in linear wide-range colors. ---
+    const float width = static_cast<float>(impl.config.width);
+    const float height = static_cast<float>(impl.config.height);
+    // What shaders need to turn a depth image value back into a position (see common.hlsli).
+    const glm::vec4 projection_info(projection[2][2], projection[3][2], 1.0f / projection[0][0], 1.0f / projection[1][1]);
+    const bool ao_on = environment.ambient_occlusion && !impl.draw_commands.empty();
+    const bool fog_on = environment.volumetric_fog && environment.fog_density > 0.0f;
+
+    // --- Pass 2: depth of the scene, for ambient occlusion and fog. ---
+    if (ao_on || fog_on) {
+        SDL_GPUDepthStencilTargetInfo depth_info{};
+        depth_info.texture = impl.prepass_depth;
+        depth_info.clear_depth = 1.0f;
+        depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
+        depth_info.store_op = SDL_GPU_STOREOP_STORE;
+        depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, nullptr, 0, &depth_info);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin depth pass");
+        }
+        VertexFrameUniforms frame_uniforms;
+        frame_uniforms.view_projection = view_projection;
+        SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
+        SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
+        for (const DrawCommand& command : impl.draw_commands) {
+            SDL_GPUGraphicsPipeline* pipeline =
+                command.material.double_sided ? impl.prepass_pipeline_double_sided : impl.prepass_pipeline;
+            if (pipeline != bound_pipeline) {
+                SDL_BindGPUGraphicsPipeline(pass, pipeline);
+                bound_pipeline = pipeline;
+            }
+            const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
+            SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
+            SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
+            SDL_GPUTextureSamplerBinding binding{};
+            binding.texture = impl.GetTexture(command.material.texture, impl.white_texture);
+            binding.sampler = impl.texture_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+            impl.DrawCommandGeometry(pass, command);
+        }
+        SDL_EndGPURenderPass(pass);
+    }
+
+    // --- Pass 3: ambient occlusion from that depth, then a blur across and a blur down. ---
+    if (ao_on) {
+        AoUniforms ao_uniforms;
+        ao_uniforms.projection_info = projection_info;
+        ao_uniforms.screen = glm::vec4(width, height, 0.0f, 0.0f);
+        ao_uniforms.ao = glm::vec4(environment.ambient_occlusion_radius, environment.ambient_occlusion_strength,
+                                   0.5f * height * projection[1][1], 0.0f);
+        SDL_GPUTextureSamplerBinding bindings[2]{};
+        bindings[0].texture = impl.prepass_depth;
+        bindings[0].sampler = impl.clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.ao_target, false, impl.ao_pipeline, bindings, 1, &ao_uniforms,
+                                sizeof(ao_uniforms));
+
+        AoBlurUniforms blur_uniforms;
+        blur_uniforms.projection_info = projection_info;
+        bindings[1].texture = impl.prepass_depth;
+        bindings[1].sampler = impl.clamp_sampler;
+        bindings[0].texture = impl.ao_target;
+        blur_uniforms.direction = glm::vec4(1.0f, 0.0f, width, height);
+        impl.DrawFullscreenPass(commands, impl.ao_scratch, false, impl.ao_blur_pipeline, bindings, 2, &blur_uniforms,
+                                sizeof(blur_uniforms));
+        bindings[0].texture = impl.ao_scratch;
+        blur_uniforms.direction = glm::vec4(0.0f, 1.0f, width, height);
+        impl.DrawFullscreenPass(commands, impl.ao_target, false, impl.ao_blur_pipeline, bindings, 2, &blur_uniforms,
+                                sizeof(blur_uniforms));
+    }
+
+    // --- Pass 4: the scene, in linear wide-range colors. ---
     {
         SDL_GPUColorTargetInfo color_info{};
         color_info.texture = impl.scene_color;
@@ -1063,8 +1388,10 @@ void Renderer::EndFrame() {
         frame_uniforms.sky_zenith = ToVec4(environment.sky_zenith) * environment.sky_light_intensity;
         frame_uniforms.sky_horizon = ToVec4(environment.sky_horizon) * environment.sky_light_intensity;
         frame_uniforms.sky_ground = ToVec4(environment.sky_ground) * environment.sky_light_intensity;
+        // Volumetric fog is added after the scene pass; the simple fog is then left out here.
         frame_uniforms.fog = glm::vec4(environment.fog_color.r, environment.fog_color.g, environment.fog_color.b,
-                                       environment.fog_density);
+                                       fog_on ? 0.0f : environment.fog_density);
+        frame_uniforms.screen = glm::vec4(ao_on ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
         frame_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, impl.msaa_samples > 1 ? 1.0f : 0.0f,
                                            environment.sky_light ? 1.0f : 0.0f,
                                            1.0f / static_cast<float>(impl.config.shadow_map_size * 2));
@@ -1085,7 +1412,7 @@ void Renderer::EndFrame() {
             const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-            SDL_GPUTextureSamplerBinding bindings[4]{};
+            SDL_GPUTextureSamplerBinding bindings[5]{};
             bindings[0].texture = impl.GetTexture(material.texture, impl.white_texture);
             bindings[0].sampler = impl.texture_sampler;
             bindings[1].texture = impl.GetTexture(material.normal_texture, impl.flat_normal_texture);
@@ -1094,33 +1421,124 @@ void Renderer::EndFrame() {
             bindings[2].sampler = impl.texture_sampler;
             bindings[3].texture = impl.shadow_atlas;
             bindings[3].sampler = impl.shadow_sampler;
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 4);
+            bindings[4].texture = ao_on ? impl.ao_target : impl.textures[impl.white_texture.id - 1];
+            bindings[4].sampler = impl.clamp_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
             impl.DrawCommandGeometry(pass, command);
         }
         SDL_EndGPURenderPass(pass);
     }
 
-    // --- Pass 3: tone mapping into the output image. ---
-    {
-        SDL_GPUColorTargetInfo color_info{};
-        color_info.texture = impl.output_target;
-        color_info.load_op = SDL_GPU_LOADOP_DONT_CARE;
-        color_info.store_op = SDL_GPU_STOREOP_STORE;
-        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, nullptr);
-        if (pass == nullptr) {
-            FatalSdlError("cannot begin tone mapping pass");
+    // The finished scene with one sample per pixel; the remaining passes work on it.
+    SDL_GPUTexture* scene_image = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;
+    SDL_GPUTexture* white = impl.textures[impl.white_texture.id - 1];
+
+    // --- Pass 5: volumetric fog at half resolution, then laid over the scene. ---
+    if (fog_on) {
+        FogUniforms fog_uniforms{};
+        fog_uniforms.inverse_view_projection = glm::inverse(view_projection);
+        for (int i = 0; i < kCascadeCount; ++i) {
+            fog_uniforms.shadow_matrices[i] = cascades.shadow_matrix[i];
         }
-        SDL_BindGPUGraphicsPipeline(pass, impl.tonemap_pipeline);
-        SDL_GPUTextureSamplerBinding binding{};
-        binding.texture = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;
-        binding.sampler = impl.clamp_sampler;
-        SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+        fog_uniforms.cascade_far = cascades.far_distance;
+        fog_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
+        fog_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
+        fog_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
+        fog_uniforms.light_color = ToVec4(light.color);
+        fog_uniforms.fog = glm::vec4(environment.fog_color.r, environment.fog_color.g, environment.fog_color.b,
+                                     environment.fog_density);
+        fog_uniforms.fog_shape = glm::vec4(environment.fog_height_falloff, environment.fog_base_height,
+                                           environment.fog_sun_glow, environment.fog_shadow_brightness);
+        fog_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, glm::min(kFogWalkDistance, camera.far_plane), width,
+                                         height);
+        SDL_GPUTextureSamplerBinding bindings[2]{};
+        bindings[0].texture = impl.prepass_depth;
+        bindings[0].sampler = impl.clamp_sampler;
+        bindings[1].texture = impl.shadow_atlas;
+        bindings[1].sampler = impl.shadow_sampler;
+        impl.DrawFullscreenPass(commands, impl.fog_target, false, impl.fog_pipeline, bindings, 2, &fog_uniforms,
+                                sizeof(fog_uniforms));
+
+        FogCompositeUniforms composite_uniforms;
+        composite_uniforms.projection_info = projection_info;
+        composite_uniforms.sizes =
+            glm::vec4(static_cast<float>(impl.fog_width), static_cast<float>(impl.fog_height), width, height);
+        bindings[0].texture = impl.fog_target;
+        bindings[0].sampler = impl.clamp_sampler;
+        bindings[1].texture = impl.prepass_depth;
+        bindings[1].sampler = impl.clamp_sampler;
+        impl.DrawFullscreenPass(commands, scene_image, true, impl.fog_composite_pipeline, bindings, 2,
+                                &composite_uniforms, sizeof(composite_uniforms));
+    }
+
+    // --- Pass 6: bloom. A chain of ever smaller blurred copies of the scene, then mixed
+    // back together from the smallest up. Automatic exposure reads the smallest copy. ---
+    const bool bloom_on = impl.config.bloom && impl.config.bloom_strength > 0.0f;
+    if (bloom_on || impl.config.auto_exposure) {
+        SDL_GPUTexture* source = scene_image;
+        float source_width = width;
+        float source_height = height;
+        for (size_t i = 0; i < impl.bloom_levels.size(); ++i) {
+            const BloomLevel& level = impl.bloom_levels[i];
+            ParameterUniforms uniforms;
+            uniforms.parameters = glm::vec4(1.0f / source_width, 1.0f / source_height, i == 0 ? 1.0f : 0.0f, 0.0f);
+            SDL_GPUTextureSamplerBinding binding{};
+            binding.texture = source;
+            binding.sampler = impl.linear_clamp_sampler;
+            impl.DrawFullscreenPass(commands, level.texture, false, impl.bloom_down_pipeline, &binding, 1, &uniforms,
+                                    sizeof(uniforms));
+            source = level.texture;
+            source_width = static_cast<float>(level.width);
+            source_height = static_cast<float>(level.height);
+        }
+    }
+    if (impl.config.auto_exposure) {
+        const int previous = impl.luminance_index;
+        const int current = 1 - previous;
+        ParameterUniforms uniforms;
+        uniforms.parameters = glm::vec4(
+            impl.has_luminance_history ? glm::clamp(impl.config.auto_exposure_speed, 0.0f, 1.0f) : 1.0f, 0.0f, 0.0f, 0.0f);
+        SDL_GPUTextureSamplerBinding bindings[2]{};
+        bindings[0].texture = impl.bloom_levels.back().texture;
+        bindings[0].sampler = impl.linear_clamp_sampler;
+        bindings[1].texture = impl.luminance_targets[previous];
+        bindings[1].sampler = impl.clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.luminance_targets[current], false, impl.luminance_pipeline, bindings, 2,
+                                &uniforms, sizeof(uniforms));
+        impl.luminance_index = current;
+        impl.has_luminance_history = true;
+    }
+    if (bloom_on) {
+        for (size_t i = impl.bloom_levels.size() - 1; i > 0; --i) {
+            const BloomLevel& smaller = impl.bloom_levels[i];
+            ParameterUniforms uniforms;
+            uniforms.parameters = glm::vec4(1.0f / static_cast<float>(smaller.width),
+                                            1.0f / static_cast<float>(smaller.height), kBloomSpread, 0.0f);
+            SDL_GPUTextureSamplerBinding binding{};
+            binding.texture = smaller.texture;
+            binding.sampler = impl.linear_clamp_sampler;
+            impl.DrawFullscreenPass(commands, impl.bloom_levels[i - 1].texture, true, impl.bloom_up_pipeline, &binding, 1,
+                                    &uniforms, sizeof(uniforms));
+        }
+    }
+
+    // --- Pass 7: tone mapping into the output image. ---
+    {
+        SDL_GPUTextureSamplerBinding bindings[3]{};
+        bindings[0].texture = scene_image;
+        bindings[0].sampler = impl.clamp_sampler;
+        bindings[1].texture = bloom_on ? impl.bloom_levels[0].texture : white;
+        bindings[1].sampler = impl.linear_clamp_sampler;
+        bindings[2].texture = impl.config.auto_exposure ? impl.luminance_targets[impl.luminance_index] : white;
+        bindings[2].sampler = impl.clamp_sampler;
         TonemapUniforms uniforms;
         uniforms.parameters = glm::vec4(impl.config.exposure, impl.config.tone_mapping == ToneMapping::Aces ? 1.0f : 0.0f,
-                                        0.0f, 0.0f);
-        SDL_PushGPUFragmentUniformData(commands, 0, &uniforms, sizeof(uniforms));
-        SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-        SDL_EndGPURenderPass(pass);
+                                        bloom_on ? impl.config.bloom_strength : 0.0f,
+                                        impl.config.auto_exposure ? 1.0f : 0.0f);
+        uniforms.auto_exposure = glm::vec4(impl.config.auto_exposure_target, impl.config.auto_exposure_min,
+                                           impl.config.auto_exposure_max, 0.0f);
+        impl.DrawFullscreenPass(commands, impl.output_target, false, impl.tonemap_pipeline, bindings, 3, &uniforms,
+                                sizeof(uniforms));
     }
 
     if (impl.window != nullptr) {

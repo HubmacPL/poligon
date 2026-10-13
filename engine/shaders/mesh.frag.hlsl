@@ -31,6 +31,12 @@ Texture2D<float> shadow_texture : register(t3, space2);
 [[vk::combinedImageSampler]][[vk::binding(3, 2)]]
 SamplerComparisonState shadow_sampler : register(s3, space2);
 
+// Ambient occlusion computed from the depth image (ao.frag.hlsl), one value per screen pixel.
+[[vk::combinedImageSampler]][[vk::binding(4, 2)]]
+Texture2D<float> ao_texture : register(t4, space2);
+[[vk::combinedImageSampler]][[vk::binding(4, 2)]]
+SamplerState ao_sampler : register(s4, space2);
+
 cbuffer FrameUniforms : register(b0, space3) {
     float4x4 shadow_matrices[4];  // world position -> shadow image coordinates and depth, per cascade
     float4 cascade_far;           // distance from the camera where each cascade ends
@@ -45,6 +51,7 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 sky_ground;
     float4 fog;                   // rgb: color, a: density per meter
     float4 options;               // x: shadows on, y: alpha to coverage on, z: sky reflections on, w: shadow texel size
+    float4 screen;                // x: screen-space ambient occlusion on
 };
 
 cbuffer MaterialUniforms : register(b1, space3) {
@@ -156,6 +163,9 @@ float4 main(FragmentInput input) : SV_Target0 {
         }
     }
     roughness = clamp(roughness, 0.045, 1.0);
+    if (screen.x > 0.5) {
+        occlusion *= ao_texture.Load(int3(int2(input.clip_position.xy), 0));
+    }
 
     // The back side of a double-sided surface is lit as if its normal pointed the other way.
     float3 normal = normalize(input.world_normal) * (input.is_front_face ? 1.0 : -1.0);
