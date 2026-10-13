@@ -19,7 +19,7 @@ This file is the table of contents and the rule book. Details live in topic file
 
 - Milestone 1 (verification layer) is complete: headless runs with a fixed time step, input recording and replay, JSON state dump, PNG frame dump, determinism test, crash reports.
 - Milestone 2 (models and textures) is complete: GLM, textures and materials, model import through Assimp, the `model_viewer` gallery, and an asset pipeline outside the repository (Poly Haven downloads, Blender simplification, EZ-Tree generated trees, alpha repair with `image_tool`).
-- Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure. Left: culling of objects outside the view and a showcase scene built from the downloaded models.
+- Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure, frustum culling. Left: a showcase forest scene built from the downloaded models (and instancing if it turns out too slow).
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap

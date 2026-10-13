@@ -154,6 +154,9 @@ struct Mesh {
     SDL_GPUBuffer* vertex_buffer = nullptr;
     SDL_GPUBuffer* index_buffer = nullptr;
     Uint32 index_count = 0;
+    // Box around all vertices, in the mesh's own coordinates.
+    glm::vec3 bounds_min;
+    glm::vec3 bounds_max;
 };
 
 // One image of the bloom chain.
@@ -177,6 +180,32 @@ struct DrawCommand {
     glm::mat4 transform;
     Material material;
 };
+
+// True when the box, after `clip_from_mesh`, lies entirely outside the visible volume: all
+// eight corners are beyond the same side of it. A box that is only partly outside, or that
+// surrounds the volume, is never reported as outside.
+// check_near: false for shadow cascades, where geometry nearer to the sun than the cascade
+// still casts shadows into it.
+bool IsBoxOutside(const glm::mat4& clip_from_mesh, const glm::vec3& box_min, const glm::vec3& box_max, bool check_near) {
+    int outside[6] = {0, 0, 0, 0, 0, 0};
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec4 position((corner & 1) ? box_max.x : box_min.x, (corner & 2) ? box_max.y : box_min.y,
+                                 (corner & 4) ? box_max.z : box_min.z, 1.0f);
+        const glm::vec4 clip = clip_from_mesh * position;
+        outside[0] += clip.x < -clip.w ? 1 : 0;
+        outside[1] += clip.x > clip.w ? 1 : 0;
+        outside[2] += clip.y < -clip.w ? 1 : 0;
+        outside[3] += clip.y > clip.w ? 1 : 0;
+        outside[4] += clip.z > clip.w ? 1 : 0;
+        outside[5] += check_near && clip.z < 0.0f ? 1 : 0;
+    }
+    for (const int count : outside) {
+        if (count == 8) {
+            return true;
+        }
+    }
+    return false;
+}
 
 [[noreturn]] void FatalSdlError(const char* what) {
     const std::string message = std::string("Renderer: ") + what + ": " + SDL_GetError();
@@ -294,6 +323,10 @@ struct Renderer::Impl {
     DirectionalLight light;
     Environment environment;
     std::vector<DrawCommand> draw_commands;
+    // Indices into draw_commands of what survives culling, rebuilt every frame.
+    std::vector<std::uint32_t> visible_commands;
+    std::vector<std::uint32_t> cascade_commands[kCascadeCount];
+    FrameStats stats;
 
     SDL_GPUShader* CreateShader(SDL_GPUShaderStage stage, Uint32 sampler_count, Uint32 uniform_buffer_count,
                                 const unsigned char* dxil, size_t dxil_size, const unsigned char* spirv,
@@ -999,6 +1032,12 @@ MeshHandle Renderer::CreateMesh(const MeshVertex* vertices, int vertex_count, co
     mesh.index_buffer = impl_->CreateBufferWithData(
         SDL_GPU_BUFFERUSAGE_INDEX, indices, static_cast<Uint32>(static_cast<size_t>(index_count) * sizeof(std::uint32_t)));
     mesh.index_count = static_cast<Uint32>(index_count);
+    mesh.bounds_min = vertices[0].position;
+    mesh.bounds_max = vertices[0].position;
+    for (int i = 1; i < vertex_count; ++i) {
+        mesh.bounds_min = glm::min(mesh.bounds_min, vertices[i].position);
+        mesh.bounds_max = glm::max(mesh.bounds_max, vertices[i].position);
+    }
     impl_->meshes.push_back(mesh);
 
     MeshHandle handle;
@@ -1206,10 +1245,37 @@ void Renderer::EndFrame() {
     const bool sun_is_on = light.color.r > 0.0f || light.color.g > 0.0f || light.color.b > 0.0f;
     const bool shadows_on = environment.shadows && sun_is_on && !impl.draw_commands.empty();
 
+    // --- Culling: leave out meshes that lie entirely outside the camera's view. ---
+    impl.visible_commands.clear();
+    for (std::uint32_t i = 0; i < impl.draw_commands.size(); ++i) {
+        const DrawCommand& command = impl.draw_commands[i];
+        const Mesh& mesh = impl.meshes[command.mesh_id - 1];
+        if (!IsBoxOutside(view_projection * command.transform, mesh.bounds_min, mesh.bounds_max, true)) {
+            impl.visible_commands.push_back(i);
+        }
+    }
+    impl.stats = FrameStats{};
+    impl.stats.meshes_submitted = static_cast<int>(impl.draw_commands.size());
+    impl.stats.meshes_drawn = static_cast<int>(impl.visible_commands.size());
+
     // --- Pass 1: shadows. The scene's depth as seen from the sun, once per cascade. ---
     Impl::Cascades cascades{};
     if (shadows_on) {
         cascades = impl.ComputeCascades();
+        // A mesh outside the camera's view can still cast a shadow into it, so shadows are
+        // culled separately, against each cascade's own volume.
+        for (int cascade = 0; cascade < kCascadeCount; ++cascade) {
+            impl.cascade_commands[cascade].clear();
+            for (std::uint32_t i = 0; i < impl.draw_commands.size(); ++i) {
+                const DrawCommand& command = impl.draw_commands[i];
+                const Mesh& mesh = impl.meshes[command.mesh_id - 1];
+                if (!IsBoxOutside(cascades.light_view_projection[cascade] * command.transform, mesh.bounds_min,
+                                  mesh.bounds_max, false)) {
+                    impl.cascade_commands[cascade].push_back(i);
+                }
+            }
+            impl.stats.shadow_draws += static_cast<int>(impl.cascade_commands[cascade].size());
+        }
 
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.shadow_atlas;
@@ -1238,7 +1304,8 @@ void Renderer::EndFrame() {
             frame_uniforms.view_projection = cascades.light_view_projection[cascade];
             SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
 
-            for (const DrawCommand& command : impl.draw_commands) {
+            for (const std::uint32_t command_index : impl.cascade_commands[cascade]) {
+                const DrawCommand& command = impl.draw_commands[command_index];
                 const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
                 SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
                 const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
@@ -1278,7 +1345,8 @@ void Renderer::EndFrame() {
         frame_uniforms.view_projection = view_projection;
         SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
         SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
-        for (const DrawCommand& command : impl.draw_commands) {
+        for (const std::uint32_t command_index : impl.visible_commands) {
+            const DrawCommand& command = impl.draw_commands[command_index];
             SDL_GPUGraphicsPipeline* pipeline =
                 command.material.double_sided ? impl.prepass_pipeline_double_sided : impl.prepass_pipeline;
             if (pipeline != bound_pipeline) {
@@ -1403,7 +1471,8 @@ void Renderer::EndFrame() {
         SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
 
         SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
-        for (const DrawCommand& command : impl.draw_commands) {
+        for (const std::uint32_t command_index : impl.visible_commands) {
+            const DrawCommand& command = impl.draw_commands[command_index];
             const Material& material = command.material;
             SDL_GPUGraphicsPipeline* pipeline =
                 material.double_sided ? impl.mesh_pipeline_double_sided : impl.mesh_pipeline;
@@ -1637,6 +1706,10 @@ bool Renderer::SaveFrameToPng(const char* path) {
     Image image;
     CaptureFrame(image);
     return SaveImageToPng(path, image);
+}
+
+FrameStats Renderer::GetFrameStats() const {
+    return impl_->stats;
 }
 
 const char* Renderer::GetBackendName() const {

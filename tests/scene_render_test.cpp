@@ -128,6 +128,40 @@ int main(int argc, char** argv) {
             }
         }
 
+        // --- Culling ---
+        // Three cubes: one in view, one behind the camera, one far off to the side. Only the
+        // first is drawn. The one off to the side sits between the sun and the visible
+        // floor, so it is still drawn into the shadow image and its shadow shows.
+        {
+            poligon::DirectionalLight sun;
+            sun.direction = {-1.0f, -1.0f, 0.0f};
+            sun.color = {0.5f, 0.5f, 0.5f, 1.0f};
+            sun.ambient = {0.2f, 0.2f, 0.2f, 1.0f};
+            const float height = 10.0f;
+            const poligon::Material white = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+            poligon::Environment environment;
+            environment.shadow_distance = 30.0f;
+            renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), white);
+            renderer.DrawMesh(cube, glm::translate(identity, {-3.0f, 0.5f, 3.0f}), white);
+            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 20.0f, 0.0f}), white);
+            renderer.DrawMesh(cube, glm::translate(identity, {12.0f, 8.0f, 0.0f}), white);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const poligon::FrameStats stats = renderer.GetFrameStats();
+            if (stats.meshes_submitted != 4 || stats.meshes_drawn != 2) {
+                std::printf("  submitted %d, drawn %d\n", stats.meshes_submitted, stats.meshes_drawn);
+            }
+            Expect(stats.meshes_submitted == 4, "frame statistics count the submitted meshes");
+            Expect(stats.meshes_drawn == 2, "meshes behind the camera and off to the side are not drawn");
+            Expect(stats.shadow_draws > 0 && stats.shadow_draws < 16, "shadow cascades skip meshes outside them");
+            // The cube at (12, 8) throws its shadow down and to the left, onto x = 4.
+            Expect(PixelIs(frame, ToPixel(4.0f, height), ToPixel(0.0f, height), 124, 124, 124, 4),
+                   "a mesh outside the view still casts its shadow into it");
+            Expect(PixelIs(frame, ToPixel(2.5f, height), ToPixel(-2.5f, height), 196, 196, 196, 4),
+                   "the floor beside that shadow is lit");
+        }
+
         // --- Destroying meshes and textures ---
         // Destroyed resources are simply gone; everything else keeps drawing as before.
         {

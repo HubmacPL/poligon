@@ -188,6 +188,16 @@ struct Material {
     bool occlusion_in_orm = false;
 };
 
+// What the last finished frame cost, for checking that culling works.
+struct FrameStats {
+    // DrawMesh calls between BeginFrame and EndFrame.
+    int meshes_submitted = 0;
+    // Of those, how many were at least partly inside the camera's view and were drawn.
+    int meshes_drawn = 0;
+    // Mesh draws in the shadow pass, summed over the four cascades.
+    int shadow_draws = 0;
+};
+
 // Draws lit meshes. A frame goes through these stages: shadows of the sun, ambient occlusion,
 // the scene itself (multisampled, in linear wide-range colors), volumetric fog, bloom, tone
 // mapping to an off-screen image. Stages that are turned off are skipped.
@@ -195,7 +205,8 @@ struct Material {
 // The same pixels are produced in both cases.
 //
 // Frame order: BeginFrame, any number of DrawMesh, EndFrame. Drawing is recorded by DrawMesh
-// and carried out in EndFrame. CaptureFrame and SaveFrameToPng may be called after EndFrame
+// and carried out in EndFrame. Meshes entirely outside the camera's view are skipped
+// ("frustum culling"), and so are, per shadow cascade, meshes that cannot cast a shadow into it. CaptureFrame and SaveFrameToPng may be called after EndFrame
 // and return the frame that was just finished.
 // Meshes and textures live until they are destroyed or the Renderer is.
 // Unrecoverable problems (no usable graphics device, calls in the wrong order) end the
@@ -236,6 +247,9 @@ public:
     void CaptureFrame(Image& image);
     // Writes the last finished frame as an 8-bit RGBA PNG. Returns false if the file cannot be written.
     bool SaveFrameToPng(const char* path);
+
+    // Counts for the last finished frame.
+    FrameStats GetFrameStats() const;
 
     // "direct3d12" or "vulkan": the backend that is actually in use.
     const char* GetBackendName() const;

@@ -25,6 +25,8 @@ Klatkę nagrywają wywołania `DrawMesh`, a wykonuje ją `EndFrame`, w tych prze
 5. **Poświata** (bloom, `RendererConfig::bloom`, `bloom_strength`). Scena jest zmniejszana do łańcucha coraz mniejszych, coraz bardziej rozmytych kopii, które potem są składane z powrotem i domieszane do obrazu: jasne miejsca dostają miękką poświatę.
 6. **Mapowanie tonów.** Obraz o szerokim zakresie jest zamieniany na kolory do wyświetlenia: `exposure` skaluje jasność, **automatyczna ekspozycja** (`RendererConfig::auto_exposure`) najpierw sprowadza średnią jasność obrazu do `auto_exposure_target`, w każdej klatce pokonując `auto_exposure_speed` drogi (w pierwszej klatce całą), `ToneMapping::Aces` łagodnie spłaszcza jasne partie, `ToneMapping::None` obcina (dokładne; używane w testach).
 
+Przed przebiegami siatki są **odrzucane** (culling): siatka, której pudełko otaczające leży w całości poza widokiem kamery, nie jest rysowana, a każda kaskada cieni pomija siatki, które nie mogą rzucić w nią cienia (siatka poza widokiem nadal może). `Renderer::GetFrameStats()` zwraca, ile siatek zgłoszono i narysowano w ostatniej klatce.
+
 ## Materiały i światło
 
 - `Material` to model metaliczność-chropowatość z glTF: kolor bazowy (razy `texture`), `metallic`, `roughness`, opcjonalnie `normal_texture` (drobny relief) i `orm_texture` (zielony chropowatość, niebieski metaliczność, czerwony zacienienie otoczenia przy `occlusion_in_orm`). Tekstury z danymi tworzy się z `TextureOptions::is_color = false`.
@@ -107,6 +109,7 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 
 - Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny.
 - Przyciemnianie zagłębień i mgła widzą tylko to, co jest na ekranie, i tylko najbliższą powierzchnię każdego piksela. Słońce oświetla mgłę tylko w zasięgu `shadow_distance` (dalej liczy się jako oświetlona), a linia wzroku jest przechodzona najwyżej na 1000 m.
+- Odrzucanie działa na całe siatki i tylko według widoku: siatka zasłonięta przez inną nadal jest rysowana, a instancjonowania jeszcze nie ma (każda siatka to osobne wywołanie rysowania).
 - Przy włączonym przyciemnianiu zagłębień albo mgle objętościowej geometria sceny jest rysowana jeszcze raz (przebieg głębi).
 - Automatyczna ekspozycja dostosowuje się na klatkę, nie na sekundę, więc jej tempo zależy od liczby klatek na sekundę.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
