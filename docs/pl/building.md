@@ -17,6 +17,9 @@ Jedna konfiguracja: `tools\check.ps1 -Presets dev`.
 | `dev` | Debug, do codziennej pracy | tak |
 | `asan` | RelWithDebInfo z AddressSanitizer | tak, plus kanarek |
 | `analyze` | Debug z analizą statyczną MSVC (`/analyze`) | nie, sama kompilacja |
+| `release` | RelWithDebInfo, bez dodatków | nie; poza `check.ps1` |
+
+`release` służy do pomiaru szybkości i do oglądania ciężkich scen: `cmake --preset release`, potem `cmake --build --preset release`. Budowa Debug rysuje scenę leśną około trzy razy wolniej i ładuje ją cztery razy wolniej.
 
 Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<preset>/bin/`, pliki wytworzone przez testy (zrzuty klatek) do `build/<preset>/test_output/`.
 

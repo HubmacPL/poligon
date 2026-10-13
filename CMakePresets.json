@@ -29,6 +29,12 @@
       }
     },
     {
+      "name": "release",
+      "displayName": "Optimized build for measuring speed and for looking at scenes",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
       "name": "analyze",
       "displayName": "Debug build with MSVC static analysis",
       "inherits": "base",
@@ -41,6 +47,7 @@
   "buildPresets": [
     { "name": "dev", "configurePreset": "dev" },
     { "name": "asan", "configurePreset": "asan" },
+    { "name": "release", "configurePreset": "release" },
     { "name": "analyze", "configurePreset": "analyze" }
   ],
   "testPresets": [

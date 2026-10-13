@@ -17,6 +17,9 @@ One preset: `tools\check.ps1 -Presets dev`.
 | `dev` | Debug, for everyday work | yes |
 | `asan` | RelWithDebInfo with AddressSanitizer | yes, plus the canary |
 | `analyze` | Debug with MSVC static analysis (`/analyze`) | no, compile only |
+| `release` | RelWithDebInfo, nothing added | no; not part of `check.ps1` |
+
+Use `release` to measure speed and to look at heavy scenes: `cmake --preset release`, then `cmake --build --preset release`. The Debug build draws the forest scene about three times slower and loads it four times slower.
 
 Output goes to `build/<preset>/`; all programs and DLLs to `build/<preset>/bin/`, files produced by tests (frame dumps) to `build/<preset>/test_output/`.
 

@@ -12,14 +12,14 @@ This file is the table of contents and the rule book. Details live in topic file
 - Input as actions, bindings, recording and replay, recording file format: [docs/en/input.md](docs/en/input.md)
 - Determinism: what is guaranteed, how to compare two runs and find the tick where they diverge, what breaks it: [docs/en/determinism.md](docs/en/determinism.md)
 - Crashes: report with call stack, program exit codes, how to read a report: [docs/en/crashes.md](docs/en/crashes.md)
-- Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`), `cmake/`, `docs/en/` and `docs/pl/`.
+- Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`, `model_viewer`, `forest_scene`, `image_tool`), `cmake/`, `docs/en/` and `docs/pl/`.
 - After every code change run `powershell -ExecutionPolicy Bypass -File tools\check.ps1`. Only `CHECK PASSED` means it works.
 
 ## Project state
 
 - Milestone 1 (verification layer) is complete: headless runs with a fixed time step, input recording and replay, JSON state dump, PNG frame dump, determinism test, crash reports.
 - Milestone 2 (models and textures) is complete: GLM, textures and materials, model import through Assimp, the `model_viewer` gallery, and an asset pipeline outside the repository (Poly Haven downloads, Blender simplification, EZ-Tree generated trees, alpha repair with `image_tool`).
-- Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure, frustum culling. Left: a showcase forest scene built from the downloaded models (and instancing if it turns out too slow).
+- Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure, frustum culling, and the showcase `forest_scene` (about 34 ms per frame on the GTX 980 in the `release` preset). Known cost to remove in the vegetation milestone: every tree is drawn at full detail in every shadow cascade (no levels of detail, no instancing).
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap

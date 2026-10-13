@@ -1,0 +1,2 @@
+add_executable(forest_scene main.cpp)
+target_link_libraries(forest_scene PRIVATE poligon_engine poligon_build_options)
