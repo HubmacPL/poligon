@@ -176,7 +176,7 @@ void CreateEntities(flecs::world& world) {
 void SetUpToyWorld(flecs::world& world) {
     poligon::RegisterEngineTypes(world);
     RegisterComponents(world);
-    // Systems first: they must all exist before any entity can be deleted (see docs/ecs.md).
+    // Systems first: they must all exist before any entity can be deleted (see docs/en/ecs.md).
     CreateSystems(world);
     CreateEntities(world);
 }

@@ -1,79 +1,87 @@
 # Poligon
 
-Silnik gier na PC (Windows) pod pracę z agentem AI. Nazwa jest celowa: to miejsce, w którym agent sprawdza swój kod.
-Ten plik to spis treści i zasady. Szczegóły tematów trafiają do osobnych plików, do których stąd odsyłamy.
+A game engine for PC (Windows) built for work with an AI agent. The name is deliberate ("poligon" is Polish for a proving ground): it is where the agent proves that its code works.
+This file is the table of contents and the rule book. Details live in topic files linked from here.
 
-## Spis treści
+## Table of contents
 
-- Budowanie, konfiguracje, dodawanie testów i przykładów: [docs/building.md](docs/building.md)
-- Pętla gry, tick i klatka, tryb bez okna, wiersz poleceń, błędy krytyczne: [docs/game_loop.md](docs/game_loop.md)
-- Renderer, konwencje matematyczne, shadery HLSL, backend, zrzut klatki i porównywanie obrazów: [docs/rendering.md](docs/rendering.md)
-- ECS (flecs): reguły, zmiany w trakcie systemu, zrzut stanu do JSON, skrót stanu, test powtarzalności: [docs/ecs.md](docs/ecs.md)
-- Wejście jako akcje, wiązania klawiszy, nagrywanie i odtwarzanie, format pliku nagrania: [docs/input.md](docs/input.md)
-- Determinizm: co gwarantujemy, jak porównać dwa przebiegi i znaleźć tick rozjazdu, co go psuje: [docs/determinism.md](docs/determinism.md)
-- Awarie: raport ze stosem, kody wyjścia programów, jak czytać raport: [docs/crashes.md](docs/crashes.md)
-- Układ: `engine/` (biblioteka `poligon_engine`, nagłówki w `engine/include/poligon/`), `game/` (gra-zabawka `toy`), `examples/`, `tests/`, `tools/` (skrypty oraz `image_compare` i `state_compare`), `cmake/`.
-- Po każdej zmianie w kodzie: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` i dopiero `CHECK PASSED` znaczy, że działa.
+- Building, presets, dependencies, adding tests and examples: [docs/en/building.md](docs/en/building.md)
+- Game loop, tick and frame, headless mode, command line: [docs/en/game_loop.md](docs/en/game_loop.md)
+- Renderer, math conventions, textures and materials, HLSL shaders, backends, frame dumps and image comparison: [docs/en/rendering.md](docs/en/rendering.md)
+- ECS (flecs): rules, changes during a system, JSON state dump, state hash, repeatability test: [docs/en/ecs.md](docs/en/ecs.md)
+- Input as actions, bindings, recording and replay, recording file format: [docs/en/input.md](docs/en/input.md)
+- Determinism: what is guaranteed, how to compare two runs and find the tick where they diverge, what breaks it: [docs/en/determinism.md](docs/en/determinism.md)
+- Crashes: report with call stack, program exit codes, how to read a report: [docs/en/crashes.md](docs/en/crashes.md)
+- Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`), `cmake/`, `docs/en/` and `docs/pl/`.
+- After every code change run `powershell -ExecutionPolicy Bypass -File tools\check.ps1`. Only `CHECK PASSED` means it works.
 
-## Stan projektu
+## Project state
 
-- Faza: po pierwszym kamieniu milowym. Renderer i ECS wybrane. Repozytorium gita istnieje (gałąź `main`), bez zdalnego. Commit i push tylko na polecenie autora.
-- Kamień milowy 1: scena-zabawka uruchamiana bez okna na N klatek ze stałym krokiem czasu, nagranie i odtworzenie wejścia, zrzut stanu do JSON, zrzut klatki do PNG, test identyczności dwóch odtworzeń.
-- Kroki (po każdym raport i stop): 1 szkielet budowania, 2 pętla ze stałym krokiem i tryb bez okna, 3 SDL3 GPU i PNG (tu wybór backendu D3D12/Vulkan po teście obu), 4 flecs i zrzut JSON (w tym wczesny test: dwa uruchomienia tej samej sekwencji tworzenia, usuwania ze środka i doczepiania komponentów dają identyczny JSON; przy rozjeździe stop i raport), 5 nagrywanie i odtwarzanie wejścia, 6 test determinizmu, 7 zapis awarii, ctest, pierwszy przykład.
-- Kamień milowy 1 ukończony (kroki 1 do 7).
-- Kamień milowy 2, modele i tekstury (po każdym kroku raport i stop): 1 GLM zamiast własnej matematyki (zrobione), 2 tekstury (zrobione), 3 modele glTF przez cgltf (tylko nieruchome), 4 zabawka z wczytanym modelem, błędy dla złych plików, dokumentacja. Poza zakresem: PBR i mapy normalnych, animacja szkieletowa, tekstury skompresowane.
-- Zasoby testowe generujemy sami; cudzych plików w repozytorium nie ma. Wczesny test kolejności flecs przeszedł (`tests/ecs_order_probe.cpp`), flecs zostaje.
+- Milestone 1 (verification layer) is complete: headless runs with a fixed time step, input recording and replay, JSON state dump, PNG frame dump, determinism test, crash reports.
+- Milestone 2 (models and textures) is in progress: GLM replaces the hand-written math (done), textures and materials (done), model import (next), toy with a loaded model.
+- Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
-## Czym to ma być
+## Roadmap
 
-- Framework/biblioteka w C++, na której grę pisze się w kodzie. Edytor poziomów to osobny program.
-- Na razie tylko dla autora. Niczego nie robimy pod obcych użytkowników, ale nie zamykamy drogi do publikacji.
-- Budujemy z gotowych klocków open source, nie od zera.
-- Docelowe gry: otwarty teren, roślinność, animowane zwierzęta i humanoidy (theHunter Classic, gra wędkarska, survival w otwartym świecie). Głównie 3D, z możliwością 2D.
-- Kluczowa własna część: warstwa weryfikacji dla agenta. Uruchomienie bez okna, zrzuty klatek, zrzut stanu gry do pliku, nagrywanie wejścia i deterministyczne odtwarzanie (ta sama maszyna i ten sam plik wykonywalny). Wszystko, co pozwala agentowi samemu stwierdzić, czy zmiana działa, jest ważniejsze niż wygoda pisania ręcznego.
+Goal scene: about 1 km² of terrain with forest and a lake, one animal species, a player walking in first person. It should look impressive.
 
-## Decyzje podjęte (nie wracać)
+2. Models and textures. 3. Scene look (shadows, sky, fog, glTF-style materials, anti-aliasing). 4. In-game tools (debug windows, free camera, state view). 5. Skeletal animation. 6. Physics. 7. Terrain 1 km². 8. Vegetation and water.
 
-- Język: C++. Rust z Bevy odrzucony.
-- Własny rdzeń z osobnych klocków. Wicked Engine jako baza odrzucony.
-- MSVC z Visual Studio 2022, x64, CMake, budowanie z konsoli. Edycja w VS Code.
-- Zależności silnika i gry tylko na licencjach MIT, BSD, Apache 2.0, zlib, Boost, MPL 2.0. Nic na GPL ani LGPL. Licencję każdej nowej zależności sprawdzić i podać przed dodaniem. Osobno uruchamiane narzędzia (np. Blender) mogą mieć dowolną licencję.
-- Silnik i gra w osobnych folderach. Gra zna silnik, silnik nie zna gry.
-- Historia repozytorium czysta od początku: żadnych cudzych zasobów, kodu bez licencji, haseł ani prywatnych ścieżek.
-- Bezpieczeństwo pamięci przejmuje warstwa weryfikacji: AddressSanitizer w budowie testowej, ostrzeżenia jako błędy, analiza statyczna, zapis awarii ze stosem i nazwami funkcji.
-- Renderer: własny, nad SDL3 GPU (zlib). SDL3 daje też okno, wejście i dźwięk. Shadery w zwykłym HLSL, kompilowane offline. 2D jako własny rysownik sprite'ów na tej samej warstwie. bgfx, Filament i Diligent odrzucone.
-- Backend graficzny: Direct3D 12 domyślnie, bo jego warstwa diagnostyczna działa na tej maszynie od ręki; Vulkan budowany i testowany jako drugi. Każdy test obrazu przechodzi na obu.
-- Matematyka: GLM (na licencji MIT), używane wprost w API silnika, zawsze przez `poligon/math.h`. Własnej matematyki nie piszemy.
-- Wczytywanie modeli: cgltf (MIT). Obrazy tekstur: `stb_image` z paczki stb.
-- ECS: flecs (MIT). Reguła: tylko typowane API C++, żadnych zapytań w napisach (język zapytań flecs jest zakazany). Każdy komponent rejestruje swoje pola, bo od tego zależy zrzut stanu. Serwer REST flecs tylko w budowie deweloperskiej. EnTT odrzucony. Zrzut stanu jest własny (`poligon/state_dump.h`), bo `world.to_json()` z flecs obcina liczby zmiennoprzecinkowe.
-- flecs i determinizm: wszystkie systemy rejestrujemy na starcie, zanim jakikolwiek obiekt zostanie usunięty, i każdy jawnie podpinamy pod fazę. Powód: flecs porządkuje systemy po identyfikatorze, a identyfikator odzyskany po usuniętym obiekcie psuje kolejność.
-- Kompilator shaderów DXC (licencja NCSA, spoza listy) jest dopuszczony wyłącznie jako narzędzie uruchamiane przy budowaniu. Gdyby `dxcompiler.dll` miał jechać razem z grą (np. kompilacja shaderów w działającej grze), to jest nowa zależność i osobna decyzja autora.
-- vcpkg: kopia dołączona do Build Tools, tryb manifestu, katalog pakietów przypięty do commita w `vcpkg.json`. Osobnej kopii vcpkg autora (poza projektem) nie ruszamy. Instalacji Visual Studio nie zmieniamy (komunikaty kompilatora zostają po polsku).
-- Test determinizmu: identyczny JSON stanu z dwóch odtworzeń to wymóg twardy. PNG porównujemy z tolerancją, bez wymogu identyczności bit w bit.
-- Agent nie zna API silnika z treningu, więc: mały działający przykład na każdą funkcję silnika, budowany i uruchamiany przy każdym sprawdzeniu; API nudne i przewidywalne, nazwy jak w znanych silnikach, bez własnych minijęzyków i sprytnych makr.
+The order after milestone 2 is the agent's call. Audio, networking, scripting, hot reload and gamepad come after milestone 8.
 
-## Kandydaci na klocki (wstępnie)
+## What this is
 
-Fizyka: Jolt. Animacja szkieletowa: ozz-animation. Nawigacja: Recast/Detour. Narzędzia i podgląd: Dear ImGui. Zależności przez vcpkg.
+- A C++ framework/library on which a game is written in code. The level editor is a separate program.
+- For the author only, for now. Nothing is built for outside users yet, but publishing must stay possible.
+- Target games: open terrain, vegetation, animated animals and humanoids (theHunter Classic, a fishing game, an open-world survival). Mostly 3D, 2D possible.
+- The key part of our own is the verification layer for the agent: headless runs, frame dumps, game state dumps, input recording and deterministic replay (same machine, same executable). Anything that lets the agent find out by itself whether a change works matters more than convenience of writing by hand.
 
-## Nierozstrzygnięte
+## Standing rules
 
-- Teren, roślinność, strumieniowanie świata, woda: największa własna praca. Start od 1 km².
-- Edytor terenu i poziomów.
-- Skrypty (np. Luau) i przeładowanie kodu bez restartu: później.
-- Sieć: później.
-- Licencja silnika: przy publikacji.
+1. **Library first.** Before writing any non-trivial code, look for an existing library that does it and fits the license rules. If there is one, use it and say so; write our own only when nothing suitable exists, and say why. The author asked for this explicitly: less code of our own is better.
+2. **Licenses.** Dependencies of the engine and the game: MIT, BSD, Apache 2.0, zlib, Boost, MPL 2.0 only. No GPL or LGPL. Check the license of every new dependency (and of what it pulls in) at the source and report it before adding. Tools that run as separate programs (Blender, shader compiler) may have any license.
+3. **Verify, do not remember.** State of libraries and licenses is checked online or in the repository. When something is from memory, say so.
+4. **No silent shortcuts.** If there is a cheaper way, describe it with the cost of both versions and wait for a decision. In the report, name every simplification.
+5. **Clean history.** No third-party assets, unlicensed code, passwords or private paths in the repository. Downloaded models and textures live outside the repository.
+6. **Engine and game are separate.** The game knows the engine; the engine never includes game code.
+7. **Boring API.** The agent does not know this engine from training. So: one small runnable example per engine feature, built and run on every check; predictable names as in well-known engines; no mini-languages or clever macros. Libraries (flecs, GLM) are used directly, not wrapped.
+8. **Hardware.** Must run on Windows 10 with a GTX 980 (Direct3D 12 feature level without ray tracing, Vulkan 1.3, 4 GB). Quality is not capped by that card, but no technique may require what it lacks: no ray tracing, no mesh shaders. Check before proposing a rendering technique.
+9. **Documentation.** `CLAUDE.md` is in English. Topic docs exist in English (`docs/en/`) and Polish (`docs/pl/`) with the same file names; change both in the same commit.
 
-## Sprzęt
+## Working mode
 
-Windows 10, GTX 980 (DirectX 12 bez ray tracingu, Vulkan), Visual Studio 2022. Przed zaproponowaniem techniki renderowania sprawdzić, czy ta karta ją obsługuje.
+- Conversation with the author is in Polish. Code, comments and commit messages are in English.
+- Work in whole milestones, not step by step. Commit after every green check. Report at the end of a milestone, briefly; the author dislikes long reports.
+- Stop and ask only for: a new dependency, a change outside the project folder, a download, a departure from the plan, or something only the author's eyes can judge. If the author seems to have forgotten a decision, ask.
+- Estimates in hours of our sessions. So far real time has been about a tenth of the estimates.
+- Ask before starting parallel agents and give the token cost.
+- Do not create plan or analysis documents unless asked. This file is the exception.
+- The author knows C++. Explain game-engine terms on first use.
 
-## Zasady pracy
+## Decisions made (do not reopen)
 
-- Rozmowa po polsku. Kod, komentarze w kodzie i komunikaty commitów po angielsku.
-- Szacunki w godzinach sesji, nie w tygodniach pracy zespołu.
-- Żadnych skrótów bez wiedzy autora. Tańszą drogę zgłosić przed zrobieniem, z kosztem obu wersji, i poczekać na decyzję. W raporcie po pracy nazwać wprost każde uproszczenie.
-- Przed uruchomieniem równoległych agentów zapytać i podać koszt w tokenach.
-- Jeśli coś jest z pamięci, a nie sprawdzone, powiedzieć to. Stan bibliotek i licencje sprawdzać w sieci albo w repozytorium.
-- Nie tworzyć dokumentów planów ani analiz bez prośby. Wyjątek: ten plik.
-- Autor zna C++. Pojęcia z silników gier tłumaczyć przy pierwszym użyciu.
+- Language: C++. Rust with Bevy was rejected.
+- Our own core assembled from separate libraries. Wicked Engine as a base was rejected.
+- MSVC from Visual Studio 2022 Build Tools, x64, CMake, command-line builds. The Visual Studio installation is not changed (compiler messages stay Polish).
+- vcpkg: the copy bundled with Build Tools, manifest mode, package catalog pinned to a commit in `vcpkg.json`. The author's separate vcpkg copy outside the project is not touched.
+- Renderer: our own, on SDL3 GPU (zlib). SDL3 also provides the window, input and audio. Plain HLSL shaders compiled at build time. bgfx and Filament were rejected.
+- Graphics backend: Direct3D 12 by default, because its debug layer works on this machine out of the box. Vulkan is built and tested as the second backend; every image test runs on both. Image comparisons between backends use a wider tolerance (drivers differ in anisotropic filtering).
+- Shader compiler DXC (NCSA license, not on the list) is allowed only as a build-time tool. Shipping `dxcompiler.dll` with a game would be a new dependency and a separate decision.
+- Math: GLM (under MIT), used directly, always through `poligon/math.h`.
+- Images: `stb_image` and `stb_image_write` from the stb package.
+- ECS: flecs (MIT). Typed C++ API only; query strings and flecs script are forbidden. Every component registers its members. All systems are created at startup, before any entity is deleted, each with an explicit phase (flecs orders systems by id, and a recycled id breaks the order). Single-threaded. The flecs REST server only in development builds. EnTT was rejected.
+- State dump is our own (`poligon/state_dump.h`), because flecs' `world.to_json()` truncates floating-point numbers.
+- Determinism: identical state JSON from two replays is a hard requirement. PNG frames are compared with a tolerance.
+- Memory safety is the verification layer's job: AddressSanitizer preset, warnings as errors, static analysis, crash reports with call stacks.
+
+## Library candidates (not yet added)
+
+Physics: Jolt (MIT, in vcpkg). Skeletal animation: ozz-animation (MIT, not in vcpkg). Navigation: Recast/Detour (zlib). Tools and debug UI: Dear ImGui (MIT, in vcpkg with SDL3 and SDL GPU bindings).
+
+## Open
+
+- Model import library and supported formats (see project state).
+- Terrain, vegetation, world streaming, water: the largest work of our own.
+- Terrain and level editor; source of the height map.
+- Texture compression: needed by the terrain milestone.
+- License of the engine itself: chosen at publication.

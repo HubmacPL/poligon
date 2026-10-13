@@ -23,7 +23,7 @@ Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<prese
 ## Zasady wspólne
 
 - Każdy nasz cel (silnik, gra, przykłady, testy) linkuje `poligon_build_options`: `/W4 /WX /permissive- /utf-8`. Ostrzeżenie zatrzymuje budowę. Zależności zewnętrzne tego celu nie linkują.
-- AddressSanitizer jest włączany globalnie dla wszystkiego, co buduje nasz CMake. Biblioteki z vcpkg są budowane osobno i nie są nim instrumentowane.
+- AddressSanitizer jest włączany globalnie dla wszystkiego, co buduje nasz CMake. Biblioteki z vcpkg są budowane osobno i nie są nim instrumentowane. Biblioteka uruchomieniowa sanitizera jest kopiowana obok programów.
 - Test `asan_canary_detects_overflow` celowo pisze poza bufor i przechodzi tylko wtedy, gdy sanitizer to zgłosi. Jeśli zacznie padać, budowa `asan` przestała chronić.
 
 ## Środowisko
@@ -35,7 +35,7 @@ Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<prese
 - Używamy kopii vcpkg dołączonej do Visual Studio; `dev_env.ps1` ustawia na nią `VCPKG_ROOT` na czas procesu.
 - Lista zależności jest w `vcpkg.json`. Pole `builtin-baseline` przypina katalog pakietów do jednego commita, więc wersje są powtarzalne.
 - Zainstalowane biblioteki trafiają do `vcpkg_installed/` w projekcie (wspólne dla wszystkich presetów). Pobrane źródła i zbudowane paczki vcpkg trzyma w swojej pamięci podręcznej w profilu użytkownika.
-- Przed dodaniem zależności: sprawdzić licencję w źródle i uzyskać zgodę autora.
+- Przed dodaniem zależności: poszukać gotowej biblioteki (zasada „najpierw biblioteka"), sprawdzić licencję w źródle i uzyskać zgodę autora.
 - `glm` (do wyboru MIT albo „Happy Bunny"; korzystamy na MIT).
 - `flecs` (MIT; w środku fragmenty na BSD-2, MIT i jeden w domenie publicznej).
 - Obecne poza tym: `sdl3` z cechą `vulkan` (zlib, z częściami na MIT, Apache 2.0 i BSD-3), `stb` (MIT lub domena publiczna), `directx-dxc` jako narzędzie budowania (NCSA; nic z niego nie jest linkowane ani dołączane do gry).

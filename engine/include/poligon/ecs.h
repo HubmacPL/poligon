@@ -3,7 +3,7 @@
 // Poligon uses flecs as its entity component system (ECS) and does not wrap it:
 // game code works with flecs::world, flecs::entity and flecs systems directly.
 //
-// Project rules (see docs/ecs.md):
+// Project rules (see docs/en/ecs.md):
 //   - Typed C++ API only. No query strings, no flecs script.
 //   - Every component registers its members, otherwise its values are missing from state dumps.
 //   - All systems are created at startup, before any entity is deleted, each with an explicit phase.

@@ -65,7 +65,7 @@ const char* GetDriverName(GraphicsBackend backend) {
         break;
     }
     // Direct3D 12 is the default: its debug layer ships with Windows, so validation works
-    // without installing anything. See docs/rendering.md.
+    // without installing anything. See docs/en/rendering.md.
     return "direct3d12";
 }
 
