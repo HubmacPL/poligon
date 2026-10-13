@@ -19,7 +19,7 @@ This file is the table of contents and the rule book. Details live in topic file
 
 - Milestone 1 (verification layer) is complete: headless runs with a fixed time step, input recording and replay, JSON state dump, PNG frame dump, determinism test, crash reports.
 - Milestone 2 (models and textures) is done except for real models: GLM, textures and materials, model import through Assimp and the `model_viewer` tool exist; only self-made test models have been loaded so far.
-- Pending the author's decision: whether to try Diligent Engine (ready-made PBR, shadows, post-processing) as the renderer base instead of writing those on SDL3 GPU.
+- Next: milestone 3 (scene look).
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap
@@ -65,13 +65,13 @@ The order after milestone 2 is the agent's call. Audio, networking, scripting, h
 - Our own core assembled from separate libraries. Wicked Engine as a base was rejected.
 - MSVC from Visual Studio 2022 Build Tools, x64, CMake, command-line builds. The Visual Studio installation is not changed (compiler messages stay Polish).
 - vcpkg: the copy bundled with Build Tools, manifest mode, package catalog pinned to a commit in `vcpkg.json`. The author's separate vcpkg copy outside the project is not touched.
-- Renderer: our own, on SDL3 GPU (zlib). SDL3 also provides the window, input and audio. Plain HLSL shaders compiled at build time. bgfx and Filament were rejected.
+- Renderer: our own, on SDL3 GPU (zlib). SDL3 also provides the window, input and audio. Plain HLSL shaders compiled at build time. bgfx and Filament were rejected. Diligent Engine (with its ready-made PBR, shadows and post-processing) was considered twice and rejected both times, the second time on 2026-10-13 after a detailed review; do not raise it again.
 - Graphics backend: Direct3D 12 by default, because its debug layer works on this machine out of the box. Vulkan is built and tested as the second backend; every image test runs on both. Image comparisons between backends use a wider tolerance (drivers differ in anisotropic filtering).
 - Shader compiler DXC (NCSA license, not on the list) is allowed only as a build-time tool. Shipping `dxcompiler.dll` with a game would be a new dependency and a separate decision.
 - Math: GLM (under MIT), used directly, always through `poligon/math.h`.
 - Images: `stb_image` and `stb_image_write` from the stb package.
 - Model import: Assimp (BSD-3), linked into the engine, behind `poligon/model.h`. Any format Assimp reads is accepted. cgltf was approved earlier and then dropped in favor of Assimp.
-- Models for the goal scene: the agent searches (Poly Haven is CC0), presents candidates with pictures from `model_viewer`, the author chooses. Every download is shown first (file, source, size). Downloaded files live in a folder outside the repository.
+- Models for the goal scene: the agent searches (Poly Haven is CC0), presents candidates with pictures from `model_viewer`, the author chooses. Every download is shown first (file, source, size). Downloaded files live in the folder `poligon-assets` next to the project folder, outside the repository.
 - ECS: flecs (MIT). Typed C++ API only; query strings and flecs script are forbidden. Every component registers its members. All systems are created at startup, before any entity is deleted, each with an explicit phase (flecs orders systems by id, and a recycled id breaks the order). Single-threaded. The flecs REST server only in development builds. EnTT was rejected.
 - State dump is our own (`poligon/state_dump.h`), because flecs' `world.to_json()` truncates floating-point numbers.
 - Determinism: identical state JSON from two replays is a hard requirement. PNG frames are compared with a tolerance.
