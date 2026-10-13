@@ -67,7 +67,8 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - Generated trees: `tools/assets/make_tree.mjs` runs the EZ-Tree library (MIT) under Node.js and writes a glTF with bark and twig textures: `node tools/assets/make_tree.mjs NODE_MODULES OUTPUT_DIR NAME PRESET HEIGHT`. PRESET is a built-in name ("Pine Large", "Oak Medium", "Bush 1"...) or a `.json` file; ours are in `tools/assets/tree_presets/`. EZ-Tree and three.js are installed outside the repository (`poligon-assets/tools/eztree`).
 - `model_viewer FILE TURN TILT DISTANCE` sets the starting view, for close-up pictures.
 - Downloaded and simplified assets live in `poligon-assets/` next to the project (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), never in the repository.
-- Not loaded yet: skeletons, animations, normal maps and the other glTF material textures, cameras and lights from the file. Mirrored transforms (negative scale) would flip triangle winding.
+- Leaves with a solid background around them: some packages (Poly Haven glTF) ship the leaf color as a JPG with no transparency and the mask as a separate file. The loader then warns that a cut-out material's texture has no transparent pixels. Repair: `image_tool merge-alpha COLOR ALPHA OUT.png` joins the two into one PNG (and spreads leaf colors into the transparent pixels, so edges get no dark rim), then `node tools/assets/set_gltf_cutout.mjs MODEL.gltf OLD_IMAGE_URI NEW_IMAGE_URI` points the model at it and marks the material as cut-out and double-sided. The untouched file stays as `MODEL.gltf.original`.
+- Not loaded yet: skeletons, animations, emissive textures, cameras and lights from the file. Mirrored transforms (negative scale) would flip triangle winding.
 
 ## Backend
 
@@ -101,5 +102,5 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene, no ambient occlusion pass.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
 - Textures are uncompressed (4 bytes per pixel plus mipmaps): enough for tests with 4 GB of card memory, not for a large world.
-- The alpha channel of a texture is ignored.
+- The alpha channel of a texture is used only for cut-out (`alpha_cutoff`), never for blending.
 - The window has a fixed size; resizing is not handled.

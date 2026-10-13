@@ -1,0 +1,2 @@
+add_executable(image_tool main.cpp)
+target_link_libraries(image_tool PRIVATE poligon_engine poligon_build_options)

@@ -69,7 +69,8 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Drzewa generowane: `tools/assets/make_tree.mjs` uruchamia bibliotekę EZ-Tree (MIT) w Node.js i zapisuje glTF z teksturami kory i gałązek: `node tools/assets/make_tree.mjs NODE_MODULES KATALOG NAZWA PRESET WYSOKOŚĆ`. PRESET to wbudowana nazwa („Pine Large", „Oak Medium", „Bush 1"...) albo plik `.json`; nasze są w `tools/assets/tree_presets/`. EZ-Tree i three.js są zainstalowane poza repozytorium (`poligon-assets/tools/eztree`).
 - `model_viewer PLIK OBRÓT POCHYLENIE ODLEGŁOŚĆ` ustawia widok początkowy, do obrazków z bliska.
 - Pobrane i odchudzone zasoby leżą w `poligon-assets/` obok projektu (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), nigdy w repozytorium.
-- Jeszcze nie wczytujemy: szkieletów, animacji, map normalnych i pozostałych tekstur materiału glTF, kamer i świateł z pliku. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
+- Liście z jednolitym tłem dookoła: część paczek (glTF z Poly Haven) ma kolor liści w JPG bez przezroczystości, a maskę w osobnym pliku. Loader ostrzega wtedy, że tekstura materiału wycinanego nie ma przezroczystych pikseli. Naprawa: `image_tool merge-alpha KOLOR ALFA WYJŚCIE.png` łączy oba pliki w jeden PNG (i rozlewa kolory liści na przezroczyste piksele, żeby krawędzie nie miały ciemnej obwódki), potem `node tools/assets/set_gltf_cutout.mjs MODEL.gltf STARY_URI NOWY_URI` podpina go w modelu i oznacza materiał jako wycinany i dwustronny. Nietknięty plik zostaje jako `MODEL.gltf.original`.
+- Jeszcze nie wczytujemy: szkieletów, animacji, tekstur emisji, kamer i świateł z pliku. Przekształcenia lustrzane (ujemna skala) odwróciłyby nawinięcie trójkątów.
 
 ## Backend
 
@@ -103,5 +104,5 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny i bez przebiegu zacienienia otoczenia.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
 - Tekstury są nieskompresowane (4 bajty na piksel plus mipmapy), co przy 4 GB pamięci karty wystarczy na testy, nie na duży świat.
-- Kanał alfa tekstury jest ignorowany.
+- Kanał alfa tekstury służy tylko do wycinania (`alpha_cutoff`), nigdy do mieszania kolorów.
 - Okno ma stały rozmiar; zmiana rozmiaru nie jest obsługiwana.

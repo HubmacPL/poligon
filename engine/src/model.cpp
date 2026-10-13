@@ -103,6 +103,22 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     LoadMaterialTexture(scene, source, model_directory, base_color_kinds, 2, material.name,
                         material.base_color_texture, warnings);
 
+    // A cut-out material whose texture has no transparent pixel draws its whole squares, which
+    // shows as leaves with a solid background. The usual cause: the texture is a JPEG (no
+    // transparency possible) and the mask sits in a separate file the model does not mention.
+    if (material.alpha_cutoff > 0.0f && material.base_color_texture.width > 0) {
+        bool has_transparent_pixel = false;
+        const std::vector<std::uint8_t>& pixels = material.base_color_texture.pixels;
+        for (size_t i = 3; i < pixels.size() && !has_transparent_pixel; i += 4) {
+            has_transparent_pixel = pixels[i] < 255;
+        }
+        if (!has_transparent_pixel) {
+            warnings.push_back("material \"" + material.name +
+                               "\" is a cut-out, but its texture has no transparent pixels; see "
+                               "tools/image_tool merge-alpha and tools/assets/set_gltf_cutout.mjs");
+        }
+    }
+
     const aiTextureType normal_kinds[] = {aiTextureType_NORMALS};
     LoadMaterialTexture(scene, source, model_directory, normal_kinds, 1, material.name, material.normal_texture,
                         warnings);
