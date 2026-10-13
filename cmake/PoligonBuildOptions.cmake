@@ -18,4 +18,13 @@ endif()
 if(POLIGON_ASAN)
   add_compile_options(/fsanitize=address)
   add_link_options(/INCREMENTAL:NO)
+
+  # Sanitized programs need the sanitizer's runtime DLL. Put a copy next to them, so they
+  # also start outside the build environment (for example from Explorer).
+  set(asan_runtime "$ENV{VCToolsInstallDir}bin/Hostx64/x64/clang_rt.asan_dynamic-x86_64.dll")
+  if(EXISTS "${asan_runtime}")
+    file(COPY "${asan_runtime}" DESTINATION "${CMAKE_BINARY_DIR}/bin")
+  else()
+    message(WARNING "AddressSanitizer runtime DLL not found; sanitized programs will only start from the build environment.")
+  endif()
 endif()
