@@ -12,15 +12,15 @@ namespace toy {
 
 // Center of the bottom face of a box, in world space.
 struct Position {
-    poligon::Vec3 value;
+    glm::vec3 value;
 };
 
 struct Velocity {
-    poligon::Vec3 value;
+    glm::vec3 value;
 };
 
 struct Box {
-    poligon::Vec3 size;
+    glm::vec3 size;
     float rotation_y_degrees;
     poligon::Color color;
 };

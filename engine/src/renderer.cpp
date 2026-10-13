@@ -19,13 +19,18 @@ namespace {
 
 // Layouts must match the cbuffers in engine/shaders/mesh.*.hlsl.
 struct FrameUniforms {
-    Mat4 view_projection;
+    glm::mat4 view_projection;
 };
 
 struct ObjectUniforms {
-    Mat4 model;
+    glm::mat4 model;
     float color[4];
 };
+
+// The GPU reads these as tightly packed floats.
+static_assert(sizeof(glm::vec3) == 3 * sizeof(float), "glm::vec3 must be three floats");
+static_assert(sizeof(glm::mat4) == 16 * sizeof(float), "glm::mat4 must be sixteen floats");
+static_assert(sizeof(MeshVertex) == 6 * sizeof(float), "MeshVertex must have no padding");
 
 struct LightUniforms {
     float direction[4];
@@ -327,9 +332,9 @@ MeshHandle Renderer::CreateMesh(const MeshVertex* vertices, int vertex_count, co
 MeshHandle Renderer::CreateCubeMesh() {
     // Six faces, four vertices each, so every face has its own flat normal.
     struct Face {
-        Vec3 normal;
-        Vec3 right;
-        Vec3 up;
+        glm::vec3 normal;
+        glm::vec3 right;
+        glm::vec3 up;
     };
     const Face faces[6] = {
         {{1, 0, 0}, {0, 0, -1}, {0, 1, 0}},  {{-1, 0, 0}, {0, 0, 1}, {0, 1, 0}}, {{0, 1, 0}, {1, 0, 0}, {0, 0, -1}},
@@ -340,14 +345,14 @@ MeshHandle Renderer::CreateCubeMesh() {
     std::uint16_t indices[36];
     for (int face_index = 0; face_index < 6; ++face_index) {
         const Face& face = faces[face_index];
-        const Vec3 center = Scale(face.normal, 0.5f);
-        const Vec3 half_right = Scale(face.right, 0.5f);
-        const Vec3 half_up = Scale(face.up, 0.5f);
+        const glm::vec3 center = face.normal * 0.5f;
+        const glm::vec3 half_right = face.right * 0.5f;
+        const glm::vec3 half_up = face.up * 0.5f;
         MeshVertex* corner = &vertices[face_index * 4];
-        corner[0] = {Subtract(Subtract(center, half_right), half_up), face.normal};
-        corner[1] = {Subtract(Add(center, half_right), half_up), face.normal};
-        corner[2] = {Add(Add(center, half_right), half_up), face.normal};
-        corner[3] = {Add(Subtract(center, half_right), half_up), face.normal};
+        corner[0] = {center - half_right - half_up, face.normal};
+        corner[1] = {center + half_right - half_up, face.normal};
+        corner[2] = {center + half_right + half_up, face.normal};
+        corner[3] = {center - half_right + half_up, face.normal};
 
         const std::uint16_t base = static_cast<std::uint16_t>(face_index * 4);
         std::uint16_t* triangle = &indices[face_index * 6];
@@ -362,7 +367,7 @@ MeshHandle Renderer::CreateCubeMesh() {
 }
 
 MeshHandle Renderer::CreatePlaneMesh() {
-    const Vec3 up{0, 1, 0};
+    const glm::vec3 up{0, 1, 0};
     const MeshVertex vertices[4] = {
         {{-0.5f, 0, 0.5f}, up},
         {{0.5f, 0, 0.5f}, up},
@@ -405,14 +410,14 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light) {
     SDL_BindGPUGraphicsPipeline(impl_->frame_pass, impl_->mesh_pipeline);
 
     const float aspect_ratio = static_cast<float>(impl_->config.width) / static_cast<float>(impl_->config.height);
-    const Mat4 view = MakeLookAt(camera.position, camera.target, camera.up);
-    const Mat4 projection = MakePerspective(DegreesToRadians(camera.vertical_fov_degrees), aspect_ratio,
-                                            camera.near_plane, camera.far_plane);
+    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
+                                                  camera.near_plane, camera.far_plane);
     FrameUniforms frame_uniforms;
-    frame_uniforms.view_projection = Multiply(projection, view);
+    frame_uniforms.view_projection = projection * view;
     SDL_PushGPUVertexUniformData(impl_->frame_commands, 0, &frame_uniforms, sizeof(frame_uniforms));
 
-    const Vec3 direction = Normalize(light.direction);
+    const glm::vec3 direction = glm::normalize(light.direction);
     const LightUniforms light_uniforms = {
         {direction.x, direction.y, direction.z, 0.0f},
         {light.color.r, light.color.g, light.color.b, light.color.a},
@@ -421,7 +426,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light) {
     SDL_PushGPUFragmentUniformData(impl_->frame_commands, 0, &light_uniforms, sizeof(light_uniforms));
 }
 
-void Renderer::DrawMesh(MeshHandle mesh_handle, const Mat4& transform, Color color) {
+void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, Color color) {
     if (impl_->frame_pass == nullptr) {
         FatalError("Renderer::DrawMesh: call BeginFrame first");
     }

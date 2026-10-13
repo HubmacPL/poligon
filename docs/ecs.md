@@ -18,7 +18,7 @@ Silnik nie opakowuje flecs: gra używa `flecs::world`, `flecs::entity` i system�
 4. Jeden wątek: nie wywoływać `world.set_threads`.
 5. Czas tylko z kroku: `world.progress(delta)` zawsze z podanym krokiem, w systemach `it.delta_time()`.
 6. Stan gry żyje w komponentach. Liczby losowe: generator, którego stan jest polem komponentu (patrz `Spawner` w zabawce), nigdy `rand()` ani zegar.
-7. Na początku: `poligon::RegisterEngineTypes(world)`, żeby `Vec3` i `Color` dało się zrzucać.
+7. Na początku: `poligon::RegisterEngineTypes(world)`, żeby `glm::vec2`, `vec3`, `vec4`, `quat` i `Color` dało się zrzucać. W komponentach używamy ich jako pól: `.member<glm::vec3>("position")`.
 
 ## Zmiany w trakcie systemu
 

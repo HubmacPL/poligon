@@ -38,9 +38,9 @@ struct RendererConfig {
 };
 
 struct Camera {
-    Vec3 position{0.0f, 2.0f, 5.0f};
-    Vec3 target{0.0f, 0.0f, 0.0f};
-    Vec3 up{0.0f, 1.0f, 0.0f};
+    glm::vec3 position{0.0f, 2.0f, 5.0f};
+    glm::vec3 target{0.0f, 0.0f, 0.0f};
+    glm::vec3 up{0.0f, 1.0f, 0.0f};
     float vertical_fov_degrees = 60.0f;
     float near_plane = 0.1f;
     float far_plane = 1000.0f;
@@ -48,14 +48,14 @@ struct Camera {
 
 struct DirectionalLight {
     // Direction the light travels (from the light towards the scene).
-    Vec3 direction{-0.4f, -1.0f, -0.3f};
+    glm::vec3 direction{-0.4f, -1.0f, -0.3f};
     Color color{1.0f, 1.0f, 1.0f, 1.0f};
     Color ambient{0.15f, 0.15f, 0.15f, 1.0f};
 };
 
 struct MeshVertex {
-    Vec3 position;
-    Vec3 normal;
+    glm::vec3 position;
+    glm::vec3 normal;
 };
 
 // Identifies a mesh created by Renderer. An id of 0 is never a valid mesh.
@@ -87,7 +87,7 @@ public:
     MeshHandle CreatePlaneMesh();
 
     void BeginFrame(const Camera& camera, const DirectionalLight& light);
-    void DrawMesh(MeshHandle mesh, const Mat4& transform, Color color);
+    void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
     void EndFrame();
 
     // Writes the last finished frame as an 8-bit RGBA PNG. Returns false if the file cannot be written.

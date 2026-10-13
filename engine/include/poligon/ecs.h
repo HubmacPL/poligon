@@ -13,7 +13,7 @@
 
 namespace poligon {
 
-// Registers the members of engine value types (Vec3, Color) so that components
+// Registers the members of engine value types (glm::vec2, vec3, vec4, quat and Color) so that components
 // containing them can be written to a state dump. Call once, right after creating the world.
 void RegisterEngineTypes(flecs::world& world);
 

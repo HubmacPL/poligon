@@ -11,6 +11,7 @@
     },
     "stb",
     "flecs",
+    "glm",
     {
       "name": "directx-dxc",
       "host": true

@@ -4,6 +4,7 @@ find_package(Stb REQUIRED)
 find_package(directx-dxc CONFIG REQUIRED)
 
 find_package(flecs CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
 
 add_library(poligon_engine STATIC
   src/command_line.cpp
@@ -14,7 +15,6 @@ add_library(poligon_engine STATIC
   src/fixed_step_clock.cpp
   src/game_loop.cpp
   src/input.cpp
-  src/math.cpp
   src/platform.cpp
   src/renderer.cpp
   src/stb_image_write_impl.cpp
@@ -26,6 +26,16 @@ target_include_directories(poligon_engine SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(poligon_engine PRIVATE poligon_build_options SDL3::SDL3 dbghelp)
 # flecs is PUBLIC: game code uses the flecs API directly through poligon/ecs.h.
 target_link_libraries(poligon_engine PUBLIC $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
+# GLM is PUBLIC for the same reason (poligon/math.h). Its configuration must be identical in
+# every file of a program, so it is set here and nowhere else:
+#   DEPTH_ZERO_TO_ONE  projection matrices produce depth 0..1, as Direct3D 12 and Vulkan expect
+#   CTOR_INIT          default-constructed vectors are zero and matrices identity, never garbage
+#   XYZW_ONLY          vectors have plain x, y, z, w members (no aliases such as .r or .s)
+target_link_libraries(poligon_engine PUBLIC glm::glm)
+target_compile_definitions(poligon_engine PUBLIC
+  GLM_FORCE_DEPTH_ZERO_TO_ONE
+  GLM_FORCE_CTOR_INIT
+  GLM_FORCE_XYZW_ONLY)
 
 # Compiles one HLSL file to DXIL (Direct3D 12) and SPIR-V (Vulkan) and embeds both in the
 # engine as byte arrays, so there are no shader files to find at run time.

@@ -1,6 +1,5 @@
 // Toy game: boxes that fall, bounce and expire; the player steers the big red one.
 // It exists to exercise the engine.
-#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -50,28 +49,29 @@ public:
 
     void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
         // The camera circles the scene; CameraRig holds the angle.
-        const float yaw = poligon::DegreesToRadians(world_.get<toy::CameraRig>().yaw_degrees);
-        const poligon::Vec3 start_offset = {9.0f, 6.0f, 13.0f};
+        const float yaw = glm::radians(world_.get<toy::CameraRig>().yaw_degrees);
+        const glm::mat4 identity(1.0f);
+        const glm::vec3 up = {0.0f, 1.0f, 0.0f};
         poligon::Camera camera;
-        camera.position = {start_offset.x * std::cos(yaw) + start_offset.z * std::sin(yaw), start_offset.y,
-                           -start_offset.x * std::sin(yaw) + start_offset.z * std::cos(yaw)};
+        camera.position = glm::vec3(glm::rotate(identity, yaw, up) * glm::vec4(9.0f, 6.0f, 13.0f, 1.0f));
         camera.target = {0.0f, 3.5f, 0.0f};
         const poligon::DirectionalLight light;
 
         renderer_.BeginFrame(camera, light);
 
         ground_query_.each([this](const toy::Ground& ground) {
-            renderer_.DrawMesh(plane_mesh_, poligon::MakeScale({ground.size, 1.0f, ground.size}), ground.color);
+            renderer_.DrawMesh(plane_mesh_, glm::scale(glm::mat4(1.0f), {ground.size, 1.0f, ground.size}),
+                               ground.color);
         });
 
         box_query_.each([this](const toy::Position& position, const toy::Box& box) {
             // Order of operations, right to left: scale, rotate, then move. Position is the
             // bottom of the box, the cube mesh is centered, hence the half-height offset.
-            const poligon::Vec3 center = {position.value.x, position.value.y + box.size.y * 0.5f, position.value.z};
-            const poligon::Mat4 transform = poligon::Multiply(
-                poligon::MakeTranslation(center),
-                poligon::Multiply(poligon::MakeRotationY(poligon::DegreesToRadians(box.rotation_y_degrees)),
-                                  poligon::MakeScale(box.size)));
+            const glm::mat4 identity(1.0f);
+            const glm::vec3 center = position.value + glm::vec3(0.0f, box.size.y * 0.5f, 0.0f);
+            const glm::mat4 transform = glm::translate(identity, center) *
+                                        glm::rotate(identity, glm::radians(box.rotation_y_degrees), {0.0f, 1.0f, 0.0f}) *
+                                        glm::scale(identity, box.size);
             renderer_.DrawMesh(cube_mesh_, transform, box.color);
         });
 

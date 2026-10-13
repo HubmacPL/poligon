@@ -29,10 +29,10 @@ float ClampToUnit(float value) {
 }
 
 void RegisterComponents(flecs::world& world) {
-    world.component<Position>().member<poligon::Vec3>("value");
-    world.component<Velocity>().member<poligon::Vec3>("value");
+    world.component<Position>().member<glm::vec3>("value");
+    world.component<Velocity>().member<glm::vec3>("value");
     world.component<Box>()
-        .member<poligon::Vec3>("size")
+        .member<glm::vec3>("size")
         .member<float>("rotation_y_degrees")
         .member<poligon::Color>("color");
     world.component<Ground>().member<float>("size").member<poligon::Color>("color");
@@ -116,7 +116,7 @@ void CreateSystems(flecs::world& world) {
     world.system<Position, const Velocity>("MoveSystem")
         .kind(flecs::OnUpdate)
         .each([](flecs::iter& it, size_t, Position& position, const Velocity& velocity) {
-            position.value = poligon::Add(position.value, poligon::Scale(velocity.value, it.delta_time()));
+            position.value += velocity.value * it.delta_time();
         });
 
     world.system<Position, Velocity, Bouncy>("BounceSystem")

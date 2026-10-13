@@ -34,7 +34,7 @@ struct Sample {
     float values[3];
     flecs::entity_t target;
     Kind kind;
-    poligon::Vec3 vector;
+    glm::vec3 vector;
 };
 
 struct Precise {
@@ -71,7 +71,7 @@ void RegisterTestComponents(flecs::world& world) {
         .member<float>("values", 3)
         .member(flecs::Entity, "target")
         .member<Kind>("kind")
-        .member<poligon::Vec3>("vector");
+        .member<glm::vec3>("vector");
     world.component<Precise>().member<double>("value");
     world.component<Marker>();
     world.component<Settings>().member<std::int32_t>("level");

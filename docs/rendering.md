@@ -13,9 +13,14 @@ Przykład: `examples/renderer`. Shadery: `engine/shaders/*.hlsl`.
 
 ## Konwencje
 
+- Matematyka to GLM, używane wprost (`glm::vec3`, `glm::mat4`, `glm::quat`, `glm::translate`, `glm::lookAt`...). Zawsze przez `#include "poligon/math.h"`, nigdy przez nagłówki GLM, i bez własnych `GLM_FORCE_*`: konfigurację ustawia cel `poligon_engine`.
 - Świat prawoskrętny, +Y w górę, kamera patrzy wzdłuż swojego -Z.
-- Macierze 4x4 kolumnowe, wektory kolumnowe: `Multiply(a, b)` stosuje najpierw `b`.
+- Macierze 4x4 kolumnowe, wektory kolumnowe: `a * b` stosuje najpierw `b`. Typowy zapis przekształcenia obiektu: `translate * rotate * scale`.
+- Kąty dla funkcji GLM w radianach: `glm::radians(stopnie)`.
 - Głębia w przestrzeni przycinania od 0 (blisko) do 1 (daleko).
+- Wektor utworzony bez wartości jest zerowy, macierz jednostkowa, kwaternion bez obrotu.
+- Wektory mają tylko pola `x`, `y`, `z`, `w` (bez aliasów `.r` czy `.s`).
+- Te ustalenia pilnuje `tests/math_test.cpp`.
 - Przednie ściany trójkątów: przeciwnie do ruchu wskazówek zegara. Indeksy 16-bitowe.
 - Kolory obiektów i światła są liniowe; shader koduje wynik gammą 2.2. Kolor tła jest używany bez zmian.
 
@@ -49,4 +54,3 @@ Przykład: `examples/renderer`. Shadery: `engine/shaders/*.hlsl`.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
 - Kodowanie gamma w shaderze zamiast formatu sRGB celu renderowania.
 - Okno ma stały rozmiar; zmiana rozmiaru nie jest obsługiwana.
-- Własna, minimalna matematyka (`math.h`) zamiast biblioteki.

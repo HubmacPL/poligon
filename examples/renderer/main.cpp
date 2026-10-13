@@ -26,10 +26,12 @@ int main(int argc, char** argv) {
     const poligon::DirectionalLight light;
 
     renderer.BeginFrame(camera, light);
-    renderer.DrawMesh(plane, poligon::MakeScale({10.0f, 1.0f, 10.0f}), {0.4f, 0.4f, 0.4f, 1.0f});
-    // A cube standing on the plane, turned by 30 degrees.
-    const poligon::Mat4 cube_transform = poligon::Multiply(
-        poligon::MakeTranslation({0.0f, 0.5f, 0.0f}), poligon::MakeRotationY(poligon::DegreesToRadians(30.0f)));
+    const glm::mat4 identity(1.0f);
+    renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), {0.4f, 0.4f, 0.4f, 1.0f});
+    // A cube standing on the plane, turned by 30 degrees around the vertical axis.
+    // Read right to left: rotate first, then move up.
+    const glm::mat4 cube_transform = glm::translate(identity, {0.0f, 0.5f, 0.0f}) *
+                                     glm::rotate(identity, glm::radians(30.0f), {0.0f, 1.0f, 0.0f});
     renderer.DrawMesh(cube, cube_transform, {0.9f, 0.5f, 0.1f, 1.0f});
     renderer.EndFrame();
 

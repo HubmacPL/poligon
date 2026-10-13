@@ -6,11 +6,11 @@
 #include "poligon/state_dump.h"
 
 struct Position {
-    poligon::Vec3 value;
+    glm::vec3 value;
 };
 
 struct Velocity {
-    poligon::Vec3 value;
+    glm::vec3 value;
 };
 
 // A tag: a component without data.
@@ -21,8 +21,8 @@ int main() {
     poligon::RegisterEngineTypes(world);
 
     // Register every member, otherwise the dump cannot show the component's values.
-    world.component<Position>().member<poligon::Vec3>("value");
-    world.component<Velocity>().member<poligon::Vec3>("value");
+    world.component<Position>().member<glm::vec3>("value");
+    world.component<Velocity>().member<glm::vec3>("value");
     world.component<Frozen>();
 
     // Create all systems at startup, each with an explicit phase. Typed API only, no query strings.
@@ -30,7 +30,7 @@ int main() {
         .kind(flecs::OnUpdate)
         .without<Frozen>()
         .each([](flecs::iter& it, size_t, Position& position, const Velocity& velocity) {
-            position.value = poligon::Add(position.value, poligon::Scale(velocity.value, it.delta_time()));
+            position.value += velocity.value * it.delta_time();
         });
 
     world.entity("runner").set<Position>({{0.0f, 0.0f, 0.0f}}).set<Velocity>({{6.0f, 0.0f, 0.0f}});
