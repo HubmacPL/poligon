@@ -131,6 +131,14 @@ for scene_object in list(bpy.context.scene.objects):
         total, kept = thin_cards(scene_object, ratio)
         print("simplify_model: %s: kept %d of %d cards" % (scene_object.name, kept, total))
         continue
+    # Some files store every triangle with its own corners (Poly Haven's boulder_01 does);
+    # collapse decimation cannot join triangles that share no vertex, and stops early.
+    # Texture coordinates belong to face corners in Blender, so welding keeps them.
+    welded = bmesh.new()
+    welded.from_mesh(scene_object.data)
+    bmesh.ops.remove_doubles(welded, verts=welded.verts, dist=0.00001)
+    welded.to_mesh(scene_object.data)
+    welded.free()
     modifier = scene_object.modifiers.new(name="Simplify", type="DECIMATE")
     modifier.decimate_type = "COLLAPSE"
     modifier.ratio = ratio

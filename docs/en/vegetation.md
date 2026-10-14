@@ -73,6 +73,8 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- INPUT OUTPUT.g
 - Leaves are treated differently. Collapsing leaf cards thins the crown until the tree looks bare. Instead a share of the cards is removed (always the same ones for the same file) and the rest are enlarged, so that the crown covers the same area. At a tenth of the triangles a pine keeps its outline.
 - A mesh counts as leaves when all its materials take their transparency from a texture. Models whose leaves and bark share one mesh are collapsed whole (the Poly Haven jacaranda and island tree were such).
 - The simpler levels use the materials of the full model, matched by name; `LoadModelFromFile(path, model, error, false)` reads such a file without its textures.
+- Without `foliage` the script first welds corners that lie in the same place: some scans (Poly Haven's `boulder_01`) store every triangle with its own corners, and collapsing stops early on them.
+- In `forest_scene` the boulder, the rock set, the stump, the fallen trunk (to a twelfth and a fiftieth of the triangles) and the shrub `shrub_02` (with `foliage`) have two simpler levels in `poligon-assets/lods`, used from 15 m and 45 m and drawn up to 150 m. A file holding several variants (the rock set holds six) is matched to its simpler files by node names.
 
 ## What it costs: measurements
 
@@ -88,7 +90,7 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- INPUT OUTPUT.g
 
 - Shadows are now by far the largest cost: every leaf card is drawn into four shadow images, and the cost follows the number of shadow pixels, not the number of triangles. Simpler meshes for shadows do not help much, because the enlarged cards cover the same area.
 - A headless run only measures the whole frame if it ends by reading a frame back; `forest_scene` does. Without that the time is only that of handing the work to the card.
-- On the Batorz land with about 21000 things placed (headless, release, 150 frames): 21.4 ms inside the forest and 21.0 ms at the start with the downloaded trees; 18.6 and 16.8 ms with the generated ones. Leaving out one kind at a time showed where the time went: the pines alone cost 5.4 ms, all trees together about 12 ms, rocks, boulders and the fallen trunk (scans with 40000 to 83000 triangles and no simpler levels) about 5 ms.
+- On the Batorz land with about 21000 things placed (headless, release, 150 frames): 21.4 ms inside the forest and 21.0 ms at the start with the downloaded trees; 18.6 and 16.8 ms with the generated ones. Leaving out one kind at a time showed where the time went: the pines alone cost 5.4 ms, all trees together about 12 ms, rocks, boulders and the fallen trunk (scans with 40000 to 83000 triangles and no simpler levels) about 5 ms. With simpler levels for those (below) both views take 14.9 ms.
 
 ## Known limits
 

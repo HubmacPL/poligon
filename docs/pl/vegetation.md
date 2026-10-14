@@ -73,6 +73,8 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚ
 - Liście są traktowane inaczej. Zwijanie kartek liści przerzedza koronę, aż drzewo wygląda na łyse. Zamiast tego usuwana jest część kartek (dla tego samego pliku zawsze te same), a pozostałe są powiększane, żeby korona zakrywała tę samą powierzchnię. Przy jednej dziesiątej trójkątów sosna zachowuje sylwetkę.
 - Siatka liczy się jako liście, gdy wszystkie jej materiały biorą przezroczystość z tekstury. Modele, w których liście i kora dzielą jedną siatkę, są zwijane w całości (takie były jacaranda i drzewo wyspowe z Poly Haven).
 - Uproszczone poziomy używają materiałów pełnego modelu, dopasowanych po nazwie; `LoadModelFromFile(path, model, error, false)` czyta taki plik bez tekstur.
+- Bez `foliage` skrypt najpierw zszywa narożniki leżące w tym samym miejscu: niektóre skany (`boulder_01` z Poly Haven) zapisują każdy trójkąt z własnymi narożnikami i zwijanie zatrzymuje się na nich za wcześnie.
+- W `forest_scene` głaz, zestaw kamieni, pniak, przewrócony pień (do jednej dwunastej i jednej pięćdziesiątej trójkątów) oraz krzew `shrub_02` (z `foliage`) mają dwa prostsze poziomy w `poligon-assets/lods`, używane od 15 m i 45 m i rysowane do 150 m. Plik z kilkoma wariantami (zestaw kamieni ma sześć) jest łączony ze swoimi prostszymi plikami po nazwach węzłów.
 
 ## Ile to kosztuje: pomiary
 
@@ -88,7 +90,7 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚ
 
 - Cienie są teraz zdecydowanie największym kosztem: każda kartka liści jest rysowana do czterech obrazów cieni, a koszt zależy od liczby pikseli cienia, nie od liczby trójkątów. Prostsze siatki dla cieni niewiele dają, bo powiększone kartki zakrywają tę samą powierzchnię.
 - Uruchomienie bez okna mierzy całą klatkę tylko wtedy, gdy kończy się odczytaniem klatki z karty; `forest_scene` to robi. Bez tego czas obejmuje jedynie przekazanie pracy karcie.
-- Na terenie Batorza z około 21000 rozmieszczonych rzeczy (bez okna, release, 150 klatek): 21,4 ms w lesie i 21,0 ms na starcie z pobranymi drzewami; 18,6 i 16,8 ms z generowanymi. Pomijanie po jednym rodzaju pokazało, gdzie idzie czas: same sosny kosztowały 5,4 ms, wszystkie drzewa razem około 12 ms, kamienie, głazy i przewrócony pień (skany z 40000 do 83000 trójkątów, bez prostszych poziomów) około 5 ms.
+- Na terenie Batorza z około 21000 rozmieszczonych rzeczy (bez okna, release, 150 klatek): 21,4 ms w lesie i 21,0 ms na starcie z pobranymi drzewami; 18,6 i 16,8 ms z generowanymi. Pomijanie po jednym rodzaju pokazało, gdzie idzie czas: same sosny kosztowały 5,4 ms, wszystkie drzewa razem około 12 ms, kamienie, głazy i przewrócony pień (skany z 40000 do 83000 trójkątów, bez prostszych poziomów) około 5 ms. Z prostszymi poziomami dla nich (niżej) oba widoki zajmują 14,9 ms.
 
 ## Znane ograniczenia
 

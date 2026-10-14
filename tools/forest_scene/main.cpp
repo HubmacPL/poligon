@@ -59,10 +59,16 @@ constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
 // How far each kind of thing is drawn (meters). Trees have simpler meshes for the two
 // longer ranges; everything else has one mesh and simply stops being drawn.
-constexpr float kTreeFullDetail = 28.0f;
-constexpr float kTreeMediumDetail = 70.0f;
-constexpr float kTreeLowDetail = 450.0f;
-constexpr float kYoungTreeLowDetail = 150.0f;
+// How far each of the three levels of detail is used, for kinds that have simpler levels.
+struct LevelDistances {
+    float full;
+    float medium;
+    float low;
+};
+constexpr LevelDistances kTreeLevels{28.0f, 70.0f, 450.0f};
+constexpr LevelDistances kYoungTreeLevels{28.0f, 70.0f, 150.0f};
+// Rocks, stumps, fallen trunks and shrubs.
+constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f};
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
@@ -451,11 +457,11 @@ private:
 
     // keep_origin: leave the model where its file put it sideways (a tree's trunk stands at
     // the file's origin, while the middle of its crown may be well off to one side).
-    // lod_name: for trees, the folder below poligon-assets/lods that holds the two simpler
-    // levels of detail (made by tools/assets/make_tree.mjs); nullptr for kinds without.
-    // farthest: for trees, how far away the simplest level is still drawn.
+    // lod_name: the folder below poligon-assets/lods that holds the two simpler levels of
+    // detail (made by tools/assets/make_tree.mjs or simplify_model.py); nullptr for kinds
+    // without. `levels` says how far each level is used.
     Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false,
-                  const char* lod_name = nullptr, float farthest = kTreeLowDetail) {
+                  const char* lod_name = nullptr, const LevelDistances& levels = kTreeLevels) {
         Kind kind;
         kind.is_small = is_small;
         const std::filesystem::path file = FindGltf(assets_ / relative_folder);
@@ -516,6 +522,7 @@ private:
                 glm::mat4(1.0f), {keep_origin ? 0.0f : -(box.min.x + box.max.x) * 0.5f, -box.min.y,
                                   keep_origin ? 0.0f : -(box.min.z + box.max.z) * 0.5f});
             Variant variant;
+            std::vector<std::string> node_names;
             variant.height = box.max.y - box.min.y;
             variant.half_width = {(box.max.x - box.min.x) * 0.5f, (box.max.z - box.min.z) * 0.5f};
             for (size_t i = 0; i < count; ++i) {
@@ -528,6 +535,7 @@ private:
                 piece.material = render_model.materials[static_cast<size_t>(render_model.mesh_material_index[mesh_index])];
                 piece.local = to_foot * model.instances[i].transform;
                 variant.pieces.push_back(piece);
+                node_names.push_back(model.instances[i].node_name);
             }
 
             // Register the variant with the vegetation system: its meshes, and from how far each is used.
@@ -537,12 +545,12 @@ private:
                 full.parts.push_back({piece.mesh, piece.material, piece.local});
             }
             if (lod_name != nullptr) {
-                full.max_distance = kTreeFullDetail;
+                full.max_distance = levels.full;
                 species.levels.push_back(full);
-                const float distances[2] = {kTreeMediumDetail, farthest};
+                const float distances[2] = {levels.medium, levels.low};
                 for (int level = 1; level <= 2; ++level) {
                     poligon::VegetationLevel simpler;
-                    simpler.parts = LoadLodParts(lod_name, level, to_foot, model, render_model);
+                    simpler.parts = LoadLodParts(lod_name, level, to_foot, model, render_model, node_names);
                     simpler.max_distance = distances[level - 1];
                     if (simpler.parts.empty()) {
                         // No simpler mesh: keep drawing the previous level out to this distance.
@@ -551,7 +559,7 @@ private:
                         species.levels.push_back(std::move(simpler));
                     }
                 }
-                species.shadow_distance = kShadowDistance;
+                species.shadow_distance = is_small ? 20.0f : kShadowDistance;
                 species.shadow_level_bias = 1;
             } else {
                 full.max_distance = is_small ? kSmallPlantDistance : kMediumThingDistance;
@@ -569,11 +577,13 @@ private:
         return kind;
     }
 
-    // The meshes of one simpler level of a tree. They use the materials of the full model,
-    // matched by name, so no texture is loaded twice.
+    // The meshes of one simpler level of a variant: those of the simpler file's nodes named
+    // like the variant's nodes in the full file (a file can hold several variants). They use
+    // the materials of the full model, matched by name, so no texture is loaded twice.
     std::vector<poligon::VegetationPart> LoadLodParts(const char* lod_name, int level, const glm::mat4& to_foot,
                                                       const poligon::Model& full_model,
-                                                      const poligon::RenderModel& full_render_model) {
+                                                      const poligon::RenderModel& full_render_model,
+                                                      const std::vector<std::string>& node_names) {
         std::vector<poligon::VegetationPart> parts;
         const std::filesystem::path file = FindGltf(assets_ / "lods" / lod_name / ("lod" + std::to_string(level)));
         poligon::Model model;
@@ -583,6 +593,9 @@ private:
             return parts;
         }
         for (const poligon::ModelInstance& instance : model.instances) {
+            if (std::find(node_names.begin(), node_names.end(), instance.node_name) == node_names.end()) {
+                continue;
+            }
             const poligon::ModelMesh& mesh = model.meshes[static_cast<size_t>(instance.mesh_index)];
             const std::string& material_name = model.materials[static_cast<size_t>(mesh.material_index)].name;
             size_t material_index = 0;
@@ -609,17 +622,18 @@ private:
         spruce_ = LoadKind("generated/spruce", false, false, true, "spruce");
         birch_ = LoadKind("generated/birch", false, false, true, "birch");
         oak_ = LoadKind("generated/oak", false, false, true, "oak");
-        young_spruce_ = LoadKind("generated/spruce_young", false, false, true, "spruce_young", kYoungTreeLowDetail);
-        young_pine_ = LoadKind("generated/pine_young", false, false, true, "pine_young", kYoungTreeLowDetail);
-        shrub_ = LoadKind("polyhaven/shrub_02", true, false);
+        young_spruce_ = LoadKind("generated/spruce_young", false, false, true, "spruce_young", kYoungTreeLevels);
+        young_pine_ = LoadKind("generated/pine_young", false, false, true, "pine_young", kYoungTreeLevels);
+        // Simpler levels of downloaded models: tools/assets/simplify_model.py.
+        shrub_ = LoadKind("polyhaven/shrub_02", true, false, false, "shrub_02", kThingLevels);
         low_shrub_ = LoadKind("polyhaven/shrub_03", true, true);
         fern_ = LoadKind("polyhaven/fern_02", true, true);
         nettle_ = LoadKind("polyhaven/nettle_plant", true, true);
         grass_ = LoadKind("polyhaven/grass_bermuda_01", true, true);
-        boulder_ = LoadKind("polyhaven/boulder_01", false, false);
-        rocks_ = LoadKind("polyhaven/rock_moss_set_01", true, false);
-        stump_ = LoadKind("polyhaven/tree_stump_01", false, false);
-        fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false);
+        boulder_ = LoadKind("polyhaven/boulder_01", false, false, false, "boulder_01", kThingLevels);
+        rocks_ = LoadKind("polyhaven/rock_moss_set_01", true, false, false, "rock_moss_set_01", kThingLevels);
+        stump_ = LoadKind("polyhaven/tree_stump_01", false, false, false, "tree_stump_01", kThingLevels);
+        fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false, false, "dead_tree_trunk_02", kThingLevels);
 
         // Trunk radii measured at the foot of the generated models.
         pine_.collision = Collision::Trunk;
