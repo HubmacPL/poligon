@@ -190,6 +190,11 @@ struct TextureOptions {
     // Mipmaps are smaller copies of the texture used when it is drawn small or far away;
     // without them distant textures shimmer.
     bool generate_mipmaps = true;
+    // For the color texture of a cut-out material: its alpha cutoff. Each mipmap then has its
+    // alpha scaled so that the same share of pixels stays above the cutoff as in the full
+    // image; otherwise leaves thin out with distance and vanish from coarse shadow cascades.
+    // 0 = off.
+    float coverage_cutoff = 0.0f;
 };
 
 // Identifies a terrain created by Renderer. An id of 0 is never a valid terrain.

@@ -474,7 +474,9 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
         material.roughness = source.roughness;
         material.occlusion_in_orm = source.occlusion_in_orm;
         if (source.base_color_texture.width > 0) {
-            material.texture = renderer.CreateTexture(source.base_color_texture);
+            TextureOptions color_options;
+            color_options.coverage_cutoff = material.alpha_cutoff;
+            material.texture = renderer.CreateTexture(source.base_color_texture, color_options);
         }
         // Normal maps and roughness/metallic images hold data, not colors.
         TextureOptions data_options;

@@ -80,6 +80,9 @@ constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f, 0.0f, 150.0f};
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
+// Trees up to this far away still cast shadows into the shadow range: a 24 m pine with the
+// sun 29 degrees up throws a 44 m shadow.
+constexpr float kTreeShadowDistance = kShadowDistance + 45.0f;
 
 // Repeatable random numbers: the same forest on every run and on every machine.
 class Random {
@@ -576,13 +579,13 @@ private:
                 } else {
                     species.levels.back().max_distance = levels.low_without_impostor;
                 }
-                species.shadow_distance = is_small ? 20.0f : kShadowDistance;
+                species.shadow_distance = is_small ? 20.0f : kTreeShadowDistance;
                 species.shadow_level_bias = 1;
             } else {
                 full.max_distance = is_small ? kSmallPlantDistance : kMediumThingDistance;
                 species.levels.push_back(full);
                 // Grass and the like are too small for their shadows to matter beyond a few steps.
-                species.shadow_distance = is_small ? 20.0f : kShadowDistance;
+                species.shadow_distance = is_small ? 20.0f : kShadowDistance + 10.0f;
             }
             variant.species = vegetation_.AddSpecies(species);
             kind.variants.push_back(std::move(variant));

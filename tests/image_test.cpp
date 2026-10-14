@@ -105,5 +105,23 @@ int main(int argc, char** argv) {
                "an empty image cannot be saved");
     }
 
+    // Coverage of cut-out alpha: a dot of alpha 255 in every 2 x 2 block covers a quarter of
+    // the image; halved, every pixel has alpha 64, below a cutoff of 0.5, so nothing is
+    // covered until the alpha is scaled back up.
+    {
+        poligon::Image dots = poligon::MakeSolidImage(16, 16, 0, 0, 0, 0);
+        for (int y = 0; y < 16; y += 2) {
+            for (int x = 0; x < 16; x += 2) {
+                dots.pixels[static_cast<size_t>(y * 16 + x) * 4 + 3] = 255;
+            }
+        }
+        Expect(std::abs(poligon::MeasureAlphaCoverage(dots, 0.5f) - 0.25f) < 0.001f, "a dot per 2 x 2 block covers a quarter");
+        poligon::Image half = poligon::MakeHalfSizeImage(dots, false);
+        Expect(poligon::MeasureAlphaCoverage(half, 0.5f) == 0.0f, "halved, no pixel reaches the cutoff");
+        poligon::ScaleAlphaToCoverage(half, 0.5f, 0.25f);
+        Expect(poligon::MeasureAlphaCoverage(half, 0.5f) >= 0.25f, "scaling the alpha restores the coverage");
+        Expect(PixelAt(half, 0, 0)[3] >= 128 && PixelAt(half, 0, 0)[0] == 0, "only alpha changes");
+    }
+
     return test::ExitCode();
 }

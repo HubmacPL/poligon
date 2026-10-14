@@ -1305,7 +1305,7 @@ struct Renderer::Impl {
         object_uniforms.uv_scale = glm::vec4(1.0f, 1.0f, static_cast<float>(batch.list_first[list]), 0.0f);
         SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
         TerrainVertexUniforms vertex_uniforms;
-        vertex_uniforms.map = glm::vec4(terrain.origin.x, terrain.origin.z, terrain.spacing, 0.0f);
+        vertex_uniforms.map = glm::vec4(terrain.origin.x, terrain.origin.z, terrain.spacing, mesh_pass == kShadowPass ? 0.0f : 1.0f);
         vertex_uniforms.map_heights = glm::vec4(terrain.origin.y, terrain.height_range, static_cast<float>(terrain.width - 1),
                                                 static_cast<float>(terrain.depth - 1));
         SDL_PushGPUVertexUniformData(commands, 2, &vertex_uniforms, sizeof(vertex_uniforms));
@@ -1806,12 +1806,21 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
     }
     SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
     std::vector<SDL_GPUTransferBuffer*> transfers;
+    // The chain of halvings is built from unscaled images; a level whose alpha is scaled for
+    // coverage is a copy, so that the scaling does not compound into the next level.
     Image smaller_level;
+    Image scaled_level;
     const Image* level_image = &image;
+    const float coverage = options.coverage_cutoff > 0.0f ? MeasureAlphaCoverage(image, options.coverage_cutoff) : 0.0f;
     for (Uint32 level = 0; level < level_count; ++level) {
         if (level > 0) {
-            smaller_level = MakeHalfSizeImage(*level_image, options.is_color);
+            smaller_level = MakeHalfSizeImage(level_image == &scaled_level ? smaller_level : *level_image, options.is_color);
             level_image = &smaller_level;
+            if (options.coverage_cutoff > 0.0f) {
+                scaled_level = smaller_level;
+                ScaleAlphaToCoverage(scaled_level, options.coverage_cutoff, coverage);
+                level_image = &scaled_level;
+            }
         }
         SDL_GPUTransferBuffer* transfer = impl_->CreateFilledTransferBuffer(
             level_image->pixels.data(), static_cast<Uint32>(level_image->pixels.size()));
@@ -2197,6 +2206,7 @@ ImpostorHandle Renderer::CreateImpostor(const Impostor& impostor) {
     }
     TextureOptions color_options;
     color_options.is_color = true;
+    color_options.coverage_cutoff = kImpostorAlphaCutoff;
     TextureOptions normal_options;
     normal_options.is_color = false;
     ImpostorData data;
@@ -3007,13 +3017,17 @@ bool Renderer::IsDebugUiActive() const {
 }
 
 glm::vec4 ComputeShadowCascadeEnds(float near_plane, float shadow_distance) {
-    const float far_distance = glm::max(shadow_distance, near_plane * 2.0f);
+    // The splits are computed from 1 m out (or the near plane if it is further): with a
+    // near plane of a few centimeters the geometric spacing would spend the sharpest
+    // cascade on the first step or two in front of the camera.
+    const float start = glm::max(near_plane, glm::min(1.0f, shadow_distance * 0.05f));
+    const float far_distance = glm::max(shadow_distance, start * 2.0f);
     glm::vec4 ends;
     for (int i = 0; i < kCascadeCount; ++i) {
         // A mix of even and geometric spacing: ranges grow with distance, but not too fast.
         const float fraction = static_cast<float>(i + 1) / static_cast<float>(kCascadeCount);
-        const float geometric = near_plane * std::pow(far_distance / near_plane, fraction);
-        const float even = near_plane + (far_distance - near_plane) * fraction;
+        const float geometric = start * std::pow(far_distance / start, fraction);
+        const float even = start + (far_distance - start) * fraction;
         ends[i] = glm::mix(even, geometric, 0.75f);
     }
     return ends;

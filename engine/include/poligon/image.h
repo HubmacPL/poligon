@@ -39,6 +39,15 @@ bool LoadImageFromMemory(const void* data, size_t size, Image& image, std::strin
 // Writes an image as PNG. Returns false if the image is empty or the file cannot be written.
 bool SaveImageToPng(const char* path, const Image& image);
 
+// Share of the pixels whose alpha is at least `cutoff` (0..1).
+float MeasureAlphaCoverage(const Image& image, float cutoff);
+
+// Scales every alpha value by one factor so that the share of pixels at or above `cutoff`
+// becomes about `coverage`. Smaller mipmaps of a cut-out texture (leaves) average alpha
+// down and would show fewer and fewer pixels above the cutoff; this gives them back the
+// coverage of the full image (Castano's "alpha mipmaps with coverage preservation").
+void ScaleAlphaToCoverage(Image& image, float cutoff, float coverage);
+
 // Gives fully transparent pixels the average color of their visible neighbors, reaching one
 // pixel further per pass. A texture is filtered across the edge of what it shows; without
 // this, cut-out edges (leaves) would get a dark rim from the color hidden under alpha 0.

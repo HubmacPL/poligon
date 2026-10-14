@@ -26,10 +26,12 @@ struct Cell {
 };
 
 // The transforms collected during one Draw for one species and level, split by whether
-// the plants are within shadow range.
+// the plants are within shadow range. Plants whose shadow is fading out are in
+// without_shadow for the picture and again in shadow_fading, with the fade, for the shadow.
 struct LevelLists {
     std::vector<glm::mat4> with_shadow;
     std::vector<glm::mat4> without_shadow;
+    std::vector<glm::mat4> shadow_fading;
 };
 
 struct SpeciesData {
@@ -148,6 +150,7 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
         for (LevelLists& lists : data.lists) {
             lists.with_shadow.clear();
             lists.without_shadow.clear();
+            lists.shadow_fading.clear();
         }
     }
 
@@ -195,7 +198,9 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
             const int nearest_level = choose(nearest, nearest_fade);
             const bool one_level = nearest_level == choose(farthest, farthest_fade) && nearest_fade == 0.0f &&
                                    farthest_fade == 0.0f;
-            const bool one_shadow_answer = (nearest <= data.shadow_distance) == (farthest <= data.shadow_distance);
+            // Shadows fade out between shadow_fade_start and shadow_distance.
+            const float shadow_fade_start = data.shadow_distance * (1.0f - fade_width);
+            const bool one_shadow_answer = farthest <= shadow_fade_start || nearest > data.shadow_distance;
             if (one_level && one_shadow_answer) {
                 // The whole cell falls into one level, with nothing fading: hand its plants
                 // over in one piece.
@@ -217,6 +222,14 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                     (with_shadow ? lists.with_shadow : lists.without_shadow).push_back(placed);
                 };
                 if (fade == 0.0f) {
+                    if (with_shadow && distance > shadow_fade_start) {
+                        // Drawn whole, with a shadow that dissolves with distance.
+                        data.lists[level].without_shadow.push_back(transform);
+                        glm::mat4 shadow = transform;
+                        shadow[3][3] = -(distance - shadow_fade_start) / (data.shadow_distance - shadow_fade_start);
+                        data.lists[level].shadow_fading.push_back(shadow);
+                        continue;
+                    }
                     add(level, transform);
                     continue;
                 }
@@ -288,10 +301,12 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                 submit(look, lists.with_shadow, view_only);
             } else if (shadow_level == level) {
                 submit(look, lists.with_shadow, view_and_shadow);
+                submit(look, lists.shadow_fading, shadow_only);
             } else {
                 // The picture gets this level's meshes, the shadow image a simpler level's.
                 submit(look, lists.with_shadow, view_only);
                 submit(levels[static_cast<size_t>(shadow_level)], lists.with_shadow, shadow_only);
+                submit(levels[static_cast<size_t>(shadow_level)], lists.shadow_fading, shadow_only);
             }
         }
     }

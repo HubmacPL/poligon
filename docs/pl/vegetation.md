@@ -47,6 +47,7 @@ vegetation.Draw(renderer, camera);
 - Siatki i tekstury należą do wywołującego; system trzyma tylko uchwyty i przekształcenia.
 - `VegetationSpecies::fade_width` (domyślnie 0,1): część odległości każdego poziomu, na której roślina przechodzi w następny poziom, a za ostatnim w nic. Roślina w 66 m poziomu kończącego się na 70 m jest rysowana na obu poziomach. Przenikanie jedzie w ostatniej wartości macierzy każdej instancji (`[3][3]`, 1 w zwykłym przekształceniu): między 0 a 1 zostaje taka część pikseli kopii, między -1 a 0 taka część jest pomijana. Każdy shader wierzchołków przekazuje ją dalej, a shadery pikseli przebiegu sceny, cieni i głębi ją stosują (`KeptByFade` w `common.hlsli`), więc cienie i mgła idą za nią. Bez czasowego wygładzania krawędzi wzór może być widoczny jako drobne ziarno na nielicznych roślinach w trakcie przejścia.
 - Poziom z ustawionym `impostor` jest rysowany jako ten impostor zamiast swoich części (`DrawImpostorInstances`). Impostory nie rzucają cieni; jeśli poziomem cienia byłby impostor, cień rzuca ostatni poziom z siatkami.
+- Cień rośliny też nie urywa się na `shadow_distance` w jednym kroku: na ostatniej części `fade_width` tej odległości rozpływa się tym samym wzorem. Rzucające cień powinny sięgać dalej niż pokazywane cienie (`forest_scene`: 110 m dla drzew przy zasięgu cieni 65 m), bo drzewo za zasięgiem cieni nadal rzuca cień do środka; inaczej cienie pojawiają się dopiero, gdy ich drzewo wejdzie w zasięg.
 
 ## Impostory
 

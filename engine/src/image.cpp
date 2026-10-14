@@ -149,6 +149,50 @@ bool SaveImageToPng(const char* path, const Image& image) {
 }
 
 // Spreads the colors of visible pixels into transparent ones, one pixel further per pass.
+float MeasureAlphaCoverage(const Image& image, float cutoff) {
+    const size_t pixel_count = static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+    if (pixel_count == 0) {
+        return 0.0f;
+    }
+    const int threshold = static_cast<int>(std::ceil(cutoff * 255.0f));
+    size_t covered = 0;
+    for (size_t i = 0; i < pixel_count; ++i) {
+        covered += image.pixels[i * 4 + 3] >= threshold ? 1 : 0;
+    }
+    return static_cast<float>(covered) / static_cast<float>(pixel_count);
+}
+
+void ScaleAlphaToCoverage(Image& image, float cutoff, float coverage) {
+    // Coverage at a given alpha scale, without touching the image.
+    const size_t pixel_count = static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+    const auto coverage_at = [&image, pixel_count, cutoff](float scale) {
+        size_t covered = 0;
+        for (size_t i = 0; i < pixel_count; ++i) {
+            covered += static_cast<float>(image.pixels[i * 4 + 3]) * scale >= cutoff * 255.0f ? 1 : 0;
+        }
+        return static_cast<float>(covered) / static_cast<float>(pixel_count);
+    };
+    // Coverage grows with the scale; find the scale by bisection.
+    float low = 1.0f;
+    float high = 8.0f;
+    if (coverage_at(low) >= coverage) {
+        return;
+    }
+    for (int step = 0; step < 12; ++step) {
+        const float middle = (low + high) * 0.5f;
+        if (coverage_at(middle) < coverage) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    const float scale = high;
+    for (size_t i = 0; i < pixel_count; ++i) {
+        const float alpha = static_cast<float>(image.pixels[i * 4 + 3]) * scale;
+        image.pixels[i * 4 + 3] = static_cast<std::uint8_t>(alpha >= 255.0f ? 255 : static_cast<int>(alpha + 0.5f));
+    }
+}
+
 void BleedColorsIntoTransparentPixels(Image& image, int passes) {
     const int width = image.width;
     const int height = image.height;

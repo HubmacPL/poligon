@@ -32,7 +32,7 @@ cbuffer ObjectUniforms : register(b1, space1) {
 };
 
 cbuffer TerrainUniforms : register(b2, space1) {
-    float4 map;          // xy: world x and z of the height map's first point, z: meters between points
+    float4 map;          // xy: world x and z of the height map's first point, z: meters between points, w: 1 = skirts hang down, 0 = skirts stay on the surface (shadow pass)
     float4 map_heights;  // x: world height of image value 0, y: height difference of image value 1, zw: index of the last point along x and z
 };
 
@@ -62,7 +62,9 @@ VertexOutput main(VertexInput input) {
     point_position = clamp(point_position, float2(0.0, 0.0), map_heights.zw);
     float height = height_texture.Load(int3(int2(point_position + 0.5), 0)) * map_heights.y + map_heights.x;
     if (input.position.y < -0.5) {
-        height -= patch_size * 0.06 + 0.5;
+        // Skirts hang down only in the picture. Seen from the sun they are walls standing
+        // on every patch edge, which would shadow the slope below them in a grid pattern.
+        height -= (patch_size * 0.06 + 0.5) * map.w;
     }
 
     VertexOutput output;

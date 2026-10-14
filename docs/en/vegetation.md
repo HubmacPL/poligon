@@ -47,6 +47,7 @@ vegetation.Draw(renderer, camera);
 - Meshes and textures belong to the caller; the system only holds handles and transforms.
 - `VegetationSpecies::fade_width` (default 0.1): the share of each level's distance over which the plant fades into the next level, and into nothing after the last. A plant at 66 m of a level ending at 70 m is drawn at both levels. The fade travels in the last value of each instance matrix (`[3][3]`, 1 in an ordinary transform): between 0 and 1 that share of the copy's pixels is kept, between -1 and 0 that share is dropped. Every vertex shader passes it on and the fragment shaders of the scene, shadow and depth passes apply it (`KeptByFade` in `common.hlsli`), so shadows and fog follow. Without temporal anti-aliasing the pattern can be seen as fine grain on the few plants inside a fade.
 - A level with `impostor` set is drawn as that impostor instead of its parts (`DrawImpostorInstances`). Impostors cast no shadows; if the shadow level would be an impostor, the last mesh level casts the shadow.
+- A plant's shadow does not stop at `shadow_distance` in one step either: over the last `fade_width` of that distance it dissolves by the same pattern. Casters should reach further than the shadows are shown (`forest_scene`: 110 m for trees against a shadow range of 65 m), because a tree beyond the shadow range still throws its shadow into it; otherwise shadows appear only when their tree comes within range.
 
 ## Impostors
 

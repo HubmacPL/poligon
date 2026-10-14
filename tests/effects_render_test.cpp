@@ -142,8 +142,9 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Tinting by shadow cascade: the floor 3.6 m from the camera is shaded by the
-            // second cascade and comes out green, far away by the last one and comes out yellow.
+            // Tinting by shadow cascade: with a 40 m range the cascades end at about 4.6, 9.9,
+            // 19.5 and 40 m. The floor 3.2 m from the camera is shaded by the first cascade and
+            // comes out red, the floor 23 m away by the last one and comes out yellow.
             poligon::Environment environment;
             environment.show_shadow_cascades = true;
             environment.shadow_distance = 40.0f;
@@ -155,11 +156,11 @@ int main(int argc, char** argv) {
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const glm::ivec2 near_floor = ToPixel(camera, {0.0f, 0.0f, 3.0f});
-            const glm::ivec2 far_floor = ToPixel(camera, {0.0f, 0.0f, -14.0f});
+            const glm::ivec2 far_floor = ToPixel(camera, {0.0f, 0.0f, -20.0f});
             const std::uint8_t* near_pixel = &frame.pixels[static_cast<size_t>(near_floor.y * frame.width + near_floor.x) * 4];
             const std::uint8_t* far_pixel = &frame.pixels[static_cast<size_t>(far_floor.y * frame.width + far_floor.x) * 4];
-            Expect(near_pixel[1] > near_pixel[0] + 40 && near_pixel[1] > near_pixel[2] + 40,
-                   "the cascade view tints near floor green");
+            Expect(near_pixel[0] > near_pixel[1] + 40 && near_pixel[0] > near_pixel[2] + 40,
+                   "the cascade view tints near floor red");
             Expect(far_pixel[0] > far_pixel[2] + 40 && far_pixel[1] > far_pixel[2] + 40 && far_pixel[1] < far_pixel[0] + 20,
                    "the cascade view tints distant floor yellow");
         }

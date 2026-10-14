@@ -56,8 +56,8 @@ struct VegetationSpecies {
     // same). Shadows hide most detail, so 1 is usually invisible and saves a lot.
     int shadow_level_bias = 0;
     // Share of each level's distance over which the plant fades into the next level (into
-    // nothing after the last one). 0.1 with a level ending at 70 m: from 63 m to 70 m.
-    // 0 = the level changes at once.
+    // nothing after the last one), and of shadow_distance over which its shadow fades out.
+    // 0.1 with a level ending at 70 m: from 63 m to 70 m. 0 = the level changes at once.
     float fade_width = 0.1f;
 };
 

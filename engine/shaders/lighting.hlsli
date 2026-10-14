@@ -59,23 +59,60 @@ struct Surface {
     bool thin_foliage;
 };
 
+// For a tent filter 5 shadow pixels wide centered `offset` pixels past a pixel center: the
+// filter's weight on each of the six pixels it can touch (pixel -2 to pixel 3), folded into
+// three pairs that one bilinear fetch each can read. `weights` are the pairs' weights,
+// `positions` where to fetch, in pixels from the center pixel.
+// Share of the tent (half width 2.5, height 1, area 6.25) that lies left of x.
+float TentIntegral(float x) {
+    x = clamp(x, -2.5, 2.5);
+    float from_edge = 2.5 - abs(x);
+    float corner = from_edge * from_edge * 0.08;  // 0.5 / 6.25
+    return x < 0.0 ? corner : 1.0 - corner;
+}
+
+void TentWeights(float offset, out float3 weights, out float3 positions) {
+    // The seven pixel edges from -2.5 to 3.5, relative to the tent's center.
+    float integrals[7];
+    [unroll] for (int edge = 0; edge < 7; ++edge) {
+        integrals[edge] = TentIntegral(float(edge) - 2.5 - offset);
+    }
+    [unroll] for (int pair = 0; pair < 3; ++pair) {
+        float a = integrals[pair * 2 + 1] - integrals[pair * 2];
+        float b = integrals[pair * 2 + 2] - integrals[pair * 2 + 1];
+        weights[pair] = a + b;
+        positions[pair] = float(pair * 2 - 2) + b / max(a + b, 0.0001);
+    }
+}
+
 // Shadow lookup in one cascade: 1 = lit, 0 = in shadow.
 float CascadeVisibility(int cascade, float3 world_position, float3 normal) {
-    // Move the lookup point off the surface by two shadow pixels, so that a surface does
-    // not shadow itself. Fine cascades need (and get) a much smaller shift than coarse ones.
-    float3 offset_position = world_position + normal * (cascade_texel[cascade] * 2.0);
+    // Move the lookup point off the surface by two and a half shadow pixels (the filter's
+    // reach), so that a surface does not shadow itself. Fine cascades need (and get) a much
+    // smaller shift than coarse ones.
+    float3 offset_position = world_position + normal * (cascade_texel[cascade] * 2.5);
     float4 shadow_position = mul(shadow_matrices[cascade], float4(offset_position, 1.0));
     float texel = options.w;
 
-    // Average 3 x 3 comparisons for a soft edge.
+    // A tent filter 5 pixels wide, read with 9 bilinear comparisons: soft edges without the
+    // steps a box of single pixels shows. The fetches stay inside the cascade's tile.
+    float2 pixel = shadow_position.xy / texel;
+    float2 center = floor(pixel - 0.5) + 0.5;
+    float2 offset = pixel - center;
+    float3 weights_x, positions_x, weights_y, positions_y;
+    TentWeights(offset.x, weights_x, positions_x);
+    TentWeights(offset.y, weights_y, positions_y);
+    float2 tile_min = float2(cascade & 1, cascade >> 1) * 0.5 + texel * 0.5;
+    float2 tile_max = tile_min + 0.5 - texel;
+    float depth = shadow_position.z - 0.0002;
     float lit = 0.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            lit += shadow_texture.SampleCmpLevelZero(shadow_sampler, shadow_position.xy + float2(x, y) * texel,
-                                                     shadow_position.z - 0.0002);
+    [unroll] for (int y = 0; y < 3; ++y) {
+        [unroll] for (int x = 0; x < 3; ++x) {
+            float2 uv = clamp((center + float2(positions_x[x], positions_y[y])) * texel, tile_min, tile_max);
+            lit += weights_x[x] * weights_y[y] * shadow_texture.SampleCmpLevelZero(shadow_sampler, uv, depth);
         }
     }
-    return lit / 9.0;
+    return lit;
 }
 
 // The shadow cascade that covers a point: 0 to 3, or 4 beyond the shadow distance.
@@ -103,12 +140,11 @@ float SunVisibility(float3 world_position, float3 normal) {
 
     float lit = CascadeVisibility(cascade, world_position, normal);
     // Over the last tenth of a cascade's range, fade into the next (coarser) one, so that
-    // no line shows on the ground where shadows change sharpness.
-    if (cascade < 3) {
-        float fade = saturate((view_depth - cascade_far[cascade] * 0.9) / (cascade_far[cascade] * 0.1));
-        if (fade > 0.0) {
-            lit = lerp(lit, CascadeVisibility(cascade + 1, world_position, normal), fade);
-        }
+    // no line shows on the ground where shadows change sharpness; the last cascade fades
+    // into full light, so that the end of the shadow range is not a line either.
+    float fade = saturate((view_depth - cascade_far[cascade] * 0.9) / (cascade_far[cascade] * 0.1));
+    if (fade > 0.0) {
+        lit = lerp(lit, cascade < 3 ? CascadeVisibility(cascade + 1, world_position, normal) : 1.0, fade);
     }
     return lit;
 }
