@@ -126,6 +126,12 @@ void ShowFrameStatsWindow(const Renderer& renderer) {
         ImGui::Text("shadow draws: %d", stats.shadow_draws);
         ImGui::Text("%s, %d x %d, %d samples", renderer.GetBackendName(), renderer.GetWidth(), renderer.GetHeight(),
                     renderer.GetMsaaSamples());
+#ifndef NDEBUG
+        // A Debug build of the engine and its libraries runs several times slower; say so,
+        // because from the outside the two programs look the same.
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.25f, 1.0f), "DEBUG BUILD: several times slower.");
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.25f, 1.0f), "For speed run the one in build/release/bin.");
+#endif
     }
     ImGui::End();
 }

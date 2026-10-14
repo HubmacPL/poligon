@@ -913,7 +913,11 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
+#ifdef NDEBUG
     renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, F fly, Tab windows, drag the mouse to look)");
+#else
+    renderer.SetWindowTitle("Poligon forest scene  [DEBUG BUILD, slow: use build/release/bin]");
+#endif
 
     poligon::GameLoopConfig loop_config;
     loop_config.headless = options.headless;
