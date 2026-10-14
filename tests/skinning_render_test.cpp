@@ -112,6 +112,106 @@ int main(int argc, char** argv) {
     Expect(std::fabs(moved_tip.x - 2.0f) < 1.0e-4f && std::fabs(moved_tip.z + 1.0f) < 1.0e-4f,
            "moving the parent joint moves the child with it");
 
+    // --- Playing clips ---
+    {
+        const glm::quat no_turn(1.0f, 0.0f, 0.0f, 0.0f);
+        const glm::quat quarter_turn = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        // Where the far end of the bar is for the given joint matrices.
+        const auto tip_of = [](const std::vector<glm::mat4>& joint_matrices) {
+            return glm::vec3(joint_matrices[1] * glm::vec4(4.0f, 0.0f, 0.0f, 1.0f));
+        };
+        // The far end when the bend joint is turned by `degrees`.
+        const auto tip_at = [](float degrees) {
+            const float angle = glm::radians(degrees);
+            return glm::vec3(2.0f + 2.0f * std::cos(angle), 0.0f, -2.0f * std::sin(angle));
+        };
+        // Clips are stored compressed, so positions come back with a small error.
+        const auto close = [](glm::vec3 a, glm::vec3 b) { return glm::length(a - b) < 0.02f; };
+
+        // "bend": the joint turns from straight to a quarter turn within one second.
+        // "straight" and "bent": the joint holds still. All three name only the bend joint.
+        std::vector<poligon::AnimationClip> clips(3);
+        clips[0].name = "bend";
+        clips[0].duration_seconds = 1.0f;
+        clips[0].channels.resize(1);
+        clips[0].channels[0].joint = 1;
+        clips[0].channels[0].rotation_times = {0.0f, 1.0f};
+        clips[0].channels[0].rotations = {no_turn, quarter_turn};
+        clips[1].name = "straight";
+        clips[1].duration_seconds = 1.0f;
+        clips[1].channels.resize(1);
+        clips[1].channels[0].joint = 1;
+        clips[1].channels[0].rotation_times = {0.0f};
+        clips[1].channels[0].rotations = {no_turn};
+        clips[2] = clips[1];
+        clips[2].name = "bent";
+        clips[2].channels[0].rotations = {quarter_turn};
+
+        const poligon::AnimationSet set(skeleton, clips);
+        Expect(set.GetJointCount() == 2 && set.GetClipCount() == 3, "the set holds the skeleton and the clips");
+        Expect(set.FindClip("bent") == 2 && set.FindClip("none") == -1, "clips are found by name");
+        Expect(std::strcmp(set.GetClipName(0), "bend") == 0 && std::fabs(set.GetClipDuration(0) - 1.0f) < 1.0e-5f,
+               "clip name and duration are kept");
+
+        poligon::AnimationPlayer player(set);
+        Expect(player.GetClip() == -1 && close(tip_of(player.GetJointMatrices()), tip_at(0.0f)),
+               "before the first Play the player gives the rest pose");
+
+        player.Play(0);
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(0.0f)), "a clip starts at its beginning");
+        player.Update(0.5f);
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(45.0f)), "half-way through, the joint is half-way turned");
+        // The clip names no translation for the joint; it must stay 2 m along the bar,
+        // not fall back to the origin.
+        const glm::vec3 joint_place = glm::vec3(player.GetJointMatrices()[1] * glm::vec4(2.0f, 0.0f, 0.0f, 1.0f));
+        Expect(close(joint_place, {2.0f, 0.0f, 0.0f}), "what a clip does not move stays in its rest pose");
+
+        player.Update(0.75f);
+        Expect(std::fabs(player.GetTime() - 0.25f) < 1.0e-5f, "a looping clip starts over at its end");
+        // Between two keys ozz mixes rotations along a straight line and then normalizes
+        // (cheaper than following the arc). With keys a quarter turn apart, a quarter of the
+        // way is 21.6 degrees and not 22.5; real clips have keys far closer together.
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(21.6f)), "and shows the pose of that moment");
+
+        player.Play(0, 0.0f, false);
+        player.Update(0.5f);
+        Expect(!player.IsFinished(), "a clip that does not loop is not finished half-way");
+        player.Update(5.0f);
+        Expect(player.IsFinished() && close(tip_of(player.GetJointMatrices()), tip_at(90.0f)),
+               "a clip that does not loop stops on its last moment");
+
+        player.Play(0);
+        player.SetSpeed(2.0f);
+        player.Update(0.25f);
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(45.0f)), "at double speed half the time is enough");
+
+        // Fading: from "straight" into "bent" over one second.
+        player.Play(1, 0.0f);
+        player.Update(0.1f);
+        player.Play(2, 1.0f);
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(0.0f)), "a fade starts from the old clip");
+        player.Update(0.5f);
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(45.0f)), "half-way through a fade the two clips are mixed evenly");
+        player.Update(0.6f);
+        Expect(close(tip_of(player.GetJointMatrices()), tip_at(90.0f)), "after the fade only the new clip shows");
+
+        // Two players fed the same steps give the same numbers, bit for bit.
+        poligon::AnimationPlayer first(set);
+        poligon::AnimationPlayer second(set);
+        for (poligon::AnimationPlayer* each : {&first, &second}) {
+            each->Play(0);
+            for (int tick = 0; tick < 37; ++tick) {
+                each->Update(1.0f / 60.0f);
+            }
+            each->Play(2, 0.4f);
+            for (int tick = 0; tick < 11; ++tick) {
+                each->Update(1.0f / 60.0f);
+            }
+        }
+        Expect(std::memcmp(first.GetJointMatrices().data(), second.GetJointMatrices().data(), 2 * sizeof(glm::mat4)) == 0,
+               "the same steps give bit-identical joint matrices");
+    }
+
     // --- Rendering ---
     poligon::RendererConfig config;
     config.width = kSize;

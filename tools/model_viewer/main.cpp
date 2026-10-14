@@ -1,6 +1,9 @@
 // Shows 3D models on a checkered floor, with a camera that circles them.
 //
-// Usage: model_viewer [MODEL_FILE or FOLDER] [TURN TILT DISTANCE] [standard Poligon options]
+// Usage: model_viewer [MODEL_FILE or FOLDER] [TURN TILT DISTANCE [CLIP]] [standard Poligon options]
+// CLIP is the name of the animation clip to play (default: the model's first one); C
+// switches to the next clip. With --headless, --ticks N plays N sixtieths of a second
+// before the picture is taken.
 //   Double click (no arguments): browse the models in the "poligon-assets" folder next to the project.
 //   A folder:                    browse every model in it.
 //   One picture:                 model_viewer tree.glb --headless --dump-frame tree.png
@@ -12,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -34,6 +38,7 @@ struct ViewerActions {
     poligon::InputAction drag_hold;
     poligon::InputAction next_model;
     poligon::InputAction previous_model;
+    poligon::InputAction next_clip;
 };
 
 ViewerActions SetUpInput(poligon::Input& input) {
@@ -46,6 +51,7 @@ ViewerActions SetUpInput(poligon::Input& input) {
     actions.drag_hold = input.AddAction("drag_hold");
     actions.next_model = input.AddAction("next_model");
     actions.previous_model = input.AddAction("previous_model");
+    actions.next_clip = input.AddAction("next_clip");
 
     input.BindKey(actions.turn, poligon::Key::D, 1.0f);
     input.BindKey(actions.turn, poligon::Key::A, -1.0f);
@@ -62,6 +68,7 @@ ViewerActions SetUpInput(poligon::Input& input) {
     input.BindMouseButton(actions.drag_hold, poligon::MouseButton::Left);
     input.BindKey(actions.next_model, poligon::Key::N);
     input.BindKey(actions.previous_model, poligon::Key::P);
+    input.BindKey(actions.next_clip, poligon::Key::C);
     return actions;
 }
 
@@ -157,8 +164,8 @@ void PrintModelSummary(const char* path, const poligon::Model& model) {
 class ViewerGame : public poligon::Game {
 public:
     ViewerGame(poligon::Renderer& renderer, const std::vector<std::string>& model_paths, const poligon::Input& input,
-               const ViewerActions& actions, const float view[3])
-        : renderer_(renderer), model_paths_(model_paths), input_(input), actions_(actions) {
+               const ViewerActions& actions, const float view[3], const std::string& start_clip)
+        : renderer_(renderer), model_paths_(model_paths), input_(input), actions_(actions), start_clip_(start_clip) {
         start_view_[0] = view[0];
         start_view_[1] = view[1];
         start_view_[2] = view[2];
@@ -184,6 +191,20 @@ public:
         render_model_ = poligon::UploadModel(renderer_, model);
         current_index_ = index;
 
+        // A model with animation clips plays one of them.
+        player_.reset();
+        animations_.reset();
+        clip_name_.clear();
+        if (!model.animations.empty()) {
+            animations_ = std::make_unique<poligon::AnimationSet>(model.skeleton, model.animations);
+            player_ = std::make_unique<poligon::AnimationPlayer>(*animations_);
+            const int wanted = animations_->FindClip(start_clip_.c_str());
+            if (!start_clip_.empty() && wanted < 0) {
+                std::fprintf(stderr, "model_viewer: no clip named \"%s\", playing the first one\n", start_clip_.c_str());
+            }
+            PlayClip(wanted >= 0 ? wanted : 0, 0.0f);
+        }
+
         // Frame the model: look at its middle from far enough to see all of it.
         center_ = (model.bounds_min + model.bounds_max) * 0.5f;
         radius_ = std::max(glm::length(model.bounds_max - model.bounds_min) * 0.5f, 0.001f);
@@ -192,11 +213,26 @@ public:
         pitch_degrees_ = start_view_[1];
         distance_ = radius_ * 2.6f * start_view_[2];
 
-        const std::string title = "Poligon model viewer - " + std::filesystem::path(path).filename().string() + "  (" +
-                                  std::to_string(index + 1) + " of " + std::to_string(model_paths_.size()) +
-                                  ", N/P: next/previous)";
-        renderer_.SetWindowTitle(title.c_str());
+        UpdateTitle();
         return true;
+    }
+
+    void PlayClip(int clip, float fade_seconds) {
+        player_->Play(clip, fade_seconds);
+        clip_name_ = animations_->GetClipName(clip);
+        std::printf("playing clip \"%s\"\n", clip_name_.c_str());
+        UpdateTitle();
+    }
+
+    void UpdateTitle() {
+        std::string title = "Poligon model viewer - " +
+                            std::filesystem::path(model_paths_[current_index_]).filename().string() + "  (" +
+                            std::to_string(current_index_ + 1) + " of " + std::to_string(model_paths_.size()) +
+                            ", N/P: next/previous)";
+        if (!clip_name_.empty()) {
+            title += "  clip: " + clip_name_ + " (C: next clip)";
+        }
+        renderer_.SetWindowTitle(title.c_str());
     }
 
     void BeginFrame(poligon::GameLoop& loop) override {
@@ -214,6 +250,12 @@ public:
         }
 
         const float delta = static_cast<float>(tick.delta_seconds);
+        if (player_) {
+            if (input_.WasPressed(actions_.next_clip)) {
+                PlayClip((player_->GetClip() + 1) % animations_->GetClipCount(), 0.3f);
+            }
+            player_->Update(delta);
+        }
         yaw_degrees_ += input_.GetValue(actions_.turn) * 90.0f * delta;
         pitch_degrees_ += input_.GetValue(actions_.tilt) * 60.0f * delta;
         distance_ *= 1.0f - input_.GetValue(actions_.zoom) * 1.2f * delta;
@@ -264,7 +306,11 @@ public:
                                glm::scale(identity, {floor_size, 1.0f, floor_size}),
                            floor_material);
 
-        poligon::DrawModel(renderer_, render_model_, identity);
+        if (player_) {
+            poligon::DrawModel(renderer_, render_model_, identity, player_->GetJointMatrices());
+        } else {
+            poligon::DrawModel(renderer_, render_model_, identity);
+        }
         renderer_.EndFrame();
     }
 
@@ -274,6 +320,11 @@ private:
     const poligon::Input& input_;
     ViewerActions actions_;
     poligon::RenderModel render_model_;
+    std::string start_clip_;
+    std::string clip_name_;
+    // The player refers to the set, so it is declared after it and destroyed before it.
+    std::unique_ptr<poligon::AnimationSet> animations_;
+    std::unique_ptr<poligon::AnimationPlayer> player_;
     poligon::MeshHandle floor_mesh_;
     poligon::TextureHandle floor_texture_;
     size_t current_index_ = 0;
@@ -299,10 +350,10 @@ int main(int argc, char** argv) {
     // Optional starting view: turn and tilt in degrees, and distance as a multiple of the default.
     float view[3] = {35.0f, 20.0f, 1.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
-        if (options.positional.size() > 4) {
-            error = "expected at most a model file or folder followed by TURN TILT DISTANCE";
+        if (options.positional.size() > 5) {
+            error = "expected at most a model file or folder followed by TURN TILT DISTANCE CLIP";
         }
-        for (size_t i = 1; i < options.positional.size() && error.empty(); ++i) {
+        for (size_t i = 1; i < options.positional.size() && i < 4 && error.empty(); ++i) {
             char* end = nullptr;
             view[i - 1] = std::strtof(options.positional[i].c_str(), &end);
             if (end == options.positional[i].c_str() || *end != '\0') {
@@ -313,7 +364,7 @@ int main(int argc, char** argv) {
     if (!error.empty()) {
         std::fprintf(stderr,
                      "model_viewer: %s\n"
-                     "usage: model_viewer [MODEL_FILE or FOLDER] [TURN TILT DISTANCE] [--headless --ticks N]\n"
+                     "usage: model_viewer [MODEL_FILE or FOLDER] [TURN TILT DISTANCE [CLIP]] [--headless --ticks N]\n"
                      "                    [--backend d3d12|vulkan] [--gpu-validation] [--dump-frame PATH.png]\n"
                      "Without a file or folder, the models in the poligon-assets folder are shown.\n"
                      "TURN and TILT are in degrees; DISTANCE 0.5 starts twice as close as the default.\n",
@@ -374,7 +425,8 @@ int main(int argc, char** argv) {
     loop_config.render_every_iteration = !options.headless;
     loop_config.input = &input;
 
-    ViewerGame game(renderer, model_paths, input, actions, view);
+    const std::string start_clip = options.positional.size() > 4 ? options.positional[4] : std::string();
+    ViewerGame game(renderer, model_paths, input, actions, view, start_clip);
     // Show the first model that loads.
     size_t first = 0;
     while (first < model_paths.size() && !game.ShowModel(first)) {

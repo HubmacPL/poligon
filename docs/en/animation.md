@@ -2,9 +2,7 @@
 
 How a model bends: a skeleton of joints, a mesh whose vertices follow them, and clips that say how the joints move over time.
 
-Headers: `poligon/animation.h`, `poligon/model.h`, `poligon/renderer.h`. Test: `tests/skinning_render_test.cpp`.
-
-**State: in progress (milestone 5).** Loading and drawing are done. Playing a clip and blending between clips are not written yet.
+Headers: `poligon/animation.h`, `poligon/model.h`, `poligon/renderer.h`. Example: `examples/animation`. Test: `tests/skinning_render_test.cpp`.
 
 ## Terms
 
@@ -22,7 +20,28 @@ Headers: `poligon/animation.h`, `poligon/model.h`, `poligon/renderer.h`. Test: `
 - Limits: 256 joints per skeleton (a model with more is loaded without its skeleton, with a warning), four joints per vertex (the four strongest are kept). Animations of rigid parts (a door, a wheel) are not loaded.
 - `model_viewer FILE --headless` prints the joint count and the clips with their durations.
 
+## Playing clips
+
+```cpp
+poligon::AnimationSet animations(model.skeleton, model.animations);   // once per model
+poligon::AnimationPlayer player(animations);                          // one per character
+player.Play(animations.FindClip("Walk"));
+player.Update(tick.delta_seconds);                                    // every tick
+poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices());   // every frame
+```
+
+- `AnimationSet` prepares a skeleton and its clips for playing; build it once per model and share it. `AnimationPlayer` keeps the time for one character. The set must outlive its players.
+- `Play(clip, fade_seconds, loop)` starts a clip from its beginning. What was playing fades out over `fade_seconds` while the new clip fades in, so a walk turns into a run without a jerk. A looping clip starts over at its end; one that does not loop stops on its last moment (`IsFinished()`).
+- `SetSpeed(2.0f)` plays twice as fast; `GetClip()`, `GetTime()` tell where the player is.
+- Time moves only in `Update`, by the amount given. With the fixed tick this makes playback repeatable: the same steps give bit-identical joint matrices (tested).
+- The work is done by the ozz-animation library (MIT); nothing of it shows outside `animation.cpp`. Clips are stored compressed, so a pose comes back with an error of a fraction of a millimeter per meter. Between two keys rotations are mixed along a straight line and normalized, which is exact enough for keys as close together as animation files have them.
+- A clip that does not name a joint, or one of its three parts, leaves that part in its rest pose.
+- Viewer: `model_viewer FILE TURN TILT DISTANCE CLIP` plays the named clip; C switches to the next one. With `--headless --ticks N` the picture is taken N sixtieths of a second into the clip.
+- `forest_scene` has three foxes in the clearing (walking, running, looking about) when `poligon-assets/khronos/fox/Fox.glb` exists.
+
 ## From pose to picture
+
+Without a player, a pose can be set by hand:
 
 ```cpp
 std::vector<poligon::JointTransform> pose = poligon::GetRestPose(model.skeleton);
@@ -46,3 +65,6 @@ poligon::DrawModel(renderer, render_model, transform, matrices);
 
 - Normals of a skinned mesh are correct for joints that rotate and scale evenly; uneven scaling of a joint would need more math.
 - The culling box is safe but generous for models whose joints lie far apart.
+- A fade mixes two clips; switching clips faster than they fade drops the oldest one with a small jump.
+- Not yet used from ozz: mixing by body part (a walk plus a turn of the head), additive clips, placing feet on uneven ground. The player's state is not part of the ECS world or the state dump yet; that comes with the first game object that owns one.
+- Animals in `forest_scene` slide slightly: their speed over the ground is set by hand, not taken from the clip.

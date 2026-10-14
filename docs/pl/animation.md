@@ -2,9 +2,7 @@
 
 Jak model się wygina: szkielet ze stawów, siatka, której wierzchołki za nimi podążają, i klipy mówiące, jak stawy ruszają się w czasie.
 
-Nagłówki: `poligon/animation.h`, `poligon/model.h`, `poligon/renderer.h`. Test: `tests/skinning_render_test.cpp`.
-
-**Stan: w toku (kamień 5).** Wczytywanie i rysowanie są gotowe. Odtwarzanie klipu i mieszanie klipów nie są jeszcze napisane.
+Nagłówki: `poligon/animation.h`, `poligon/model.h`, `poligon/renderer.h`. Przykład: `examples/animation`. Test: `tests/skinning_render_test.cpp`.
 
 ## Pojęcia
 
@@ -22,7 +20,28 @@ Nagłówki: `poligon/animation.h`, `poligon/model.h`, `poligon/renderer.h`. Test
 - Ograniczenia: 256 stawów na szkielet (model z większą liczbą wczytuje się bez szkieletu, z ostrzeżeniem), cztery stawy na wierzchołek (zostają cztery najsilniejsze). Animacje części sztywnych (drzwi, koło) nie są wczytywane.
 - `model_viewer PLIK --headless` wypisuje liczbę stawów i klipy z czasami trwania.
 
+## Odtwarzanie klipów
+
+```cpp
+poligon::AnimationSet animations(model.skeleton, model.animations);   // raz na model
+poligon::AnimationPlayer player(animations);                          // jeden na postać
+player.Play(animations.FindClip("Walk"));
+player.Update(tick.delta_seconds);                                    // co tick
+poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices());   // co klatkę
+```
+
+- `AnimationSet` przygotowuje szkielet i jego klipy do odtwarzania; buduje się go raz na model i współdzieli. `AnimationPlayer` trzyma czas jednej postaci. Zestaw musi żyć dłużej niż jego odtwarzacze.
+- `Play(clip, fade_seconds, loop)` zaczyna klip od początku. To, co grało, wygasa przez `fade_seconds`, a nowy klip w tym czasie narasta, więc chód przechodzi w bieg bez szarpnięcia. Klip zapętlony zaczyna się od nowa po końcu; niezapętlony zatrzymuje się na ostatniej chwili (`IsFinished()`).
+- `SetSpeed(2.0f)` gra dwa razy szybciej; `GetClip()`, `GetTime()` mówią, gdzie jest odtwarzacz.
+- Czas rusza się tylko w `Update`, o podaną wartość. Przy stałym ticku odtwarzanie jest przez to powtarzalne: te same kroki dają macierze stawów identyczne co do bitu (sprawdzane testem).
+- Pracę wykonuje biblioteka ozz-animation (MIT); nic z niej nie wystaje poza `animation.cpp`. Klipy są przechowywane skompresowane, więc poza wraca z błędem ułamka milimetra na metr. Między dwoma kluczami obroty są mieszane po prostej i normalizowane, co wystarcza przy kluczach tak gęstych, jak w plikach animacji.
+- Klip, który nie wymienia stawu albo jednej z jego trzech części, zostawia tę część w pozie spoczynkowej.
+- Przeglądarka: `model_viewer PLIK OBRÓT POCHYLENIE ODLEGŁOŚĆ KLIP` gra wskazany klip; C przełącza na następny. Z `--headless --ticks N` obraz powstaje N sześćdziesiątych sekundy od początku klipu.
+- `forest_scene` ma na polanie trzy lisy (idący, biegnący, rozglądający się), gdy istnieje `poligon-assets/khronos/fox/Fox.glb`.
+
 ## Od pozy do obrazu
+
+Bez odtwarzacza pozę można ustawić ręcznie:
 
 ```cpp
 std::vector<poligon::JointTransform> pose = poligon::GetRestPose(model.skeleton);
@@ -46,3 +65,6 @@ poligon::DrawModel(renderer, render_model, transform, matrices);
 
 - Normalne siatki ze skinningiem są poprawne dla stawów, które się obracają i skalują równomiernie; nierównomierna skala stawu wymagałaby dodatkowej matematyki.
 - Pudełko do odrzucania jest bezpieczne, ale hojne dla modeli, których stawy leżą daleko od siebie.
+- Przejście miesza dwa klipy; przełączanie klipów szybciej, niż trwa przejście, porzuca najstarszy z małym przeskokiem.
+- Jeszcze nieużywane z ozz: mieszanie częściami ciała (chód plus obrót głowy), klipy addytywne, stawianie nóg na nierównym terenie. Stan odtwarzacza nie jest jeszcze częścią świata ECS ani zrzutu stanu; dojdzie z pierwszym obiektem gry, który go posiada.
+- Zwierzęta w `forest_scene` lekko się ślizgają: ich prędkość po ziemi jest ustawiona ręcznie, a nie wzięta z klipu.

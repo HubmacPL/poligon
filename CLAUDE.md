@@ -23,7 +23,8 @@ This file is the table of contents and the rule book. Details live in topic file
 - Milestone 2 (models and textures) is complete: GLM, textures and materials, model import through Assimp, the `model_viewer` gallery, and an asset pipeline outside the repository (Poly Haven downloads, Blender simplification, EZ-Tree generated trees, alpha repair with `image_tool`).
 - Milestone 3 (scene look) is nearly complete: cascaded shadows, sky and sky light, PBR materials, MSAA, tone mapping, ambient occlusion, volumetric fog with light shafts, bloom, automatic exposure, frustum culling, and the showcase `forest_scene` (about 34 ms per frame on the GTX 980 in the `release` preset). Known cost to remove in the vegetation milestone: every tree is drawn at full detail in every shadow cascade (no levels of detail, no instancing).
 - Milestone 4 (in-game tools) is complete: debug windows with Dear ImGui (render settings, frame statistics, world state), a render settings file with the option `--render-settings`, debug views of single frame stages, a free camera.
-- Milestone 5 (skeletal animation) is in progress. Done: skeleton, skin weights and clips are loaded from model files; skinned meshes are drawn in any pose in all passes. Open: the player that samples and blends clips (decision pending between ozz-animation and our own). Test model: the Khronos "Fox" sample in `poligon-assets/khronos/fox` (CC0 model, CC-BY 4.0 animations).
+- Milestone 5 (skeletal animation) is complete: skeleton, skin weights and clips are loaded from model files; skinned meshes are drawn in any pose in all passes; `AnimationSet` and `AnimationPlayer` (on ozz-animation) play clips and fade between them; three foxes move in `forest_scene`. Test model: the Khronos "Fox" sample in `poligon-assets/khronos/fox` (CC0 model, CC-BY 4.0 animations). A realistic animal model is still to be bought or found by the author.
+- Next: milestone 6 (physics).
 - Git repository on branch `main`, no remote. The toy game is a test bed for the engine, not a product.
 
 ## Roadmap
@@ -75,6 +76,7 @@ The order after milestone 2 is the agent's call. Audio, networking, scripting, h
 - Math: GLM (under MIT), used directly, always through `poligon/math.h`.
 - Images: `stb_image` and `stb_image_write` from the stb package.
 - Debug windows: Dear ImGui (MIT) with its SDL3 and SDL GPU backends, from vcpkg. Used directly (`ImGui::` calls in game code); never active in headless mode. Every setting a window can change must also be settable from code or from a file, so the agent can reproduce what the author set by hand.
+- Skeletal animation: ozz-animation (MIT), approved on 2026-10-14 over a player of our own because blending by body part and foot placement come with it. Built as DLLs from our own vcpkg port in `ports/ozz-animation`, since the vcpkg catalog does not have it. Hidden behind `poligon/animation.h`, like Assimp behind `model.h`.
 - Model import: Assimp (BSD-3), linked into the engine, behind `poligon/model.h`. Any format Assimp reads is accepted. cgltf was approved earlier and then dropped in favor of Assimp.
 - Models for the goal scene: the agent searches (Poly Haven is CC0), presents candidates with pictures from `model_viewer`, the author chooses. Every download is shown first (file, source, size). Downloaded files live in the folder `poligon-assets` next to the project folder, outside the repository.
 - ECS: flecs (MIT). Typed C++ API only; query strings and flecs script are forbidden. Every component registers its members. All systems are created at startup, before any entity is deleted, each with an explicit phase (flecs orders systems by id, and a recycled id breaks the order). Single-threaded. The flecs REST server only in development builds. EnTT was rejected.
@@ -84,7 +86,7 @@ The order after milestone 2 is the agent's call. Audio, networking, scripting, h
 
 ## Library candidates (not yet added)
 
-Physics: Jolt (MIT, in vcpkg). Skeletal animation: ozz-animation (MIT, not in vcpkg). Navigation: Recast/Detour (zlib).
+Physics: Jolt (MIT, in vcpkg). Navigation: Recast/Detour (zlib).
 
 ## Open
 

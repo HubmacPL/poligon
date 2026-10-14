@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -67,5 +68,74 @@ std::vector<JointTransform> GetRestPose(const Skeleton& skeleton);
 // the matrix that takes a vertex from where it was modeled to where the posed joint puts it.
 // `pose` must have one entry per joint. Pass the result to Renderer::DrawSkinnedMesh.
 std::vector<glm::mat4> ComputeJointMatrices(const Skeleton& skeleton, const std::vector<JointTransform>& pose);
+
+// A skeleton and its clips prepared for playing. Built once per model (it takes a moment)
+// and then shared by every character that uses the model. Playing is done by the
+// ozz-animation library; this class and AnimationPlayer are all of it that shows.
+class AnimationSet {
+public:
+    // A clip may leave joints out; those stay in their rest pose.
+    AnimationSet(const Skeleton& skeleton, const std::vector<AnimationClip>& clips);
+    ~AnimationSet();
+    AnimationSet(const AnimationSet&) = delete;
+    AnimationSet& operator=(const AnimationSet&) = delete;
+
+    int GetJointCount() const;
+    int GetClipCount() const;
+    const char* GetClipName(int clip) const;
+    float GetClipDuration(int clip) const;
+    // Index of the clip with this name, or -1.
+    int FindClip(const char* name) const;
+
+private:
+    friend class AnimationPlayer;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// Plays the clips of an AnimationSet for one character: keeps the time, fades from one
+// clip into the next, and gives the joint matrices for the current moment.
+//
+// Time only moves in Update, by the amount given, so a run with a fixed time step plays
+// the same every time. The AnimationSet must outlive the player.
+//
+//     poligon::AnimationSet animations(model.skeleton, model.animations);
+//     poligon::AnimationPlayer player(animations);
+//     player.Play(animations.FindClip("Walk"));
+//     // every tick:
+//     player.Update(tick.delta_seconds);
+//     // every frame:
+//     poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices());
+class AnimationPlayer {
+public:
+    explicit AnimationPlayer(const AnimationSet& set);
+    ~AnimationPlayer();
+    AnimationPlayer(const AnimationPlayer&) = delete;
+    AnimationPlayer& operator=(const AnimationPlayer&) = delete;
+
+    // Starts `clip` from its beginning. What was playing fades out over `fade_seconds`
+    // while the new clip fades in (0 switches at once). A looping clip starts over when
+    // it ends; a clip that does not loop stops on its last moment.
+    void Play(int clip, float fade_seconds = 0.25f, bool loop = true);
+    // 1 = as recorded, 2 = twice as fast, 0 = frozen. Applies to the clip that Play started last.
+    void SetSpeed(float speed);
+    // Moves time forward. Call once per tick with the tick's length.
+    void Update(float delta_seconds);
+
+    // The clip started by the last Play, -1 before the first one.
+    int GetClip() const;
+    // Seconds into that clip.
+    float GetTime() const;
+    // True when a clip that does not loop has reached its end.
+    bool IsFinished() const;
+
+    // One matrix per joint for the current moment, for Renderer::DrawSkinnedMesh and
+    // DrawModel. Before the first Play: the rest pose.
+    const std::vector<glm::mat4>& GetJointMatrices();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 } // namespace poligon

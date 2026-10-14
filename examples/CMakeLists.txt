@@ -18,6 +18,7 @@ poligon_add_example(renderer ${CMAKE_BINARY_DIR}/test_output/example_renderer.pn
 poligon_add_example(environment ${CMAKE_BINARY_DIR}/test_output/example_environment.png)
 poligon_add_example(texture ${CMAKE_BINARY_DIR}/test_output)
 poligon_add_example(model ${CMAKE_BINARY_DIR}/test_output)
+poligon_add_example(animation ${CMAKE_BINARY_DIR}/test_output/example_animation.png)
 poligon_add_example(debug_ui --headless ${CMAKE_BINARY_DIR}/test_output/example_render_settings.txt
                     ${CMAKE_BINARY_DIR}/test_output/example_debug_ui.png)
 poligon_add_example(input ${CMAKE_BINARY_DIR}/test_output/example_input_recording.txt)

@@ -21,10 +21,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <numeric>
 #include <string>
 #include <vector>
 
+#include "poligon/animation.h"
 #include "poligon/command_line.h"
 #include "poligon/crash_handler.h"
 #include "poligon/debug_ui.h"
@@ -94,6 +96,17 @@ struct Placement {
     glm::mat4 transform;
     glm::vec3 position;
     bool is_small;
+};
+
+// An animal that moves around the clearing in a circle, or stands in one place.
+struct Animal {
+    std::unique_ptr<poligon::AnimationPlayer> player;
+    float circle_radius = 0.0f;       // 0 = stands still at `place`
+    float meters_per_second = 0.0f;   // negative = the other way around
+    float start_angle = 0.0f;
+    glm::vec2 place{0.0f, 0.0f};      // x and z; for a standing animal
+    float facing_degrees = 0.0f;      // for a standing animal
+    glm::mat4 transform{1.0f};
 };
 
 struct ForestActions {
@@ -193,6 +206,7 @@ public:
         CreateGround();
         LoadKinds();
         PlantForest();
+        AddAnimals();
     }
 
     int GetLoadedKindCount() const { return loaded_kind_count_; }
@@ -212,6 +226,11 @@ public:
         }
 
         const float delta = static_cast<float>(tick.delta_seconds);
+        time_seconds_ += delta;
+        for (Animal& animal : animals_) {
+            animal.player->Update(delta);
+            PlaceAnimal(animal);
+        }
         float yaw_change = input_.GetValue(actions_.turn) * 90.0f * delta;
         float pitch_change = input_.GetValue(actions_.tilt) * 60.0f * delta;
         if (input_.IsDown(actions_.drag_hold)) {
@@ -252,6 +271,9 @@ public:
             poligon::ShowFrameStatsWindow(renderer_);
         }
         renderer_.DrawMesh(ground_mesh_, glm::mat4(1.0f), ground_material_);
+        for (Animal& animal : animals_) {
+            poligon::DrawModel(renderer_, fox_model_, animal.transform, animal.player->GetJointMatrices());
+        }
         for (const Placement& placement : placements_) {
             if (placement.is_small && glm::distance(placement.position, camera.position) > kSmallPlantDistance) {
                 continue;
@@ -418,6 +440,60 @@ private:
         fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false);
     }
 
+    // Three foxes in the clearing: one walks around it, one runs around it the other way,
+    // one stands and looks about. They follow the ground but know nothing of each other.
+    void AddAnimals() {
+        const std::filesystem::path file = assets_ / "khronos" / "fox" / "Fox.glb";
+        poligon::Model model;
+        std::string error;
+        if (!poligon::LoadModelFromFile(file.string().c_str(), model, error) || model.animations.empty()) {
+            std::printf("forest_scene: no animals: %s\n", error.empty() ? "the fox model has no animations" : error.c_str());
+            return;
+        }
+        fox_model_ = poligon::UploadModel(renderer_, model);
+        fox_animations_ = std::make_unique<poligon::AnimationSet>(model.skeleton, model.animations);
+        // The model is in centimeters and rather large for a fox.
+        fox_scale_ = 0.45f / (model.bounds_max.y - model.bounds_min.y);
+
+        const auto add = [this](const char* clip_name, float radius, float speed, float start_angle) -> Animal& {
+            Animal animal;
+            animal.player = std::make_unique<poligon::AnimationPlayer>(*fox_animations_);
+            const int clip = fox_animations_->FindClip(clip_name);
+            animal.player->Play(clip >= 0 ? clip : 0, 0.0f);
+            animal.circle_radius = radius;
+            animal.meters_per_second = speed;
+            animal.start_angle = start_angle;
+            animals_.push_back(std::move(animal));
+            return animals_.back();
+        };
+        add("Walk", 3.5f, 0.55f, 0.6f);
+        add("Run", 5.2f, -3.2f, 2.5f);
+        Animal& watcher = add("Survey", 0.0f, 0.0f, 0.0f);
+        watcher.place = {-1.5f, -2.5f};
+        watcher.facing_degrees = 140.0f;
+        for (Animal& animal : animals_) {
+            PlaceAnimal(animal);
+        }
+        std::printf("forest_scene: %zu foxes\n", animals_.size());
+    }
+
+    // Where an animal is at the current time. It depends on the time alone, so a run is
+    // the same every time.
+    void PlaceAnimal(Animal& animal) const {
+        glm::vec2 place = animal.place;
+        float facing = glm::radians(animal.facing_degrees);
+        if (animal.circle_radius > 0.0f) {
+            const float angle = animal.start_angle + time_seconds_ * animal.meters_per_second / animal.circle_radius;
+            place = {std::cos(angle) * animal.circle_radius, std::sin(angle) * animal.circle_radius};
+            // Along the circle, in the direction of travel. The fox model looks along +Z.
+            const float direction = animal.meters_per_second >= 0.0f ? 1.0f : -1.0f;
+            facing = std::atan2(-std::sin(angle) * direction, std::cos(angle) * direction);
+        }
+        animal.transform = glm::translate(glm::mat4(1.0f), {place.x, GroundHeight(place.x, place.y), place.y}) *
+                           glm::rotate(glm::mat4(1.0f), facing, {0.0f, 1.0f, 0.0f}) *
+                           glm::scale(glm::mat4(1.0f), glm::vec3(fox_scale_));
+    }
+
     // Puts one random variant of `kind` at (x, z), standing on the ground, turned at random.
     // `sink` pushes it into the ground by that part of its height (rocks, stumps).
     void Place(const Kind& kind, Random& random, float x, float z, float scale, float sink = 0.0f) {
@@ -504,6 +580,13 @@ private:
         grass_, boulder_, rocks_, stump_, fallen_trunk_;
     int loaded_kind_count_ = 0;
     std::vector<Placement> placements_;
+
+    poligon::RenderModel fox_model_;
+    float fox_scale_ = 1.0f;
+    // Players refer to the set, so it is declared before them and destroyed after them.
+    std::unique_ptr<poligon::AnimationSet> fox_animations_;
+    std::vector<Animal> animals_;
+    float time_seconds_ = 0.0f;
 
     poligon::RenderSettings settings_;
     std::string settings_path_;
