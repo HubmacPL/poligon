@@ -44,9 +44,26 @@ vegetation.Draw(renderer, camera);
 - `GetStats()`: rośliny na poziom, pominięte komórki, partie.
 - Siatki i tekstury należą do wywołującego; system trzyma tylko uchwyty i przekształcenia.
 
-## Robienie uproszczonych poziomów drzewa
+## Drzewa forest_scene
 
-`tools/assets/simplify_model.py` ze słowem `foliage`:
+Sosna, świerk, brzoza, dąb, młoda sosna i młody świerk, wszystkie generowane przez `tools/assets/make_tree.mjs` z przepisów w `tools/assets/trees/` (zob. [rendering.md](rendering.md)), każde z trzema poziomami zrobionymi z tego samego drzewa. Gałązki: Poly Haven `fir_tree_01` (świerk) i `pine_tree_01` (sosna), gałązki osiki i dębu z EZ-Tree; kora: Poly Haven `fir_tree_01` (świerk), ambientCG `Bark014` (sosna), kora brzozy i dębu z EZ-Tree; wszystko CC0 albo dostarczane z EZ-Tree (MIT).
+
+Trójkąty na poziom:
+
+| | pełny | średni | niski |
+|---|---|---|---|
+| sosna 24 m | 20600 | 7900 | 2750 |
+| świerk 20 m | 12000 | 4400 | 1900 |
+| brzoza 17 m | 13400 | 5300 | 1900 |
+| dąb 18 m | 13600 | 5500 | 1900 |
+| młoda sosna 5 m | 12600 | 5000 | 1800 |
+| młody świerk 4 m | 6500 | 3700 | 640 |
+
+Skany z Poly Haven, które zastąpiły, miały od 33000 do 193000 trójkątów w pełnym detalu i do 15500 na najniższym poziomie. Mapy szorstkości gałązek z Poly Haven nie są używane: z nimi igły wyglądały na mokre i odbijały niebieskie niebo.
+
+## Robienie uproszczonych poziomów pobranego drzewa
+
+Dla modeli niegenerowanych przez `make_tree.mjs`: `tools/assets/simplify_model.py` ze słowem `foliage`:
 
 ```
 blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚCIE.gltf 0.1 foliage
@@ -54,7 +71,7 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚ
 
 - Pień i gałęzie są upraszczane przez zwijanie trójkątów, jak dotąd.
 - Liście są traktowane inaczej. Zwijanie kartek liści przerzedza koronę, aż drzewo wygląda na łyse. Zamiast tego usuwana jest część kartek (dla tego samego pliku zawsze te same), a pozostałe są powiększane, żeby korona zakrywała tę samą powierzchnię. Przy jednej dziesiątej trójkątów sosna zachowuje sylwetkę.
-- Siatka liczy się jako liście, gdy wszystkie jej materiały biorą przezroczystość z tekstury. Modele, w których liście i kora dzielą jedną siatkę, są zwijane w całości (obecnie jacaranda i drzewo wyspowe).
+- Siatka liczy się jako liście, gdy wszystkie jej materiały biorą przezroczystość z tekstury. Modele, w których liście i kora dzielą jedną siatkę, są zwijane w całości (takie były jacaranda i drzewo wyspowe z Poly Haven).
 - Uproszczone poziomy używają materiałów pełnego modelu, dopasowanych po nazwie; `LoadModelFromFile(path, model, error, false)` czyta taki plik bez tekstur.
 
 ## Ile to kosztuje: pomiary
@@ -71,6 +88,7 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚ
 
 - Cienie są teraz zdecydowanie największym kosztem: każda kartka liści jest rysowana do czterech obrazów cieni, a koszt zależy od liczby pikseli cienia, nie od liczby trójkątów. Prostsze siatki dla cieni niewiele dają, bo powiększone kartki zakrywają tę samą powierzchnię.
 - Uruchomienie bez okna mierzy całą klatkę tylko wtedy, gdy kończy się odczytaniem klatki z karty; `forest_scene` to robi. Bez tego czas obejmuje jedynie przekazanie pracy karcie.
+- Na terenie Batorza z około 21000 rozmieszczonych rzeczy (bez okna, release, 150 klatek): 21,4 ms w lesie i 21,0 ms na starcie z pobranymi drzewami; 18,6 i 16,8 ms z generowanymi. Pomijanie po jednym rodzaju pokazało, gdzie idzie czas: same sosny kosztowały 5,4 ms, wszystkie drzewa razem około 12 ms, kamienie, głazy i przewrócony pień (skany z 40000 do 83000 trójkątów, bez prostszych poziomów) około 5 ms.
 
 ## Znane ograniczenia
 

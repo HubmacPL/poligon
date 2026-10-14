@@ -62,6 +62,7 @@ constexpr float kCrateSize = 0.6f;
 constexpr float kTreeFullDetail = 28.0f;
 constexpr float kTreeMediumDetail = 70.0f;
 constexpr float kTreeLowDetail = 450.0f;
+constexpr float kYoungTreeLowDetail = 150.0f;
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
@@ -451,9 +452,10 @@ private:
     // keep_origin: leave the model where its file put it sideways (a tree's trunk stands at
     // the file's origin, while the middle of its crown may be well off to one side).
     // lod_name: for trees, the folder below poligon-assets/lods that holds the two simpler
-    // levels of detail (made by tools/assets/simplify_model.py); nullptr for kinds without.
+    // levels of detail (made by tools/assets/make_tree.mjs); nullptr for kinds without.
+    // farthest: for trees, how far away the simplest level is still drawn.
     Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false,
-                  const char* lod_name = nullptr) {
+                  const char* lod_name = nullptr, float farthest = kTreeLowDetail) {
         Kind kind;
         kind.is_small = is_small;
         const std::filesystem::path file = FindGltf(assets_ / relative_folder);
@@ -537,7 +539,7 @@ private:
             if (lod_name != nullptr) {
                 full.max_distance = kTreeFullDetail;
                 species.levels.push_back(full);
-                const float distances[2] = {kTreeMediumDetail, kTreeLowDetail};
+                const float distances[2] = {kTreeMediumDetail, farthest};
                 for (int level = 1; level <= 2; ++level) {
                     poligon::VegetationLevel simpler;
                     simpler.parts = LoadLodParts(lod_name, level, to_foot, model, render_model);
@@ -602,12 +604,13 @@ private:
 
     void LoadKinds() {
         render_models_.reserve(32);
-        tall_pine_ = LoadKind("generated/scots_pine", false, false, true, "scots_pine");
-        pine_ = LoadKind("generated/pine_stock", false, false, true, "pine_stock");
-        broadleaf_ = LoadKind("simplified/jacaranda_tree", false, false, true, "jacaranda_tree");
-        small_tree_ = LoadKind("simplified/island_tree_02", false, false, true, "island_tree_02");
-        fir_sapling_ = LoadKind("simplified/fir_sapling", true, false);
-        pine_sapling_ = LoadKind("simplified/pine_sapling_small", true, false);
+        // Trees made with tools/assets/make_tree.mjs from the recipes in tools/assets/trees.
+        pine_ = LoadKind("generated/pine", false, false, true, "pine");
+        spruce_ = LoadKind("generated/spruce", false, false, true, "spruce");
+        birch_ = LoadKind("generated/birch", false, false, true, "birch");
+        oak_ = LoadKind("generated/oak", false, false, true, "oak");
+        young_spruce_ = LoadKind("generated/spruce_young", false, false, true, "spruce_young", kYoungTreeLowDetail);
+        young_pine_ = LoadKind("generated/pine_young", false, false, true, "pine_young", kYoungTreeLowDetail);
         shrub_ = LoadKind("polyhaven/shrub_02", true, false);
         low_shrub_ = LoadKind("polyhaven/shrub_03", true, true);
         fern_ = LoadKind("polyhaven/fern_02", true, true);
@@ -618,14 +621,15 @@ private:
         stump_ = LoadKind("polyhaven/tree_stump_01", false, false);
         fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false);
 
-        tall_pine_.collision = Collision::Trunk;
-        tall_pine_.trunk_radius = 0.32f;
+        // Trunk radii measured at the foot of the generated models.
         pine_.collision = Collision::Trunk;
-        pine_.trunk_radius = 0.28f;
-        broadleaf_.collision = Collision::Trunk;
-        broadleaf_.trunk_radius = 0.6f;
-        small_tree_.collision = Collision::Trunk;
-        small_tree_.trunk_radius = 0.12f;
+        pine_.trunk_radius = 0.4f;
+        spruce_.collision = Collision::Trunk;
+        spruce_.trunk_radius = 0.25f;
+        birch_.collision = Collision::Trunk;
+        birch_.trunk_radius = 0.14f;
+        oak_.collision = Collision::Trunk;
+        oak_.trunk_radius = 0.45f;
         boulder_.collision = Collision::Block;
         rocks_.collision = Collision::Block;
         stump_.collision = Collision::Block;
@@ -824,12 +828,15 @@ private:
                 if (in_clearing || in_view_wedge || choice < 0.22f) {
                     continue;
                 }
-                if (choice < 0.50f) {
-                    Place(tall_pine_, random, x, z, scale);
-                } else if (choice < 0.96f) {
+                // Of the trees: about half pines, the rest spruces, birches and oaks.
+                if (choice < 0.60f) {
                     Place(pine_, random, x, z, scale);
+                } else if (choice < 0.72f) {
+                    Place(spruce_, random, x, z, scale);
+                } else if (choice < 0.86f) {
+                    Place(birch_, random, x, z, scale);
                 } else {
-                    Place(broadleaf_, random, x, z, scale * 0.6f);
+                    Place(oak_, random, x, z, scale);
                 }
                 // Something at the foot of some trees.
                 if (random.Next() < 0.35f) {
@@ -841,9 +848,8 @@ private:
 
         // The forest now covers 500 x 500 m, twelve times the area it had on the flat test
         // ground. Undergrowth is dense near the start and thinner over the whole area.
-        Scatter(small_tree_, random, 70, kForestHalfSize, 1.2f, 1.8f);
-        Scatter(fir_sapling_, random, 350, kForestHalfSize, 1.0f, 2.2f);
-        Scatter(pine_sapling_, random, 350, kForestHalfSize, 1.0f, 2.2f);
+        Scatter(young_spruce_, random, 350, kForestHalfSize, 0.5f, 1.3f);
+        Scatter(young_pine_, random, 350, kForestHalfSize, 0.5f, 1.3f);
         Scatter(shrub_, random, 500, kForestHalfSize, 0.7f, 1.2f);
         Scatter(low_shrub_, random, 150, 50.0f, 1.2f, 2.0f);
         Scatter(low_shrub_, random, 1200, kForestHalfSize, 1.2f, 2.0f);
@@ -867,8 +873,8 @@ private:
 
     std::unique_ptr<poligon::Terrain> terrain_;
     std::vector<poligon::RenderModel> render_models_;
-    Kind tall_pine_, pine_, broadleaf_, small_tree_, fir_sapling_, pine_sapling_, shrub_, low_shrub_, fern_, nettle_,
-        grass_, boulder_, rocks_, stump_, fallen_trunk_;
+    Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
+        rocks_, stump_, fallen_trunk_;
     int loaded_kind_count_ = 0;
     // All plants, rocks and stumps: placed once, drawn by distance.
     poligon::Vegetation vegetation_;

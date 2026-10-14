@@ -1,0 +1,61 @@
+{
+  "name": "pine_young",
+  "options": {
+  "seed": 902,
+  "type": "deciduous",
+  "bark": {
+    "type": "pine",
+    "tint": 14472100,
+    "flatShading": false,
+    "textured": true,
+    "textureScale": { "x": 1, "y": 4 }
+  },
+  "branch": {
+    "levels": 3,
+    "angle": { "1": 78, "2": 58, "3": 50 },
+    "children": { "0": 12, "1": 5, "2": 3 },
+    "force": { "direction": { "x": 0, "y": 1, "z": 0 }, "strength": 0.018 },
+    "gnarliness": { "0": 0.04, "1": 0.3, "2": 0.3, "3": 0.15 },
+    "length": { "0": 62, "1": 17, "2": 7.5, "3": 3 },
+    "radius": { "0": 0.8, "1": 0.36, "2": 0.5, "3": 0.5 },
+    "sections": { "0": 14, "1": 8, "2": 6, "3": 4 },
+    "segments": { "0": 10, "1": 6, "2": 4, "3": 3 },
+    "start": { "1": 0.2, "2": 0.3, "3": 0.2 },
+    "taper": { "0": 0.5, "1": 0.7, "2": 0.7, "3": 0.7 },
+    "twist": { "0": 0, "1": 0.15, "2": 0.15, "3": 0 }
+  },
+  "leaves": {
+    "type": "pine",
+    "billboard": "double",
+    "angle": 40,
+    "count": 5,
+    "start": 0.2,
+    "size": 2.6,
+    "sizeVariance": 0.5,
+    "tint": 8425572,
+    "alphaTest": 0.4
+  },
+  "trellis": { "enabled": false }
+}
+,
+  "height": 5,
+  "bark": {
+    "color": "ambientcg/Bark014/Bark014_1K-JPG_Color.jpg",
+    "normal": "ambientcg/Bark014/Bark014_1K-JPG_NormalGL.jpg",
+    "orm": "prepared/pine_bark/pine_bark_orm.png",
+    "meters": 1.2
+  },
+  "leaves": {
+    "color": "prepared/pine_twig/pine_twig_color.png",
+    "normal": "polyhaven/textures/pine_tree_01/pine_tree_01_twig_nor_gl_2k.jpg",
+    "atlas": [[0.0352, 0.0430, 0.2188, 0.4434]],
+    "alpha_cutoff": 0.4,
+    "roundness": 0.5,
+    "tint": [0.85, 0.9, 0.55]
+  },
+  "levels": [
+    { "segments": { "0": 10, "1": 5, "2": 3, "3": 3 }, "drop_branch_level": 3 },
+    { "segments": { "0": 7, "1": 4, "2": 3, "3": 3 }, "drop_branch_level": 2, "leaf_keep": 0.5 },
+    { "segments": { "0": 5, "1": 3, "2": 3, "3": 3 }, "drop_branch_level": 2, "leaf_keep": 0.25, "single_cards": true }
+  ]
+}

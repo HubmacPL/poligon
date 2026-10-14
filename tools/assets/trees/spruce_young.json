@@ -37,7 +37,6 @@
   "leaves": {
     "color": "prepared/spruce_twig/spruce_twig_color.png",
     "normal": "polyhaven/textures/fir_tree_01/fir_tree_01_twig_nor_gl_2k.jpg",
-    "orm": "polyhaven/textures/fir_tree_01/fir_tree_01_twig_arm_2k.jpg",
     "atlas": [
       [0.6523, 0.0410, 0.9375, 0.3691],
       [0.1895, 0.0469, 0.4297, 0.3125],
@@ -49,7 +48,7 @@
     ],
     "alpha_cutoff": 0.4,
     "roundness": 0.4,
-    "tint": [0.42, 0.5, 0.38]
+    "tint": [0.32, 0.44, 0.2]
   },
   "levels": [
     { "segments": { "0": 8, "1": 4, "2": 3 }, "drop_branch_level": 2 },
