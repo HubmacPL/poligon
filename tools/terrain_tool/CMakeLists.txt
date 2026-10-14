@@ -1,0 +1,2 @@
+add_executable(terrain_tool main.cpp)
+target_link_libraries(terrain_tool PRIVATE poligon_engine poligon_build_options)
