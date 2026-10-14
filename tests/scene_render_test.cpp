@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #include "poligon/renderer.h"
 #include "test_support.h"
@@ -160,6 +161,96 @@ int main(int argc, char** argv) {
                    "a mesh outside the view still casts its shadow into it");
             Expect(PixelIs(frame, ToPixel(2.5f, height), ToPixel(-2.5f, height), 196, 196, 196, 4),
                    "the floor beside that shadow is lit");
+        }
+
+        // --- Instancing ---
+        // Nine cubes on a floor, once drawn one by one and once as a single batch of
+        // instances: the two pictures must be the same, shadows included.
+        {
+            poligon::DirectionalLight sun;
+            sun.direction = {0.4f, -1.0f, 0.2f};
+            sun.color = {0.5f, 0.5f, 0.5f, 1.0f};
+            sun.ambient = {0.2f, 0.2f, 0.2f, 1.0f};
+            const float height = 12.0f;
+            const poligon::Material white = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+            const poligon::Material red = MakeMatte({1.0f, 0.2f, 0.2f, 1.0f});
+            const glm::mat4 floor_transform = glm::scale(identity, {14.0f, 1.0f, 14.0f});
+            poligon::Environment environment;
+            environment.shadow_distance = 30.0f;
+
+            std::vector<glm::mat4> transforms;
+            for (int i = 0; i < 9; ++i) {
+                const glm::vec3 place{static_cast<float>(i % 3) * 3.0f - 3.0f, 0.5f + 0.3f * static_cast<float>(i),
+                                      static_cast<float>(i / 3) * 3.0f - 3.0f};
+                transforms.push_back(glm::translate(identity, place) *
+                                     glm::rotate(identity, 0.4f * static_cast<float>(i), {0.0f, 1.0f, 0.0f}) *
+                                     glm::scale(identity, glm::vec3(0.6f + 0.1f * static_cast<float>(i))));
+            }
+            // Far outside the view and outside every shadow cascade.
+            transforms.push_back(glm::translate(identity, {500.0f, 0.5f, 0.0f}));
+
+            poligon::Image one_by_one;
+            renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
+            renderer.DrawMesh(plane, floor_transform, white);
+            for (const glm::mat4& transform : transforms) {
+                renderer.DrawMesh(cube, transform, red);
+            }
+            renderer.EndFrame();
+            renderer.CaptureFrame(one_by_one);
+
+            renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
+            renderer.DrawMesh(plane, floor_transform, white);
+            renderer.DrawMeshInstances(cube, red, transforms.data(), static_cast<int>(transforms.size()));
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+
+            int different = 0;
+            for (size_t i = 0; i < frame.pixels.size(); ++i) {
+                different += std::abs(frame.pixels[i] - one_by_one.pixels[i]) > 1 ? 1 : 0;
+            }
+            if (different != 0) {
+                std::printf("  %d color values differ\n", different);
+            }
+            Expect(different == 0, "instances look exactly like the same meshes drawn one by one");
+            Expect(PixelIs(frame, ToPixel(0.0f, height), ToPixel(0.0f, height), 255, 86, 86, 60), "the middle cube is there and red");
+
+            const poligon::FrameStats stats = renderer.GetFrameStats();
+            if (stats.instances_submitted != 10 || stats.instances_drawn != 9) {
+                std::printf("  submitted %d, drawn %d, in shadows %d, calls %d\n", stats.instances_submitted, stats.instances_drawn,
+                            stats.shadow_instances, stats.instance_draw_calls);
+            }
+            Expect(stats.instances_submitted == 10 && stats.instances_drawn == 9, "the instance outside the view is culled on its own");
+            Expect(stats.shadow_instances >= 9 && stats.shadow_instances <= 36, "instances are culled per shadow cascade");
+            Expect(stats.instance_draw_calls <= 5, "a batch costs one draw call per pass, not one per instance");
+
+            // Instances that cast no shadow, and instances that only cast one.
+            const int shadow_x = ToPixel(4.3f, height);
+            const int shadow_z = ToPixel(0.6f, height);
+            Expect(PixelIs(frame, shadow_x, shadow_z, 124, 124, 124, 6), "an instance casts its shadow on the floor");
+
+            poligon::InstanceOptions no_shadow;
+            no_shadow.shadow_cascades = 0;
+            renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
+            renderer.DrawMesh(plane, floor_transform, white);
+            renderer.DrawMeshInstances(cube, red, transforms.data(), 9, no_shadow);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            Expect(PixelAt(frame, shadow_x, shadow_z)[0] > 180, "with no cascade selected the shadow is gone");
+            Expect(renderer.GetFrameStats().shadow_instances == 0, "and nothing is drawn into the shadow image");
+
+            poligon::InstanceOptions only_shadow;
+            only_shadow.draw_in_view = false;
+            renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
+            renderer.DrawMesh(plane, floor_transform, white);
+            renderer.DrawMeshInstances(cube, red, transforms.data(), 9, only_shadow);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            Expect(PixelIs(frame, shadow_x, shadow_z, 124, 124, 124, 6), "instances hidden from view still cast shadows");
+            Expect(renderer.GetFrameStats().instances_drawn == 0, "and are not drawn in the picture");
+
+            const glm::vec4 ends = poligon::ComputeShadowCascadeEnds(0.1f, 30.0f);
+            Expect(ends.x < ends.y && ends.y < ends.z && ends.z < ends.w && std::abs(ends.w - 30.0f) < 0.001f,
+                   "cascade ends rise up to the shadow distance");
         }
 
         // --- Destroying meshes and textures ---

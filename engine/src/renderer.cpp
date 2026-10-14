@@ -1,5 +1,6 @@
 #include "poligon/renderer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -29,6 +30,8 @@
 #include "poligon_shaders/luminance_frag_spirv.h"
 #include "poligon_shaders/mesh_frag_dxil.h"
 #include "poligon_shaders/mesh_frag_spirv.h"
+#include "poligon_shaders/mesh_instanced_vert_dxil.h"
+#include "poligon_shaders/mesh_instanced_vert_spirv.h"
 #include "poligon_shaders/mesh_skinned_vert_dxil.h"
 #include "poligon_shaders/mesh_skinned_vert_spirv.h"
 #include "poligon_shaders/mesh_vert_dxil.h"
@@ -201,6 +204,60 @@ struct DrawCommand {
 
 // The three passes that draw meshes.
 enum MeshPass { kScenePass, kShadowPass, kDepthPass, kMeshPassCount };
+// How a mesh's vertices are placed: by one transform, by a skeleton, or once per instance.
+enum MeshKind { kRigid, kSkinned, kInstanced, kMeshKindCount };
+
+// The lists of instances a batch is culled into: the camera's view, then one per cascade.
+constexpr int kInstanceListCount = 1 + kCascadeCount;
+
+// One DrawMeshInstances call.
+struct InstanceBatch {
+    std::uint32_t mesh_id;
+    Material material;
+    // The batch's transforms as given by the caller, in Impl::instance_sources.
+    size_t first_source;
+    std::uint32_t count;
+    InstanceOptions options;
+    // After culling: where each list's surviving transforms start in the frame's instance
+    // buffer, and how many there are.
+    std::uint32_t list_first[kInstanceListCount];
+    std::uint32_t list_count[kInstanceListCount];
+};
+
+// A plane as (normal, distance): points with dot(normal, p) + distance >= 0 are inside.
+// The six sides of the volume a view-projection matrix shows, normals pointing inwards.
+struct ViewVolume {
+    glm::vec4 planes[6];
+    int plane_count;
+};
+
+// check_near: false for shadow cascades (see IsBoxOutside).
+ViewVolume MakeViewVolume(const glm::mat4& view_projection, bool check_near) {
+    const auto row = [&view_projection](int i) {
+        return glm::vec4(view_projection[0][i], view_projection[1][i], view_projection[2][i], view_projection[3][i]);
+    };
+    ViewVolume volume;
+    volume.planes[0] = row(3) + row(0);  // left
+    volume.planes[1] = row(3) - row(0);  // right
+    volume.planes[2] = row(3) + row(1);  // bottom
+    volume.planes[3] = row(3) - row(1);  // top
+    volume.planes[4] = row(3) - row(2);  // far
+    volume.planes[5] = row(2);           // near (depth runs from 0)
+    volume.plane_count = check_near ? 6 : 5;
+    for (int i = 0; i < volume.plane_count; ++i) {
+        volume.planes[i] /= glm::length(glm::vec3(volume.planes[i]));
+    }
+    return volume;
+}
+
+bool IsSphereOutside(const ViewVolume& volume, const glm::vec3& center, float radius) {
+    for (int i = 0; i < volume.plane_count; ++i) {
+        if (glm::dot(glm::vec3(volume.planes[i]), center) + volume.planes[i].w < -radius) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // True when the box, after `clip_from_mesh`, lies entirely outside the visible volume: all
 // eight corners are beyond the same side of it. A box that is only partly outside, or that
@@ -321,7 +378,14 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* luminance_pipeline = nullptr;
 
     // Indexed by pass, by "is the mesh skinned" and by "is the material double-sided".
-    SDL_GPUGraphicsPipeline* mesh_pipelines[kMeshPassCount][2][2] = {};
+    SDL_GPUGraphicsPipeline* mesh_pipelines[kMeshPassCount][kMeshKindCount][2] = {};
+    // Instancing: the transforms as submitted, the batches, and the culled transforms of
+    // all batches and lists one after another, with the buffer they are copied to.
+    std::vector<glm::mat4> instance_sources;
+    std::vector<InstanceBatch> instance_batches;
+    std::vector<glm::mat4> instance_data;
+    SDL_GPUBuffer* instance_buffer = nullptr;
+    Uint32 instance_buffer_capacity = 0;
     // The joint matrices of every skinned mesh drawn this frame, one after another, and
     // the buffer on the graphics card they are copied to in EndFrame.
     std::vector<glm::mat4> joint_palette;
@@ -734,6 +798,27 @@ struct Renderer::Impl {
         mesh_pipelines[kDepthPass][1][1] = create_skinned(prepass_info, SDL_GPU_CULLMODE_NONE);
         SDL_ReleaseGPUShader(device, skinned_vertex);
 
+        // --- And for instanced meshes: the usual vertex buffer, another vertex shader ---
+        SDL_GPUShader* instanced_vertex =
+            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshInstancedVertDxil, sizeof(kMeshInstancedVertDxil),
+                         kMeshInstancedVertSpirv, sizeof(kMeshInstancedVertSpirv), 1);
+        const auto create_instanced = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUCullMode cull_mode) {
+            info.vertex_shader = instanced_vertex;
+            info.rasterizer_state.cull_mode = cull_mode;
+            SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+            if (pipeline == nullptr) {
+                FatalSdlError("cannot create instanced mesh pipeline");
+            }
+            return pipeline;
+        };
+        mesh_pipelines[kScenePass][kInstanced][0] = create_instanced(mesh_info, SDL_GPU_CULLMODE_BACK);
+        mesh_pipelines[kScenePass][kInstanced][1] = create_instanced(mesh_info, SDL_GPU_CULLMODE_NONE);
+        mesh_pipelines[kShadowPass][kInstanced][0] = create_instanced(shadow_info, SDL_GPU_CULLMODE_NONE);
+        mesh_pipelines[kShadowPass][kInstanced][1] = mesh_pipelines[kShadowPass][kInstanced][0];
+        mesh_pipelines[kDepthPass][kInstanced][0] = create_instanced(prepass_info, SDL_GPU_CULLMODE_BACK);
+        mesh_pipelines[kDepthPass][kInstanced][1] = create_instanced(prepass_info, SDL_GPU_CULLMODE_NONE);
+        SDL_ReleaseGPUShader(device, instanced_vertex);
+
         // --- Sky: covers the whole image behind the scene ---
         SDL_GPUGraphicsPipelineCreateInfo sky_info{};
         sky_info.vertex_shader = fullscreen_vertex;
@@ -890,15 +975,10 @@ struct Renderer::Impl {
         const glm::mat4 light_rotation_inverse = glm::inverse(light_rotation);
 
         const float near_distance = camera.near_plane;
-        const float far_distance = glm::max(environment.shadow_distance, near_distance * 2.0f);
+        cascades.far_distance = ComputeShadowCascadeEnds(near_distance, environment.shadow_distance);
         float range_start = near_distance;
         for (int i = 0; i < kCascadeCount; ++i) {
-            // A mix of even and geometric spacing: ranges grow with distance, but not too fast.
-            const float fraction = static_cast<float>(i + 1) / static_cast<float>(kCascadeCount);
-            const float geometric = near_distance * std::pow(far_distance / near_distance, fraction);
-            const float even = near_distance + (far_distance - near_distance) * fraction;
-            const float range_end = glm::mix(even, geometric, 0.75f);
-            cascades.far_distance[i] = range_end;
+            const float range_end = cascades.far_distance[i];
 
             // A sphere around this part of the view. Its size does not change when the camera
             // turns, which keeps shadow edges from crawling.
@@ -991,30 +1071,135 @@ struct Renderer::Impl {
 
     // Copies this frame's joint matrices to the graphics card.
     void UploadJointMatrices(SDL_GPUCommandBuffer* commands) {
-        if (joint_palette.empty()) {
+        UploadMatrices(commands, joint_palette, joint_buffer, joint_buffer_capacity);
+    }
+
+    // Draws, in one pass, every instance batch that has something in the given list.
+    // material_slot: the fragment uniform slot the pass's shader reads the material from.
+    void DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, MeshPass mesh_pass, int list,
+                             bool ao_on, SDL_GPUGraphicsPipeline*& bound_pipeline) {
+        for (const InstanceBatch& batch : instance_batches) {
+            if (batch.list_count[list] == 0) {
+                continue;
+            }
+            const Material& material = batch.material;
+            SDL_GPUGraphicsPipeline* pipeline = mesh_pipelines[mesh_pass][kInstanced][material.double_sided ? 1 : 0];
+            if (pipeline != bound_pipeline) {
+                SDL_BindGPUGraphicsPipeline(pass, pipeline);
+                bound_pipeline = pipeline;
+                SDL_BindGPUVertexStorageBuffers(pass, 0, &instance_buffer, 1);
+            }
+
+            ObjectUniforms object_uniforms;
+            object_uniforms.model = glm::mat4(1.0f);
+            object_uniforms.color = ToVec4(material.color);
+            object_uniforms.uv_scale =
+                glm::vec4(material.uv_scale.x, material.uv_scale.y, static_cast<float>(batch.list_first[list]), 0.0f);
+            SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+            const MaterialUniforms material_uniforms = MakeMaterialUniforms(material);
+
+            SDL_GPUTextureSamplerBinding bindings[5]{};
+            bindings[0].texture = GetTexture(material.texture, white_texture);
+            bindings[0].sampler = texture_sampler;
+            if (mesh_pass == kScenePass) {
+                SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
+                bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
+                bindings[1].sampler = texture_sampler;
+                bindings[2].texture = GetTexture(material.orm_texture, white_texture);
+                bindings[2].sampler = texture_sampler;
+                bindings[3].texture = shadow_atlas;
+                bindings[3].sampler = shadow_sampler;
+                bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
+                bindings[4].sampler = clamp_sampler;
+                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
+            } else {
+                // The depth-only passes need the material only to cut out leaves.
+                SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
+                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 1);
+            }
+
+            const Mesh& mesh = meshes[batch.mesh_id - 1];
+            SDL_GPUBufferBinding vertex_binding{};
+            vertex_binding.buffer = mesh.vertex_buffer;
+            SDL_BindGPUVertexBuffers(pass, 0, &vertex_binding, 1);
+            SDL_GPUBufferBinding index_binding{};
+            index_binding.buffer = mesh.index_buffer;
+            SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            SDL_DrawGPUIndexedPrimitives(pass, mesh.index_count, batch.list_count[list], 0, 0, 0);
+            ++stats.instance_draw_calls;
+        }
+    }
+
+    // Decides, for every instance of every batch, which lists it is in (the camera's view,
+    // each shadow cascade), and writes the transforms of each list one after another.
+    void CullInstances(const glm::mat4& view_projection, const Cascades* cascades) {
+        instance_data.clear();
+        ViewVolume volumes[kInstanceListCount];
+        volumes[0] = MakeViewVolume(view_projection, true);
+        for (int cascade = 0; cascade < kCascadeCount && cascades != nullptr; ++cascade) {
+            volumes[1 + cascade] = MakeViewVolume(cascades->light_view_projection[cascade], false);
+        }
+        for (InstanceBatch& batch : instance_batches) {
+            // A sphere around the mesh; each instance moves and scales it.
+            const Mesh& mesh = meshes[batch.mesh_id - 1];
+            const glm::vec4 local_center((mesh.bounds_min + mesh.bounds_max) * 0.5f, 1.0f);
+            const float local_radius = glm::length(mesh.bounds_max - mesh.bounds_min) * 0.5f;
+            for (int list = 0; list < kInstanceListCount; ++list) {
+                batch.list_first[list] = static_cast<std::uint32_t>(instance_data.size());
+                batch.list_count[list] = 0;
+                const bool wanted = list == 0 ? batch.options.draw_in_view
+                                              : cascades != nullptr && (batch.options.shadow_cascades >> (list - 1)) & 1;
+                if (!wanted) {
+                    continue;
+                }
+                for (std::uint32_t i = 0; i < batch.count; ++i) {
+                    const glm::mat4& transform = instance_sources[batch.first_source + i];
+                    const glm::vec3 center = glm::vec3(transform * local_center);
+                    const float scale = std::sqrt(glm::max(glm::dot(transform[0], transform[0]),
+                                                           glm::max(glm::dot(transform[1], transform[1]),
+                                                                    glm::dot(transform[2], transform[2]))));
+                    if (!IsSphereOutside(volumes[list], center, local_radius * scale)) {
+                        instance_data.push_back(transform);
+                        ++batch.list_count[list];
+                    }
+                }
+                if (list == 0) {
+                    stats.instances_drawn += static_cast<int>(batch.list_count[list]);
+                } else {
+                    stats.shadow_instances += static_cast<int>(batch.list_count[list]);
+                }
+            }
+            stats.instances_submitted += static_cast<int>(batch.count);
+        }
+    }
+
+    // Copies a list of matrices into a buffer that vertex shaders read, growing it as needed.
+    void UploadMatrices(SDL_GPUCommandBuffer* commands, const std::vector<glm::mat4>& matrices, SDL_GPUBuffer*& buffer,
+                        Uint32& capacity) {
+        if (matrices.empty()) {
             return;
         }
-        const Uint32 count = static_cast<Uint32>(joint_palette.size());
-        if (count > joint_buffer_capacity) {
-            if (joint_buffer != nullptr) {
-                SDL_ReleaseGPUBuffer(device, joint_buffer);
+        const Uint32 count = static_cast<Uint32>(matrices.size());
+        if (count > capacity) {
+            if (buffer != nullptr) {
+                SDL_ReleaseGPUBuffer(device, buffer);
             }
-            joint_buffer_capacity = count < 1024 ? 1024 : count * 2;
+            capacity = count < 1024 ? 1024 : count * 2;
             SDL_GPUBufferCreateInfo buffer_info{};
             buffer_info.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-            buffer_info.size = joint_buffer_capacity * static_cast<Uint32>(sizeof(glm::mat4));
-            joint_buffer = SDL_CreateGPUBuffer(device, &buffer_info);
-            if (joint_buffer == nullptr) {
-                FatalSdlError("cannot create joint buffer");
+            buffer_info.size = capacity * static_cast<Uint32>(sizeof(glm::mat4));
+            buffer = SDL_CreateGPUBuffer(device, &buffer_info);
+            if (buffer == nullptr) {
+                FatalSdlError("cannot create matrix buffer");
             }
         }
         const Uint32 size = count * static_cast<Uint32>(sizeof(glm::mat4));
-        SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(joint_palette.data(), size);
+        SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(matrices.data(), size);
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
         SDL_GPUTransferBufferLocation source{};
         source.transfer_buffer = transfer;
         SDL_GPUBufferRegion destination{};
-        destination.buffer = joint_buffer;
+        destination.buffer = buffer;
         destination.size = size;
         // cycle = true: the previous frame may still be reading the old contents.
         SDL_UploadToGPUBuffer(copy_pass, &source, &destination, true);
@@ -1162,11 +1347,16 @@ Renderer::~Renderer() {
             SDL_ReleaseGPUTexture(impl_->device, level.texture);
         }
         for (int pass = 0; pass < kMeshPassCount; ++pass) {
-            // The shadow pass uses one skinned pipeline for both kinds of material.
-            SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][1][0]);
-            if (impl_->mesh_pipelines[pass][1][1] != impl_->mesh_pipelines[pass][1][0]) {
-                SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][1][1]);
+            for (const int kind : {kSkinned, kInstanced}) {
+                // The shadow pass uses one pipeline for both kinds of material.
+                SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][kind][0]);
+                if (impl_->mesh_pipelines[pass][kind][1] != impl_->mesh_pipelines[pass][kind][0]) {
+                    SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][kind][1]);
+                }
             }
+        }
+        if (impl_->instance_buffer != nullptr) {
+            SDL_ReleaseGPUBuffer(impl_->device, impl_->instance_buffer);
         }
         if (impl_->joint_buffer != nullptr) {
             SDL_ReleaseGPUBuffer(impl_->device, impl_->joint_buffer);
@@ -1390,6 +1580,8 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->environment = environment;
     impl_->draw_commands.clear();
     impl_->joint_palette.clear();
+    impl_->instance_sources.clear();
+    impl_->instance_batches.clear();
     if (impl_->debug_ui_active) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
@@ -1421,6 +1613,39 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
     command.bounds_min = mesh.bounds_min;
     command.bounds_max = mesh.bounds_max;
     impl_->draw_commands.push_back(command);
+}
+
+void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& material, const glm::mat4* transforms, int count,
+                                 const InstanceOptions& options) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawMeshInstances: call BeginFrame first");
+    }
+    if (mesh_handle.id == 0 || mesh_handle.id > impl_->meshes.size() ||
+        impl_->meshes[mesh_handle.id - 1].vertex_buffer == nullptr) {
+        FatalError("Renderer::DrawMeshInstances: invalid or destroyed mesh handle");
+    }
+    if (impl_->meshes[mesh_handle.id - 1].skin_buffer != nullptr) {
+        FatalError("Renderer::DrawMeshInstances: skinned meshes cannot be instanced");
+    }
+    if (count < 0 || (count > 0 && transforms == nullptr)) {
+        FatalError("Renderer::DrawMeshInstances: needs one transform per instance");
+    }
+    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+        if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
+            FatalError("Renderer::DrawMeshInstances: invalid or destroyed texture handle");
+        }
+    }
+    if (count == 0) {
+        return;
+    }
+    InstanceBatch batch{};
+    batch.mesh_id = mesh_handle.id;
+    batch.material = material;
+    batch.first_source = impl_->instance_sources.size();
+    batch.count = static_cast<std::uint32_t>(count);
+    batch.options = options;
+    impl_->instance_sources.insert(impl_->instance_sources.end(), transforms, transforms + count);
+    impl_->instance_batches.push_back(batch);
 }
 
 void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material,
@@ -1494,7 +1719,8 @@ void Renderer::EndFrame() {
     const glm::mat4 view_projection = projection * view;
     const glm::vec3 light_direction = glm::normalize(light.direction);
     const bool sun_is_on = light.color.r > 0.0f || light.color.g > 0.0f || light.color.b > 0.0f;
-    const bool shadows_on = environment.shadows && sun_is_on && !impl.draw_commands.empty();
+    const bool shadows_on =
+        environment.shadows && sun_is_on && (!impl.draw_commands.empty() || !impl.instance_batches.empty());
 
     // --- Culling: leave out meshes that lie entirely outside the camera's view. ---
     impl.visible_commands.clear();
@@ -1504,8 +1730,18 @@ void Renderer::EndFrame() {
             impl.visible_commands.push_back(i);
         }
     }
-    impl.UploadJointMatrices(commands);
     impl.stats = FrameStats{};
+    {
+        // Instances are culled against the view and against every cascade before any pass
+        // starts, because their transforms must be on the graphics card by then.
+        Impl::Cascades instance_cascades{};
+        if (shadows_on) {
+            instance_cascades = impl.ComputeCascades();
+        }
+        impl.CullInstances(view_projection, shadows_on ? &instance_cascades : nullptr);
+        impl.UploadMatrices(commands, impl.instance_data, impl.instance_buffer, impl.instance_buffer_capacity);
+    }
+    impl.UploadJointMatrices(commands);
     impl.stats.meshes_submitted = static_cast<int>(impl.draw_commands.size());
     impl.stats.meshes_drawn = static_cast<int>(impl.visible_commands.size());
 
@@ -1568,6 +1804,7 @@ void Renderer::EndFrame() {
                 SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
                 impl.DrawCommandGeometry(pass, command);
             }
+            impl.DrawInstanceBatches(commands, pass, kShadowPass, 1 + cascade, false, bound_pipeline);
         }
         SDL_EndGPURenderPass(pass);
     }
@@ -1609,6 +1846,7 @@ void Renderer::EndFrame() {
             SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
             impl.DrawCommandGeometry(pass, command);
         }
+        impl.DrawInstanceBatches(commands, pass, kDepthPass, 0, false, bound_pipeline);
         SDL_EndGPURenderPass(pass);
     }
 
@@ -1742,6 +1980,7 @@ void Renderer::EndFrame() {
             SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
             impl.DrawCommandGeometry(pass, command);
         }
+        impl.DrawInstanceBatches(commands, pass, kScenePass, 0, ao_on, bound_pipeline);
         SDL_EndGPURenderPass(pass);
     }
 
@@ -2000,6 +2239,19 @@ void Renderer::SetPostSettings(const PostSettings& settings) {
 
 bool Renderer::IsDebugUiActive() const {
     return impl_->debug_ui_active;
+}
+
+glm::vec4 ComputeShadowCascadeEnds(float near_plane, float shadow_distance) {
+    const float far_distance = glm::max(shadow_distance, near_plane * 2.0f);
+    glm::vec4 ends;
+    for (int i = 0; i < kCascadeCount; ++i) {
+        // A mix of even and geometric spacing: ranges grow with distance, but not too fast.
+        const float fraction = static_cast<float>(i + 1) / static_cast<float>(kCascadeCount);
+        const float geometric = near_plane * std::pow(far_distance / near_plane, fraction);
+        const float even = near_plane + (far_distance - near_plane) * fraction;
+        ends[i] = glm::mix(even, geometric, 0.75f);
+    }
+    return ends;
 }
 
 FrameStats Renderer::GetFrameStats() const {

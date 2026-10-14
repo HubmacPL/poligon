@@ -25,6 +25,8 @@ A frame is recorded by `DrawMesh` calls and carried out in `EndFrame`, in these 
 
 Before the passes, meshes are **culled**: a mesh whose bounding box lies entirely outside the camera's view is not drawn, and each shadow cascade skips meshes that cannot cast a shadow into it (a mesh outside the view still can). `Renderer::GetFrameStats()` returns how many meshes were submitted and drawn in the last frame.
 
+Many copies of one mesh are drawn with `DrawMeshInstances` (one draw call per pass, each copy culled on its own); forests go through the vegetation system built on it. See [vegetation.md](vegetation.md).
+
 ## Materials and light
 
 - `Material` is the metallic-roughness model of glTF: base color (times `texture`), `metallic`, `roughness`, optional `normal_texture` (fine relief) and `orm_texture` (green roughness, blue metallic, red ambient occlusion when `occlusion_in_orm`). Data textures are created with `TextureOptions::is_color = false`.
@@ -110,7 +112,7 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 
 - One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene.
 - Ambient occlusion and fog see only what is on screen and only the nearest surface of each pixel. Fog is lit by the sun only within `shadow_distance` (beyond it, it counts as lit) and is walked at most 1000 m.
-- Culling is per mesh and by view only: a mesh hidden behind another is still drawn, and there is no instancing yet (every mesh is its own draw call).
+- Culling is per mesh and by view only: a mesh hidden behind another is still drawn.
 - With ambient occlusion or volumetric fog on, the scene's geometry is drawn one more time (the depth pass).
 - Automatic exposure adapts per frame, not per second, so its speed depends on the frame rate.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.

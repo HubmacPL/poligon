@@ -22,7 +22,7 @@ target_link_libraries(render_settings_test PRIVATE poligon_engine poligon_build_
 add_test(NAME render_settings_test COMMAND render_settings_test ${CMAKE_BINARY_DIR}/test_output)
 
 # Pixel-level checks of textured rendering, on both graphics backends, with the debug layer on.
-foreach(render_test texture_render_test scene_render_test effects_render_test skinning_render_test)
+foreach(render_test texture_render_test scene_render_test effects_render_test skinning_render_test vegetation_render_test)
   add_executable(${render_test} ${render_test}.cpp)
   target_link_libraries(${render_test} PRIVATE poligon_engine poligon_build_options)
   foreach(backend d3d12 vulkan)

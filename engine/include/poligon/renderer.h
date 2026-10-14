@@ -229,6 +229,28 @@ struct FrameStats {
     int meshes_drawn = 0;
     // Mesh draws in the shadow pass, summed over the four cascades.
     int shadow_draws = 0;
+    // Instances given to DrawMeshInstances, how many of them were inside the camera's
+    // view, and how many were drawn into shadow cascades (summed over the cascades).
+    int instances_submitted = 0;
+    int instances_drawn = 0;
+    int shadow_instances = 0;
+    // Draw calls the instances needed, over all passes: one per batch and pass, however
+    // many instances the batch has.
+    int instance_draw_calls = 0;
+};
+
+// Where the four shadow cascades end, as distances in front of the camera (see
+// Environment::shadow_distance). Lets a caller choose, by distance, which instances cast
+// shadows into which cascade.
+glm::vec4 ComputeShadowCascadeEnds(float near_plane, float shadow_distance);
+
+// How a batch of instances takes part in a frame.
+struct InstanceOptions {
+    // Draw the instances in the picture. false: they only cast shadows.
+    bool draw_in_view = true;
+    // Which shadow cascades the instances are drawn into: bit 0 = nearest cascade ... bit 3
+    // = farthest. 0 = they cast no shadow. Lets distant cascades use simpler meshes.
+    std::uint8_t shadow_cascades = 0x0F;
 };
 
 // Draws lit meshes. A frame goes through these stages: shadows of the sun, ambient occlusion,
@@ -278,6 +300,12 @@ public:
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material);
     // Same, with a plain color and no texture.
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
+    // Draws one mesh many times in a single draw call per pass: `transforms` holds one
+    // matrix per copy. This is the way to draw vegetation. Each copy is culled on its own
+    // against the camera's view and against each shadow cascade. The matrices are copied,
+    // so the array need not outlive the call. Not for skinned meshes.
+    void DrawMeshInstances(MeshHandle mesh, const Material& material, const glm::mat4* transforms, int count,
+                           const InstanceOptions& options = InstanceOptions{});
     // Draws a mesh made by CreateSkinnedMesh in a pose. `joint_matrices` come from
     // ComputeJointMatrices (poligon/animation.h), one per joint of the skeleton; they are
     // copied, so the array need not outlive the call. `transform` places the whole model.

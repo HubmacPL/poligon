@@ -41,6 +41,7 @@
 #include "poligon/physics.h"
 #include "poligon/platform.h"
 #include "poligon/render_settings.h"
+#include "poligon/vegetation.h"
 #include "poligon/renderer.h"
 
 namespace {
@@ -49,8 +50,14 @@ constexpr float kForestHalfSize = 70.0f;   // trees stand within this distance o
 constexpr float kGroundHalfSize = 150.0f;  // the ground reaches further, to the fog
 constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
-// Small plants are not drawn beyond this distance; from there they are a few pixels.
+// How far each kind of thing is drawn (meters). Trees have simpler meshes for the two
+// longer ranges; everything else has one mesh and simply stops being drawn.
+constexpr float kTreeFullDetail = 28.0f;
+constexpr float kTreeMediumDetail = 70.0f;
+constexpr float kTreeLowDetail = 450.0f;
 constexpr float kSmallPlantDistance = 45.0f;
+constexpr float kMediumThingDistance = 150.0f;
+constexpr float kShadowDistance = 90.0f;
 
 // Height of the ground at a point: a few gentle waves.
 float GroundHeight(float x, float z) {
@@ -87,6 +94,8 @@ struct Piece {
 // One plant (or rock) that can be put into the scene many times.
 struct Variant {
     std::vector<Piece> pieces;
+    // The variant's number in the vegetation system.
+    int species = -1;
     float height = 0.0f;
     // Half of the variant's width along x and z, before scaling.
     glm::vec2 half_width{0.0f};
@@ -348,13 +357,28 @@ public:
         for (Animal& animal : animals_) {
             poligon::DrawModel(renderer_, fox_model_, animal.transform, animal.player->GetJointMatrices());
         }
-        for (const Placement& placement : placements_) {
-            if (placement.is_small && glm::distance(placement.position, camera.position) > kSmallPlantDistance) {
-                continue;
+        vegetation_.Draw(renderer_, camera);
+        if (show_windows_ && renderer_.IsDebugUiActive()) {
+            const poligon::VegetationStats& stats = vegetation_.GetStats();
+            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 140.0f), ImGuiCond_FirstUseEver,
+                                    ImVec2(1.0f, 0.0f));
+            if (ImGui::Begin("Vegetation", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("%d plants and rocks placed", stats.instances_total);
+                ImGui::Text("drawn: %d full, %d medium, %d low detail", stats.instances_per_level[0],
+                            stats.instances_per_level[1], stats.instances_per_level[2]);
+                ImGui::Text("cells: %d of %d skipped whole", stats.cells_skipped, stats.cells_total);
+                const poligon::FrameStats frame = renderer_.GetFrameStats();
+                ImGui::Text("last frame: %d draw calls for %d + %d instances", frame.instance_draw_calls, frame.instances_drawn,
+                            frame.shadow_instances);
+                ImGui::PushItemWidth(160.0f);
+                bool changed = ImGui::SliderFloat("detail distance", &detail_scale_, 0.2f, 4.0f, "x %.2f");
+                changed |= ImGui::SliderFloat("shadow distance", &shadow_scale_, 0.0f, 2.0f, "x %.2f");
+                ImGui::PopItemWidth();
+                if (changed) {
+                    vegetation_.SetDistanceScale(detail_scale_, shadow_scale_);
+                }
             }
-            for (const Piece& piece : placement.variant->pieces) {
-                renderer_.DrawMesh(piece.mesh, placement.transform * piece.local, piece.material);
-            }
+            ImGui::End();
         }
         renderer_.EndFrame();
     }
@@ -435,7 +459,10 @@ private:
     // apart from each other become separate variants; otherwise the whole file is one.
     // keep_origin: leave the model where its file put it sideways (a tree's trunk stands at
     // the file's origin, while the middle of its crown may be well off to one side).
-    Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false) {
+    // lod_name: for trees, the folder below poligon-assets/lods that holds the two simpler
+    // levels of detail (made by tools/assets/simplify_model.py); nullptr for kinds without.
+    Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false,
+                  const char* lod_name = nullptr) {
         Kind kind;
         kind.is_small = is_small;
         const std::filesystem::path file = FindGltf(assets_ / relative_folder);
@@ -509,6 +536,37 @@ private:
                 piece.local = to_foot * model.instances[i].transform;
                 variant.pieces.push_back(piece);
             }
+
+            // Register the variant with the vegetation system: its meshes, and from how far each is used.
+            poligon::VegetationSpecies species;
+            poligon::VegetationLevel full;
+            for (const Piece& piece : variant.pieces) {
+                full.parts.push_back({piece.mesh, piece.material, piece.local});
+            }
+            if (lod_name != nullptr) {
+                full.max_distance = kTreeFullDetail;
+                species.levels.push_back(full);
+                const float distances[2] = {kTreeMediumDetail, kTreeLowDetail};
+                for (int level = 1; level <= 2; ++level) {
+                    poligon::VegetationLevel simpler;
+                    simpler.parts = LoadLodParts(lod_name, level, to_foot, model, render_model);
+                    simpler.max_distance = distances[level - 1];
+                    if (simpler.parts.empty()) {
+                        // No simpler mesh: keep drawing the previous level out to this distance.
+                        species.levels.back().max_distance = simpler.max_distance;
+                    } else {
+                        species.levels.push_back(std::move(simpler));
+                    }
+                }
+                species.shadow_distance = kShadowDistance;
+                species.shadow_level_bias = 1;
+            } else {
+                full.max_distance = is_small ? kSmallPlantDistance : kMediumThingDistance;
+                species.levels.push_back(full);
+                // Grass and the like are too small for their shadows to matter beyond a few steps.
+                species.shadow_distance = is_small ? 20.0f : kShadowDistance;
+            }
+            variant.species = vegetation_.AddSpecies(species);
             kind.variants.push_back(std::move(variant));
         }
         std::printf("forest_scene: %s: %zu variant(s), %lld triangles\n", relative_folder, kind.variants.size(),
@@ -518,12 +576,45 @@ private:
         return kind;
     }
 
+    // The meshes of one simpler level of a tree. They use the materials of the full model,
+    // matched by name, so no texture is loaded twice.
+    std::vector<poligon::VegetationPart> LoadLodParts(const char* lod_name, int level, const glm::mat4& to_foot,
+                                                      const poligon::Model& full_model,
+                                                      const poligon::RenderModel& full_render_model) {
+        std::vector<poligon::VegetationPart> parts;
+        const std::filesystem::path file = FindGltf(assets_ / "lods" / lod_name / ("lod" + std::to_string(level)));
+        poligon::Model model;
+        std::string error;
+        if (file.empty() || !poligon::LoadModelFromFile(file.string().c_str(), model, error, false)) {
+            std::printf("forest_scene: %s has no level %d (%s)\n", lod_name, level, file.empty() ? "no file" : error.c_str());
+            return parts;
+        }
+        for (const poligon::ModelInstance& instance : model.instances) {
+            const poligon::ModelMesh& mesh = model.meshes[static_cast<size_t>(instance.mesh_index)];
+            const std::string& material_name = model.materials[static_cast<size_t>(mesh.material_index)].name;
+            size_t material_index = 0;
+            for (size_t i = 0; i < full_model.materials.size(); ++i) {
+                if (full_model.materials[i].name == material_name) {
+                    material_index = i;
+                    break;
+                }
+            }
+            poligon::VegetationPart part;
+            part.mesh = renderer_.CreateMesh(mesh.vertices.data(), static_cast<int>(mesh.vertices.size()), mesh.indices.data(),
+                                             static_cast<int>(mesh.indices.size()));
+            part.material = full_render_model.materials[material_index];
+            part.local = to_foot * instance.transform;
+            parts.push_back(part);
+        }
+        return parts;
+    }
+
     void LoadKinds() {
         render_models_.reserve(32);
-        tall_pine_ = LoadKind("generated/scots_pine", false, false, true);
-        pine_ = LoadKind("generated/pine_stock", false, false, true);
-        broadleaf_ = LoadKind("simplified/jacaranda_tree", false, false, true);
-        small_tree_ = LoadKind("simplified/island_tree_02", false, false, true);
+        tall_pine_ = LoadKind("generated/scots_pine", false, false, true, "scots_pine");
+        pine_ = LoadKind("generated/pine_stock", false, false, true, "pine_stock");
+        broadleaf_ = LoadKind("simplified/jacaranda_tree", false, false, true, "jacaranda_tree");
+        small_tree_ = LoadKind("simplified/island_tree_02", false, false, true, "island_tree_02");
         fir_sapling_ = LoadKind("simplified/fir_sapling", true, false);
         pine_sapling_ = LoadKind("simplified/pine_sapling_small", true, false);
         shrub_ = LoadKind("polyhaven/shrub_02", true, false);
@@ -706,7 +797,8 @@ private:
             physics_.AddBox(half_size, body);
         }
         placement.is_small = kind.is_small;
-        placements_.push_back(placement);
+        vegetation_.AddInstance(variant.species, placement.transform);
+        ++placed_count_;
     }
 
     // Scatters `count` plants evenly at random over a square around the middle.
@@ -761,7 +853,7 @@ private:
         Scatter(rocks_, random, 20, kForestHalfSize, 0.6f, 1.4f, 0.15f);
         Scatter(stump_, random, 10, kForestHalfSize, 0.8f, 1.2f, 0.05f);
         Scatter(fallen_trunk_, random, 7, kForestHalfSize, 0.9f, 1.4f, 0.1f);
-        std::printf("forest_scene: %zu things placed\n", placements_.size());
+        std::printf("forest_scene: %d things placed\n", placed_count_);
     }
 
     poligon::Renderer& renderer_;
@@ -775,7 +867,11 @@ private:
     Kind tall_pine_, pine_, broadleaf_, small_tree_, fir_sapling_, pine_sapling_, shrub_, low_shrub_, fern_, nettle_,
         grass_, boulder_, rocks_, stump_, fallen_trunk_;
     int loaded_kind_count_ = 0;
-    std::vector<Placement> placements_;
+    // All plants, rocks and stumps: placed once, drawn by distance.
+    poligon::Vegetation vegetation_;
+    int placed_count_ = 0;
+    float detail_scale_ = 1.0f;
+    float shadow_scale_ = 1.0f;
 
     poligon::RenderModel fox_model_;
     float fox_scale_ = 1.0f;
@@ -892,6 +988,10 @@ int main(int argc, char** argv) {
     }
     renderer_config.post = settings.post;
     renderer_config.debug_ui = true;
+    // Shadows are the costliest part of this scene: every leaf is drawn into four shadow
+    // images. At 1024 instead of the default 2048 pixels they cost less than half, which
+    // brings the frame under 17 ms on a GTX 980; the price is softer shadow edges.
+    renderer_config.shadow_map_size = 1024;
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;
@@ -935,6 +1035,8 @@ int main(int argc, char** argv) {
     const poligon::FrameStats stats = renderer.GetFrameStats();
     std::printf("last frame: %d meshes submitted, %d drawn, %d shadow draws\n", stats.meshes_submitted,
                 stats.meshes_drawn, stats.shadow_draws);
+    std::printf("instances: %d submitted, %d in view, %d in shadow cascades, %d draw calls\n", stats.instances_submitted,
+                stats.instances_drawn, stats.shadow_instances, stats.instance_draw_calls);
     if (!options.dump_frame_path.empty()) {
         if (result.frame_count == 0 || !renderer.SaveFrameToPng(options.dump_frame_path.c_str())) {
             std::fprintf(stderr, "forest_scene: cannot write %s\n", options.dump_frame_path.c_str());
@@ -942,7 +1044,12 @@ int main(int argc, char** argv) {
         }
         std::printf("frame saved to %s\n", options.dump_frame_path.c_str());
     }
-    // Measured after the frame was read back, so the graphics card has really finished the work.
+    // Reading the last frame back waits until the graphics card has really finished all
+    // frames; without it the time below would only be that of handing the work over.
+    if (result.frame_count > 0 && options.headless) {
+        poligon::Image discarded;
+        renderer.CaptureFrame(discarded);
+    }
     const double run_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - run_start).count();
     if (result.frame_count > 0) {
         std::printf("%lld frames in %.2f s: %.1f ms per frame\n", static_cast<long long>(result.frame_count), run_seconds,

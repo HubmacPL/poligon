@@ -74,7 +74,7 @@ std::string LoadMaterialTexture(const aiScene& scene, const aiMaterial& source,
 }
 
 ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
-                              const std::filesystem::path& model_directory, std::vector<std::string>& warnings) {
+                              const std::filesystem::path& model_directory, std::vector<std::string>& warnings, bool load_textures) {
     ModelMaterial material;
     material.name = source.GetName().C_Str();
 
@@ -105,8 +105,10 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     source.Get(AI_MATKEY_ROUGHNESS_FACTOR, material.roughness);
 
     const aiTextureType base_color_kinds[] = {aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE};
-    LoadMaterialTexture(scene, source, model_directory, base_color_kinds, 2, material.name,
-                        material.base_color_texture, warnings);
+    if (load_textures) {
+        LoadMaterialTexture(scene, source, model_directory, base_color_kinds, 2, material.name,
+                            material.base_color_texture, warnings);
+    }
 
     // Formats that cannot say "this material is a cut-out" (FBX, OBJ) still use textures
     // with transparency for fur, whiskers and leaves. If a good part of the texture is
@@ -141,15 +143,19 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     }
 
     const aiTextureType normal_kinds[] = {aiTextureType_NORMALS};
-    LoadMaterialTexture(scene, source, model_directory, normal_kinds, 1, material.name, material.normal_texture,
-                        warnings);
+    if (load_textures) {
+        LoadMaterialTexture(scene, source, model_directory, normal_kinds, 1, material.name, material.normal_texture,
+                            warnings);
+    }
 
     // glTF packs roughness (green) and metallic (blue) into one image, and usually ambient
     // occlusion (red) into the same one. Occlusion is used only when it is that same image.
     const aiTextureType orm_kinds[] = {aiTextureType_GLTF_METALLIC_ROUGHNESS, aiTextureType_DIFFUSE_ROUGHNESS,
                                        aiTextureType_METALNESS};
-    const std::string orm_path = LoadMaterialTexture(scene, source, model_directory, orm_kinds, 3, material.name,
-                                                     material.orm_texture, warnings);
+    const std::string orm_path =
+        load_textures ? LoadMaterialTexture(scene, source, model_directory, orm_kinds, 3, material.name,
+                                            material.orm_texture, warnings)
+                      : std::string();
     aiString occlusion_path;
     if (!orm_path.empty() && (source.GetTexture(aiTextureType_LIGHTMAP, 0, &occlusion_path) == aiReturn_SUCCESS ||
                               source.GetTexture(aiTextureType_AMBIENT_OCCLUSION, 0, &occlusion_path) == aiReturn_SUCCESS)) {
@@ -372,7 +378,7 @@ std::int64_t Model::GetVertexCount() const {
     return count;
 }
 
-bool LoadModelFromFile(const char* path, Model& model, std::string& error) {
+bool LoadModelFromFile(const char* path, Model& model, std::string& error, bool load_textures) {
     model = Model{};
 
     Assimp::Importer importer;
@@ -393,7 +399,8 @@ bool LoadModelFromFile(const char* path, Model& model, std::string& error) {
 
     const std::filesystem::path model_directory = std::filesystem::path(path).parent_path();
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
-        model.materials.push_back(ConvertMaterial(*scene, *scene->mMaterials[i], model_directory, model.warnings));
+        model.materials.push_back(
+            ConvertMaterial(*scene, *scene->mMaterials[i], model_directory, model.warnings, load_textures));
     }
     if (model.materials.empty()) {
         model.materials.push_back(ModelMaterial{});
