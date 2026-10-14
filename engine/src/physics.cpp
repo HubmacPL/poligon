@@ -20,6 +20,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -310,6 +311,23 @@ BodyHandle PhysicsWorld::AddMesh(const glm::vec3* vertices, int vertex_count, co
     }
     const JPH::MeshShapeSettings shape(std::move(vertex_list), std::move(triangles));
     return impl_->AddBody(shape, settings, "AddMesh");
+}
+
+BodyHandle PhysicsWorld::AddHeightField(const float* heights, int size, float spacing, const glm::vec3& origin, float friction) {
+    if (heights == nullptr || size < 4 || spacing <= 0.0f) {
+        FatalError("PhysicsWorld::AddHeightField: needs at least 4 x 4 heights and a spacing above zero");
+    }
+    // The shape's own coordinates count in grid points; the scale turns them into meters.
+    JPH::HeightFieldShapeSettings shape(heights, JPH::Vec3::sZero(), JPH::Vec3(spacing, 1.0f, spacing),
+                                        static_cast<JPH::uint32>(size));
+    // Jolt stores the land in blocks and needs at least two of them along each edge.
+    while (shape.mBlockSize > 2 && static_cast<JPH::uint32>(size) / shape.mBlockSize < 2) {
+        shape.mBlockSize /= 2;
+    }
+    BodySettings settings;
+    settings.position = origin;
+    settings.friction = friction;
+    return impl_->AddBody(shape, settings, "AddHeightField");
 }
 
 void PhysicsWorld::RemoveBody(BodyHandle body) {

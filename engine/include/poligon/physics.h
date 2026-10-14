@@ -92,6 +92,10 @@ public:
     // their corners appear counter-clockwise, like the meshes the renderer draws.
     BodyHandle AddMesh(const glm::vec3* vertices, int vertex_count, const std::uint32_t* indices, int index_count,
                        const BodySettings& settings);
+    // Land from a square grid of heights: `size` x `size` values, row by row, `spacing`
+    // meters apart (see poligon/height_map.h). `origin` is the world position of the first
+    // point; its y is added to every height. Never moves. `size` must be at least 4.
+    BodyHandle AddHeightField(const float* heights, int size, float spacing, const glm::vec3& origin, float friction = 0.5f);
     // The handle must not be used afterwards; its number is not given out again.
     void RemoveBody(BodyHandle body);
     // Bodies currently in the world.

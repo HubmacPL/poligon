@@ -40,6 +40,10 @@
 #include "poligon_shaders/shadow_frag_spirv.h"
 #include "poligon_shaders/sky_frag_dxil.h"
 #include "poligon_shaders/sky_frag_spirv.h"
+#include "poligon_shaders/terrain_frag_dxil.h"
+#include "poligon_shaders/terrain_frag_spirv.h"
+#include "poligon_shaders/terrain_vert_dxil.h"
+#include "poligon_shaders/terrain_vert_spirv.h"
 #include "poligon_shaders/tonemap_frag_dxil.h"
 #include "poligon_shaders/tonemap_frag_spirv.h"
 
@@ -91,6 +95,18 @@ struct SkyUniforms {
     glm::vec4 sky_zenith;
     glm::vec4 sky_horizon;
     glm::vec4 sky_ground;
+};
+
+struct TerrainVertexUniforms {
+    glm::vec4 map;
+    glm::vec4 map_heights;
+};
+
+struct TerrainMaterialUniforms {
+    glm::vec4 map;
+    glm::vec4 map_heights;
+    glm::vec4 tiling;
+    glm::vec4 steep_color;
 };
 
 struct TonemapUniforms {
@@ -152,6 +168,12 @@ constexpr SDL_GPUTextureFormat kOutputFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UN
 constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 constexpr SDL_GPUTextureFormat kAoFormat = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
 constexpr SDL_GPUTextureFormat kLuminanceFormat = SDL_GPU_TEXTUREFORMAT_R16_FLOAT;
+// Terrain heights as 16-bit values between the lowest and the highest point of the map:
+// 65535 steps, which is millimeters for hills. Unlike a float format it can always be
+// read with blending between points.
+constexpr SDL_GPUTextureFormat kHeightFormat = SDL_GPU_TEXTUREFORMAT_R16_UNORM;
+// Cells along one edge of the grid mesh that every terrain patch is drawn with.
+constexpr int kTerrainGridCells = 64;
 
 // The fog is walked at most this far (meters) along each line of sight.
 constexpr float kFogWalkDistance = 1000.0f;
@@ -210,10 +232,23 @@ enum MeshKind { kRigid, kSkinned, kInstanced, kMeshKindCount };
 // The lists of instances a batch is culled into: the camera's view, then one per cascade.
 constexpr int kInstanceListCount = 1 + kCascadeCount;
 
-// One DrawMeshInstances call.
+// A height map on the graphics card.
+struct TerrainData {
+    SDL_GPUTexture* height_texture = nullptr;
+    int width = 0;
+    int depth = 0;
+    float spacing = 1.0f;
+    glm::vec3 origin{0.0f};  // world position of the first point; y is that of image value 0
+    float height_range = 1.0f;
+};
+
+// One DrawMeshInstances or DrawTerrain call.
 struct InstanceBatch {
     std::uint32_t mesh_id;
     Material material;
+    // Not 0: the batch draws patches of this terrain, with this look.
+    std::uint32_t terrain_id = 0;
+    TerrainMaterial terrain_material;
     // The batch's transforms as given by the caller, in Impl::instance_sources.
     size_t first_source;
     std::uint32_t count;
@@ -386,6 +421,11 @@ struct Renderer::Impl {
     std::vector<glm::mat4> instance_data;
     SDL_GPUBuffer* instance_buffer = nullptr;
     Uint32 instance_buffer_capacity = 0;
+
+    std::vector<TerrainData> terrains;
+    // The flat grid every terrain patch is drawn with; made with the first terrain.
+    MeshHandle terrain_grid;
+    SDL_GPUGraphicsPipeline* terrain_pipelines[kMeshPassCount] = {};
     // The joint matrices of every skinned mesh drawn this frame, one after another, and
     // the buffer on the graphics card they are copied to in EndFrame.
     std::vector<glm::mat4> joint_palette;
@@ -819,6 +859,29 @@ struct Renderer::Impl {
         mesh_pipelines[kDepthPass][kInstanced][1] = create_instanced(prepass_info, SDL_GPU_CULLMODE_NONE);
         SDL_ReleaseGPUShader(device, instanced_vertex);
 
+        // --- Terrain: its own vertex shader in all three passes, its own fragment shader in the scene pass ---
+        SDL_GPUShader* terrain_vertex =
+            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 1, 3, kTerrainVertDxil, sizeof(kTerrainVertDxil), kTerrainVertSpirv,
+                         sizeof(kTerrainVertSpirv), 1);
+        SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kTerrainFragDxil,
+                                                       sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv));
+        const auto create_terrain = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUShader* fragment,
+                                        SDL_GPUCullMode cull_mode) {
+            info.vertex_shader = terrain_vertex;
+            info.fragment_shader = fragment;
+            info.rasterizer_state.cull_mode = cull_mode;
+            SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+            if (pipeline == nullptr) {
+                FatalSdlError("cannot create terrain pipeline");
+            }
+            return pipeline;
+        };
+        terrain_pipelines[kScenePass] = create_terrain(mesh_info, terrain_fragment, SDL_GPU_CULLMODE_BACK);
+        terrain_pipelines[kShadowPass] = create_terrain(shadow_info, shadow_fragment, SDL_GPU_CULLMODE_NONE);
+        terrain_pipelines[kDepthPass] = create_terrain(prepass_info, shadow_fragment, SDL_GPU_CULLMODE_BACK);
+        SDL_ReleaseGPUShader(device, terrain_vertex);
+        SDL_ReleaseGPUShader(device, terrain_fragment);
+
         // --- Sky: covers the whole image behind the scene ---
         SDL_GPUGraphicsPipelineCreateInfo sky_info{};
         sky_info.vertex_shader = fullscreen_vertex;
@@ -1082,6 +1145,10 @@ struct Renderer::Impl {
             if (batch.list_count[list] == 0) {
                 continue;
             }
+            if (batch.terrain_id != 0) {
+                DrawTerrainBatch(commands, pass, mesh_pass, list, ao_on, batch, bound_pipeline);
+                continue;
+            }
             const Material& material = batch.material;
             SDL_GPUGraphicsPipeline* pipeline = mesh_pipelines[mesh_pass][kInstanced][material.double_sided ? 1 : 0];
             if (pipeline != bound_pipeline) {
@@ -1130,6 +1197,79 @@ struct Renderer::Impl {
         }
     }
 
+    void DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, MeshPass mesh_pass, int list, bool ao_on,
+                          const InstanceBatch& batch, SDL_GPUGraphicsPipeline*& bound_pipeline) {
+        const TerrainData& terrain = terrains[batch.terrain_id - 1];
+        SDL_GPUGraphicsPipeline* pipeline = terrain_pipelines[mesh_pass];
+        if (pipeline != bound_pipeline) {
+            SDL_BindGPUGraphicsPipeline(pass, pipeline);
+            bound_pipeline = pipeline;
+            SDL_BindGPUVertexStorageBuffers(pass, 0, &instance_buffer, 1);
+        }
+        // The vertex shader reads exact points, the fragment shader blends between them.
+        SDL_GPUTextureSamplerBinding height_binding{};
+        height_binding.texture = terrain.height_texture;
+        height_binding.sampler = clamp_sampler;
+        SDL_BindGPUVertexSamplers(pass, 0, &height_binding, 1);
+
+        ObjectUniforms object_uniforms;
+        object_uniforms.model = glm::mat4(1.0f);
+        object_uniforms.color = glm::vec4(1.0f);
+        object_uniforms.uv_scale = glm::vec4(1.0f, 1.0f, static_cast<float>(batch.list_first[list]), 0.0f);
+        SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+        TerrainVertexUniforms vertex_uniforms;
+        vertex_uniforms.map = glm::vec4(terrain.origin.x, terrain.origin.z, terrain.spacing, 0.0f);
+        vertex_uniforms.map_heights = glm::vec4(terrain.origin.y, terrain.height_range, static_cast<float>(terrain.width - 1),
+                                                static_cast<float>(terrain.depth - 1));
+        SDL_PushGPUVertexUniformData(commands, 2, &vertex_uniforms, sizeof(vertex_uniforms));
+
+        if (mesh_pass == kScenePass) {
+            const TerrainMaterial& look = batch.terrain_material;
+            TerrainMaterialUniforms material_uniforms;
+            material_uniforms.map = vertex_uniforms.map;
+            material_uniforms.map_heights = glm::vec4(0.0f, terrain.height_range, 1.0f / static_cast<float>(terrain.width),
+                                                      1.0f / static_cast<float>(terrain.depth));
+            material_uniforms.tiling = glm::vec4(look.layers[0].tile_size, look.layers[1].tile_size,
+                                                 std::cos(glm::radians(look.steep_start_degrees)),
+                                                 std::cos(glm::radians(look.steep_end_degrees)));
+            material_uniforms.steep_color = glm::vec4(look.steep_color.r, look.steep_color.g, look.steep_color.b, look.roughness);
+            SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
+
+            SDL_GPUTextureSamplerBinding bindings[7]{};
+            bindings[0].texture = terrain.height_texture;
+            bindings[0].sampler = linear_clamp_sampler;
+            for (int layer = 0; layer < 2; ++layer) {
+                bindings[1 + layer * 2].texture = GetTexture(look.layers[layer].color, white_texture);
+                bindings[1 + layer * 2].sampler = texture_sampler;
+                bindings[2 + layer * 2].texture = GetTexture(look.layers[layer].normal, flat_normal_texture);
+                bindings[2 + layer * 2].sampler = texture_sampler;
+            }
+            bindings[5].texture = shadow_atlas;
+            bindings[5].sampler = shadow_sampler;
+            bindings[6].texture = ao_on ? ao_target : textures[white_texture.id - 1];
+            bindings[6].sampler = clamp_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
+        } else {
+            // The depth-only passes use the leaf-cutting shader with nothing to cut.
+            MaterialUniforms material_uniforms{};
+            SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
+            SDL_GPUTextureSamplerBinding binding{};
+            binding.texture = textures[white_texture.id - 1];
+            binding.sampler = texture_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+        }
+
+        const Mesh& mesh = meshes[batch.mesh_id - 1];
+        SDL_GPUBufferBinding vertex_binding{};
+        vertex_binding.buffer = mesh.vertex_buffer;
+        SDL_BindGPUVertexBuffers(pass, 0, &vertex_binding, 1);
+        SDL_GPUBufferBinding index_binding{};
+        index_binding.buffer = mesh.index_buffer;
+        SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_DrawGPUIndexedPrimitives(pass, mesh.index_count, batch.list_count[list], 0, 0, 0);
+        ++stats.instance_draw_calls;
+    }
+
     // Decides, for every instance of every batch, which lists it is in (the camera's view,
     // each shadow cascade), and writes the transforms of each list one after another.
     void CullInstances(const glm::mat4& view_projection, const Cascades* cascades) {
@@ -1154,11 +1294,17 @@ struct Renderer::Impl {
                 }
                 for (std::uint32_t i = 0; i < batch.count; ++i) {
                     const glm::mat4& transform = instance_sources[batch.first_source + i];
-                    const glm::vec3 center = glm::vec3(transform * local_center);
-                    const float scale = std::sqrt(glm::max(glm::dot(transform[0], transform[0]),
-                                                           glm::max(glm::dot(transform[1], transform[1]),
-                                                                    glm::dot(transform[2], transform[2]))));
-                    if (!IsSphereOutside(volumes[list], center, local_radius * scale)) {
+                    glm::vec3 center = glm::vec3(transform * local_center);
+                    float radius = local_radius * std::sqrt(glm::max(glm::dot(transform[0], transform[0]),
+                                                                     glm::max(glm::dot(transform[1], transform[1]),
+                                                                              glm::dot(transform[2], transform[2]))));
+                    if (batch.terrain_id != 0) {
+                        // A terrain patch's matrix says: corner, size, and how tall the land in it is.
+                        const glm::vec3 extent(transform[0].x, transform[1].y, transform[2].z);
+                        center = glm::vec3(transform[3]) + extent * 0.5f;
+                        radius = glm::length(extent) * 0.5f;
+                    }
+                    if (!IsSphereOutside(volumes[list], center, radius)) {
                         instance_data.push_back(transform);
                         ++batch.list_count[list];
                     }
@@ -1357,6 +1503,14 @@ Renderer::~Renderer() {
         }
         if (impl_->instance_buffer != nullptr) {
             SDL_ReleaseGPUBuffer(impl_->device, impl_->instance_buffer);
+        }
+        for (SDL_GPUGraphicsPipeline* pipeline : impl_->terrain_pipelines) {
+            SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
+        }
+        for (const TerrainData& terrain : impl_->terrains) {
+            if (terrain.height_texture != nullptr) {
+                SDL_ReleaseGPUTexture(impl_->device, terrain.height_texture);
+            }
         }
         if (impl_->joint_buffer != nullptr) {
             SDL_ReleaseGPUBuffer(impl_->device, impl_->joint_buffer);
@@ -1645,6 +1799,170 @@ void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& materia
     batch.count = static_cast<std::uint32_t>(count);
     batch.options = options;
     impl_->instance_sources.insert(impl_->instance_sources.end(), transforms, transforms + count);
+    impl_->instance_batches.push_back(batch);
+}
+
+TerrainHandle Renderer::CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::vec3& origin) {
+    if (heights == nullptr || width < 2 || depth < 2 || width > 16384 || depth > 16384 || spacing <= 0.0f) {
+        FatalError("Renderer::CreateTerrain: needs between 2 and 16384 points each way and a spacing above zero");
+    }
+    if (impl_->in_frame) {
+        FatalError("Renderer::CreateTerrain: do not create terrains between BeginFrame and EndFrame");
+    }
+    const size_t point_count = static_cast<size_t>(width) * static_cast<size_t>(depth);
+    float lowest = heights[0];
+    float highest = heights[0];
+    for (size_t i = 1; i < point_count; ++i) {
+        lowest = glm::min(lowest, heights[i]);
+        highest = glm::max(highest, heights[i]);
+    }
+    TerrainData terrain;
+    terrain.width = width;
+    terrain.depth = depth;
+    terrain.spacing = spacing;
+    terrain.origin = {origin.x, origin.y + lowest, origin.z};
+    terrain.height_range = glm::max(highest - lowest, 0.001f);
+
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = kHeightFormat;
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = static_cast<Uint32>(width);
+    info.height = static_cast<Uint32>(depth);
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    terrain.height_texture = SDL_CreateGPUTexture(impl_->device, &info);
+    if (terrain.height_texture == nullptr) {
+        FatalSdlError("cannot create terrain height texture");
+    }
+
+    std::vector<std::uint16_t> values(point_count);
+    for (size_t i = 0; i < point_count; ++i) {
+        values[i] = static_cast<std::uint16_t>((heights[i] - lowest) / terrain.height_range * 65535.0f + 0.5f);
+    }
+    SDL_GPUTransferBuffer* transfer =
+        impl_->CreateFilledTransferBuffer(values.data(), static_cast<Uint32>(point_count * sizeof(std::uint16_t)));
+    SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(impl_->device);
+    if (commands == nullptr) {
+        FatalSdlError("cannot acquire command buffer");
+    }
+    SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+    SDL_GPUTextureTransferInfo source{};
+    source.transfer_buffer = transfer;
+    source.pixels_per_row = static_cast<Uint32>(width);
+    source.rows_per_layer = static_cast<Uint32>(depth);
+    SDL_GPUTextureRegion destination{};
+    destination.texture = terrain.height_texture;
+    destination.w = static_cast<Uint32>(width);
+    destination.h = static_cast<Uint32>(depth);
+    destination.d = 1;
+    SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
+    SDL_EndGPUCopyPass(copy_pass);
+    if (!SDL_SubmitGPUCommandBuffer(commands)) {
+        FatalSdlError("cannot submit terrain upload");
+    }
+    SDL_ReleaseGPUTransferBuffer(impl_->device, transfer);
+
+    // The grid mesh all patches share: a flat square from (0, 0) to (1, 1) with a rim of
+    // "skirt" vertices (y = -1) that the vertex shader pushes down.
+    if (impl_->terrain_grid.id == 0) {
+        const int cells = kTerrainGridCells;
+        const int row = cells + 1;
+        std::vector<MeshVertex> vertices;
+        std::vector<std::uint32_t> indices;
+        for (int j = 0; j < row; ++j) {
+            for (int i = 0; i < row; ++i) {
+                const float x = static_cast<float>(i) / static_cast<float>(cells);
+                const float z = static_cast<float>(j) / static_cast<float>(cells);
+                vertices.push_back({{x, 0.0f, z}, {0.0f, 1.0f, 0.0f}, {x, z}});
+            }
+        }
+        for (int j = 0; j < cells; ++j) {
+            for (int i = 0; i < cells; ++i) {
+                const std::uint32_t corner = static_cast<std::uint32_t>(j * row + i);
+                const std::uint32_t next_row = corner + static_cast<std::uint32_t>(row);
+                indices.insert(indices.end(), {corner, next_row, corner + 1, corner + 1, next_row, next_row + 1});
+            }
+        }
+        // Skirts along the four edges, drawn from both sides so that no winding rule can hide them.
+        const auto add_skirt = [&vertices, &indices](std::uint32_t a, std::uint32_t b) {
+            const std::uint32_t low_a = static_cast<std::uint32_t>(vertices.size());
+            MeshVertex vertex = vertices[a];
+            vertex.position.y = -1.0f;
+            vertices.push_back(vertex);
+            vertex = vertices[b];
+            vertex.position.y = -1.0f;
+            vertices.push_back(vertex);
+            const std::uint32_t low_b = low_a + 1;
+            indices.insert(indices.end(), {a, b, low_a, low_a, b, low_b, a, low_a, b, b, low_a, low_b});
+        };
+        for (int i = 0; i < cells; ++i) {
+            const std::uint32_t step = static_cast<std::uint32_t>(i);
+            const std::uint32_t last = static_cast<std::uint32_t>(cells);
+            const std::uint32_t width_row = static_cast<std::uint32_t>(row);
+            add_skirt(step, step + 1);                                          // z = 0 edge
+            add_skirt(last * width_row + step, last * width_row + step + 1);    // z = 1 edge
+            add_skirt(step * width_row, (step + 1) * width_row);                // x = 0 edge
+            add_skirt(step * width_row + last, (step + 1) * width_row + last);  // x = 1 edge
+        }
+        impl_->terrain_grid =
+            CreateMesh(vertices.data(), static_cast<int>(vertices.size()), indices.data(), static_cast<int>(indices.size()));
+    }
+
+    impl_->terrains.push_back(terrain);
+    TerrainHandle handle;
+    handle.id = static_cast<std::uint32_t>(impl_->terrains.size());
+    return handle;
+}
+
+void Renderer::DestroyTerrain(TerrainHandle terrain) {
+    if (impl_->in_frame) {
+        FatalError("Renderer::DestroyTerrain: do not destroy terrains between BeginFrame and EndFrame");
+    }
+    if (terrain.id == 0 || terrain.id > impl_->terrains.size() || impl_->terrains[terrain.id - 1].height_texture == nullptr) {
+        FatalError("Renderer::DestroyTerrain: invalid or already destroyed terrain handle");
+    }
+    SDL_ReleaseGPUTexture(impl_->device, impl_->terrains[terrain.id - 1].height_texture);
+    impl_->terrains[terrain.id - 1].height_texture = nullptr;
+}
+
+void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawTerrain: call BeginFrame first");
+    }
+    if (terrain.id == 0 || terrain.id > impl_->terrains.size() || impl_->terrains[terrain.id - 1].height_texture == nullptr) {
+        FatalError("Renderer::DrawTerrain: invalid or destroyed terrain handle");
+    }
+    if (count < 0 || (count > 0 && patches == nullptr)) {
+        FatalError("Renderer::DrawTerrain: needs the patches to draw");
+    }
+    for (const TerrainLayer& layer : material.layers) {
+        for (const TextureHandle texture : {layer.color, layer.normal}) {
+            if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
+                FatalError("Renderer::DrawTerrain: invalid or destroyed texture handle");
+            }
+        }
+    }
+    if (count == 0) {
+        return;
+    }
+    InstanceBatch batch{};
+    batch.mesh_id = impl_->terrain_grid.id;
+    batch.terrain_id = terrain.id;
+    batch.terrain_material = material;
+    batch.first_source = impl_->instance_sources.size();
+    batch.count = static_cast<std::uint32_t>(count);
+    batch.options = InstanceOptions{};
+    for (int i = 0; i < count; ++i) {
+        // Corner, size and height range of the patch, packed into a matrix like any instance.
+        glm::mat4 transform(1.0f);
+        transform[0].x = patches[i].size;
+        transform[1].y = glm::max(patches[i].max_height - patches[i].min_height, 0.01f);
+        transform[2].z = patches[i].size;
+        transform[3] = glm::vec4(patches[i].x, patches[i].min_height, patches[i].z, 1.0f);
+        impl_->instance_sources.push_back(transform);
+    }
     impl_->instance_batches.push_back(batch);
 }
 

@@ -203,6 +203,37 @@ int main() {
         Expect(position.y > 0.2f * position.x && position.y < 0.2f * position.x + 0.5f, "a box lands on the slope and stays on it");
     }
 
+    // --- Land from a height map ---
+    {
+        poligon::PhysicsWorld world;
+        // A slope rising 0.25 m per meter along x, 33 x 33 points, 2 m apart, placed so that
+        // its first point is at (-10, 5, -10).
+        const int size = 33;
+        std::vector<float> heights;
+        for (int iz = 0; iz < size; ++iz) {
+            for (int ix = 0; ix < size; ++ix) {
+                heights.push_back(static_cast<float>(ix) * 0.5f);
+            }
+        }
+        const poligon::BodyHandle land = world.AddHeightField(heights.data(), size, 2.0f, {-10.0f, 5.0f, -10.0f});
+        poligon::RayHit hit = world.CastRay({10.0f, 100.0f, 3.0f}, {0.0f, -1.0f, 0.0f}, 200.0f);
+        // 20 m from the first point: 10 points along, height 5 m, plus the origin's 5 m.
+        Expect(hit.hit && hit.body.id == land.id && Near(hit.position.y, 10.0f, 0.02f), "a ray finds the height of land from a height map");
+        Expect(hit.normal.x < -0.2f && hit.normal.y > 0.9f, "and which way it slopes");
+
+        poligon::CharacterSettings settings;
+        settings.position = {10.0f, 10.5f, 3.0f};
+        const poligon::CharacterHandle character = world.AddCharacter(settings);
+        for (int tick = 0; tick < 180; ++tick) {
+            world.SetCharacterInput(character, {2.0f, 0.0f, 0.0f}, false);
+            world.Step(kTick);
+        }
+        const glm::vec3 position = world.GetCharacterPosition(character);
+        // Walked about 6 m uphill: the land there is 1.5 m higher.
+        Expect(position.x > 15.0f && Near(position.y, 5.0f + (position.x + 10.0f) * 0.25f, 0.1f),
+               "a character walks up the land and stays on it");
+    }
+
     // --- Character ---
     {
         poligon::PhysicsWorld world;

@@ -1,5 +1,6 @@
-// Showcase: a piece of forest put together from the models in the poligon-assets folder,
-// to walk through and look at. It exists to judge the renderer on a real scene and to
+// Showcase: real land (6 x 6 km around Batorz, from poligon-assets/terrain) with a piece of
+// forest on a hilltop, put together from the models in the poligon-assets folder, to walk
+// through and look at. Without the land's file, hills from noise are used. It exists to judge the renderer on a real scene and to
 // measure how long a frame takes.
 //
 // Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
@@ -41,13 +42,19 @@
 #include "poligon/physics.h"
 #include "poligon/platform.h"
 #include "poligon/render_settings.h"
+#include "poligon/terrain.h"
 #include "poligon/vegetation.h"
 #include "poligon/renderer.h"
 
 namespace {
 
-constexpr float kForestHalfSize = 70.0f;   // trees stand within this distance of the middle
-constexpr float kGroundHalfSize = 150.0f;  // the ground reaches further, to the fog
+constexpr float kForestHalfSize = 250.0f;  // plants stand within this distance of the start
+// Collisions exist within this distance of the start; fences stand at its edge.
+constexpr float kPlayHalfSize = 500.0f;
+// Where the player starts on the Batorz map, in meters from its north-west corner: the top
+// of the nearest hill west of the village, 70 m above the valley.
+constexpr float kStartOnMapX = 2120.0f;
+constexpr float kStartOnMapZ = 3120.0f;
 constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
 // How far each kind of thing is drawn (meters). Trees have simpler meshes for the two
@@ -58,12 +65,6 @@ constexpr float kTreeLowDetail = 450.0f;
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 90.0f;
-
-// Height of the ground at a point: a few gentle waves.
-float GroundHeight(float x, float z) {
-    return 1.2f * std::sin(x * 0.045f + 1.3f) * std::cos(z * 0.038f) + 0.5f * std::sin(x * 0.11f + z * 0.09f) +
-           0.15f * std::sin(x * 0.31f) * std::sin(z * 0.27f + 2.0f);
-}
 
 // Repeatable random numbers: the same forest on every run and on every machine.
 class Random {
@@ -235,23 +236,25 @@ public:
                const std::string& settings_path)
         : renderer_(renderer), assets_(assets), input_(input), actions_(actions), settings_(settings),
           settings_path_(settings_path) {
-        camera_.position = {view[0], GroundHeight(view[0], view[1]) + kEyeHeight, view[1]};
+        CreateGround();
+        camera_.position = {view[0], Ground(view[0], view[1]) + kEyeHeight, view[1]};
         camera_.yaw_degrees = view[2];
         camera_.pitch_degrees = view[3];
         camera_.vertical_fov_degrees = 65.0f;
-        CreateGround();
         LoadKinds();
         PlantForest();
         AddAnimals();
         AddCrates();
 
         poligon::CharacterSettings walker;
-        walker.position = {view[0], GroundHeight(view[0], view[1]), view[1]};
+        walker.position = {view[0], Ground(view[0], view[1]), view[1]};
         walker_ = physics_.AddCharacter(walker);
         std::printf("forest_scene: %d physics bodies\n", physics_.GetBodyCount());
     }
 
     int GetLoadedKindCount() const { return loaded_kind_count_; }
+    // Height of the land at a world position.
+    float Ground(float x, float z) const { return terrain_->GetHeight(x, z); }
     void ShowCollision(bool show) { show_collision_ = show; }
     glm::vec3 GetCameraPosition() const { return camera_.position; }
 
@@ -318,7 +321,7 @@ public:
     void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
         poligon::Camera clip_planes;
         clip_planes.near_plane = 0.1f;
-        clip_planes.far_plane = 600.0f;
+        clip_planes.far_plane = 12000.0f;
         const poligon::Camera camera = camera_.ToCamera(clip_planes);
 
         renderer_.SetPostSettings(settings_.post);
@@ -327,7 +330,7 @@ public:
             poligon::ShowRenderSettingsWindow(renderer_, settings_, settings_path_.c_str());
             poligon::ShowFrameStatsWindow(renderer_);
         }
-        renderer_.DrawMesh(ground_mesh_, glm::mat4(1.0f), ground_material_);
+        terrain_->Draw(camera);
         for (const poligon::BodyHandle crate : crates_) {
             renderer_.DrawMesh(cube_mesh_, physics_.GetTransform(crate) * glm::scale(glm::mat4(1.0f), glm::vec3(kCrateSize)),
                                crate_material_);
@@ -396,67 +399,55 @@ private:
         return renderer_.CreateTexture(image, options);
     }
 
-    // The ground: a grid of 1 m squares following GroundHeight, with one texture repeated every 3 m.
+    // The land: the Batorz height map if it is there, otherwise hills from noise. The world's
+    // origin is put at the player's start on the map, at the land's height there.
     void CreateGround() {
-        const int cells = static_cast<int>(kGroundHalfSize) * 2;
-        const int row = cells + 1;
-        std::vector<poligon::MeshVertex> vertices(static_cast<size_t>(row) * row);
-        for (int j = 0; j < row; ++j) {
-            for (int i = 0; i < row; ++i) {
-                const float x = static_cast<float>(i) - kGroundHalfSize;
-                const float z = static_cast<float>(j) - kGroundHalfSize;
-                poligon::MeshVertex& vertex = vertices[static_cast<size_t>(j) * row + i];
-                vertex.position = {x, GroundHeight(x, z), z};
-                const float slope_x = GroundHeight(x + 0.5f, z) - GroundHeight(x - 0.5f, z);
-                const float slope_z = GroundHeight(x, z + 0.5f) - GroundHeight(x, z - 0.5f);
-                vertex.normal = glm::normalize(glm::vec3(-slope_x, 1.0f, -slope_z));
-                vertex.uv = {x / 3.0f, z / 3.0f};
-            }
+        poligon::HeightMap map;
+        std::string error;
+        const std::filesystem::path file = assets_ / "terrain" / "batorz" / "batorz_6km_1m.heights";
+        glm::vec2 start{kStartOnMapX, kStartOnMapZ};
+        if (!poligon::LoadHeightMap(file.string().c_str(), map, error)) {
+            std::printf("forest_scene: %s; using hills made from noise\n", error.c_str());
+            map = poligon::MakeNoiseHeightMap(2049, 2049, 1.0f, 3, 350.0f, 60.0f);
+            start = {1024.0f, 1024.0f};
         }
-        std::vector<std::uint32_t> indices;
-        indices.reserve(static_cast<size_t>(cells) * cells * 6);
-        for (int j = 0; j < cells; ++j) {
-            for (int i = 0; i < cells; ++i) {
-                const std::uint32_t corner = static_cast<std::uint32_t>(j * row + i);
-                const std::uint32_t next_row = corner + static_cast<std::uint32_t>(row);
-                indices.insert(indices.end(), {corner, next_row, corner + 1, corner + 1, next_row, next_row + 1});
-            }
-        }
-        ground_mesh_ = renderer_.CreateMesh(vertices.data(), static_cast<int>(vertices.size()), indices.data(),
-                                            static_cast<int>(indices.size()));
+        poligon::TerrainConfig config;
+        config.origin = {-start.x, -map.GetHeight(start.x, start.y), -start.y};
+        const std::filesystem::path textures = assets_ / "polyhaven" / "textures";
+        // Mossy forest floor and dry pine litter, mixed in patches.
+        config.material.layers[0].color = LoadTexture(textures / "forrest_ground_01" / "forrest_ground_01_diff_2k.jpg", true);
+        config.material.layers[0].normal = LoadTexture(textures / "forrest_ground_01" / "forrest_ground_01_nor_gl_2k.jpg", false);
+        config.material.layers[0].tile_size = 3.0f;
+        config.material.layers[1].color = LoadTexture(textures / "forest_leaves_04" / "forest_leaves_04_diff_2k.jpg", true);
+        config.material.layers[1].normal = LoadTexture(textures / "forest_leaves_04" / "forest_leaves_04_nor_gl_2k.jpg", false);
+        config.material.layers[1].tile_size = 2.5f;
+        terrain_ = std::make_unique<poligon::Terrain>(renderer_, map, config);
+        std::printf("forest_scene: land %.0f x %.0f m, a point every %.0f m\n", static_cast<double>(map.GetSizeX()),
+                    static_cast<double>(map.GetSizeZ()), static_cast<double>(map.spacing));
 
-        // The same triangles are the ground of the physics world.
-        std::vector<glm::vec3> positions;
-        positions.reserve(vertices.size());
-        for (const poligon::MeshVertex& vertex : vertices) {
-            positions.push_back(vertex.position);
-        }
-        physics_.AddMesh(positions.data(), static_cast<int>(positions.size()), indices.data(),
-                         static_cast<int>(indices.size()), poligon::BodySettings{});
-        // Four fences keep everything inside the part of the ground that has forest around it.
-        const float fence = kGroundHalfSize - 20.0f;
+        // Collisions: the square of land around the start, as large as fits on the map.
+        const int half_points = static_cast<int>(kPlayHalfSize / map.spacing);
+        const int center_x = static_cast<int>(start.x / map.spacing);
+        const int center_z = static_cast<int>(start.y / map.spacing);
+        const int size = 2 * half_points + 1;
+        const int first_x = std::clamp(center_x - half_points, 0, map.width - size);
+        const int first_z = std::clamp(center_z - half_points, 0, map.depth - size);
+        const poligon::HeightMap window = poligon::CropHeightMap(map, first_x, first_z, size, size);
+        physics_.AddHeightField(window.heights.data(), size, map.spacing,
+                                config.origin + glm::vec3(static_cast<float>(first_x) * map.spacing, 0.0f,
+                                                          static_cast<float>(first_z) * map.spacing));
+        // Four fences keep the player on the part of the land that has collisions.
+        const float fence = kPlayHalfSize - 5.0f;
         for (int side = 0; side < 4; ++side) {
             const bool along_x = side < 2;
             const float sign = side % 2 == 0 ? 1.0f : -1.0f;
             poligon::BodySettings settings;
             settings.position = along_x ? glm::vec3(sign * fence, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, sign * fence);
-            physics_.AddBox(along_x ? glm::vec3(0.5f, 50.0f, fence) : glm::vec3(fence, 50.0f, 0.5f), settings);
+            physics_.AddBox(along_x ? glm::vec3(0.5f, 300.0f, fence) : glm::vec3(fence, 300.0f, 0.5f), settings);
         }
         first_shown_body_id_ = physics_.GetLastBodyId() + 1;
-
-        const std::filesystem::path folder = assets_ / "polyhaven" / "textures" / "forrest_ground_01";
-        ground_material_.texture = LoadTexture(folder / "forrest_ground_01_diff_2k.jpg", true);
-        ground_material_.normal_texture = LoadTexture(folder / "forrest_ground_01_nor_gl_2k.jpg", false);
-        ground_material_.orm_texture = LoadTexture(folder / "forrest_ground_01_arm_2k.jpg", false);
-        ground_material_.occlusion_in_orm = ground_material_.orm_texture.id != 0;
-        ground_material_.roughness = 1.0f;
-        if (ground_material_.texture.id == 0) {
-            ground_material_.color = {0.25f, 0.22f, 0.14f, 1.0f};
-        }
     }
 
-    // Loads one model file and cuts it into variants. With `split`, instances that stand
-    // apart from each other become separate variants; otherwise the whole file is one.
     // keep_origin: leave the model where its file put it sideways (a tree's trunk stands at
     // the file's origin, while the middle of its crown may be well off to one side).
     // lod_name: for trees, the folder below poligon-assets/lods that holds the two simpler
@@ -647,7 +638,7 @@ private:
         crate_material_.color = {0.55f, 0.38f, 0.20f, 1.0f};
         crate_material_.roughness = 0.9f;
         const glm::vec2 place{-4.0f, 4.0f};
-        const float ground = GroundHeight(place.x, place.y);
+        const float ground = Ground(place.x, place.y);
         for (int layer = 0; layer < 3; ++layer) {
             for (int i = 0; i < 3 - layer; ++i) {
                 poligon::BodySettings settings;
@@ -760,7 +751,7 @@ private:
             const float direction = animal.meters_per_second >= 0.0f ? 1.0f : -1.0f;
             facing = std::atan2(-std::sin(angle) * direction, std::cos(angle) * direction);
         }
-        animal.transform = glm::translate(glm::mat4(1.0f), {place.x, GroundHeight(place.x, place.y), place.y}) *
+        animal.transform = glm::translate(glm::mat4(1.0f), {place.x, Ground(place.x, place.y), place.y}) *
                            glm::rotate(glm::mat4(1.0f), facing, {0.0f, 1.0f, 0.0f}) *
                            glm::scale(glm::mat4(1.0f), glm::vec3(fox_scale_));
     }
@@ -774,9 +765,13 @@ private:
         const size_t index = std::min(static_cast<size_t>(random.Next() * static_cast<float>(kind.variants.size())),
                                       kind.variants.size() - 1);
         const Variant& variant = kind.variants[index];
+        // Nothing grows or lies on slopes this steep; in Batorz those are the walls of gullies.
+        if (terrain_->GetSlopeDegrees(x, z) > 33.0f) {
+            return;
+        }
         Placement placement;
         placement.variant = &variant;
-        placement.position = {x, GroundHeight(x, z) - variant.height * scale * sink, z};
+        placement.position = {x, Ground(x, z) - variant.height * scale * sink, z};
         const float turn = random.Between(0.0f, 6.2831853f);
         placement.transform = glm::translate(glm::mat4(1.0f), placement.position) *
                               glm::rotate(glm::mat4(1.0f), turn, {0.0f, 1.0f, 0.0f}) *
@@ -814,8 +809,9 @@ private:
     void PlantForest() {
         Random random(20261014u);
 
-        // Big trees: one per 9 m square, shifted at random within it, with gaps, and a
-        // small clearing in the middle where the walk starts.
+        // Big trees: one per 9 m square, shifted at random within it, with gaps. Two places
+        // stay open: a clearing on the hilltop where the walk starts, and a wide wedge to
+        // the east of it, so that the valley can be seen from the top.
         const float spacing = 9.0f;
         for (float cell_z = -kForestHalfSize; cell_z < kForestHalfSize; cell_z += spacing) {
             for (float cell_x = -kForestHalfSize; cell_x < kForestHalfSize; cell_x += spacing) {
@@ -823,7 +819,9 @@ private:
                 const float z = cell_z + random.Between(1.0f, spacing - 1.0f);
                 const float choice = random.Next();
                 const float scale = random.Between(0.8f, 1.2f);
-                if (x * x + z * z < 6.0f * 6.0f || choice < 0.22f) {
+                const bool in_clearing = x * x + z * z < 14.0f * 14.0f;
+                const bool in_view_wedge = x > 5.0f && std::fabs(z) < x * 0.75f;
+                if (in_clearing || in_view_wedge || choice < 0.22f) {
                     continue;
                 }
                 if (choice < 0.50f) {
@@ -841,18 +839,24 @@ private:
             }
         }
 
-        Scatter(small_tree_, random, 6, kForestHalfSize, 1.2f, 1.8f);
-        Scatter(fir_sapling_, random, 30, kForestHalfSize, 1.0f, 2.2f);
-        Scatter(pine_sapling_, random, 30, kForestHalfSize, 1.0f, 2.2f);
-        Scatter(shrub_, random, 45, kForestHalfSize, 0.7f, 1.2f);
+        // The forest now covers 500 x 500 m, twelve times the area it had on the flat test
+        // ground. Undergrowth is dense near the start and thinner over the whole area.
+        Scatter(small_tree_, random, 70, kForestHalfSize, 1.2f, 1.8f);
+        Scatter(fir_sapling_, random, 350, kForestHalfSize, 1.0f, 2.2f);
+        Scatter(pine_sapling_, random, 350, kForestHalfSize, 1.0f, 2.2f);
+        Scatter(shrub_, random, 500, kForestHalfSize, 0.7f, 1.2f);
         Scatter(low_shrub_, random, 150, 50.0f, 1.2f, 2.0f);
+        Scatter(low_shrub_, random, 1200, kForestHalfSize, 1.2f, 2.0f);
         Scatter(fern_, random, 350, 55.0f, 0.9f, 1.7f);
+        Scatter(fern_, random, 3500, kForestHalfSize, 0.9f, 1.7f);
         Scatter(nettle_, random, 160, 45.0f, 2.5f, 4.0f);
+        Scatter(nettle_, random, 1200, kForestHalfSize, 2.5f, 4.0f);
         Scatter(grass_, random, 1800, 35.0f, 2.0f, 3.5f);
-        Scatter(boulder_, random, 12, kForestHalfSize, 0.6f, 2.2f, 0.25f);
-        Scatter(rocks_, random, 20, kForestHalfSize, 0.6f, 1.4f, 0.15f);
-        Scatter(stump_, random, 10, kForestHalfSize, 0.8f, 1.2f, 0.05f);
-        Scatter(fallen_trunk_, random, 7, kForestHalfSize, 0.9f, 1.4f, 0.1f);
+        Scatter(grass_, random, 9000, kForestHalfSize, 2.0f, 3.5f);
+        Scatter(boulder_, random, 120, kForestHalfSize, 0.6f, 2.2f, 0.25f);
+        Scatter(rocks_, random, 200, kForestHalfSize, 0.6f, 1.4f, 0.15f);
+        Scatter(stump_, random, 110, kForestHalfSize, 0.8f, 1.2f, 0.05f);
+        Scatter(fallen_trunk_, random, 80, kForestHalfSize, 0.9f, 1.4f, 0.1f);
         std::printf("forest_scene: %d things placed\n", placed_count_);
     }
 
@@ -861,8 +865,7 @@ private:
     const poligon::Input& input_;
     ForestActions actions_;
 
-    poligon::MeshHandle ground_mesh_;
-    poligon::Material ground_material_;
+    std::unique_ptr<poligon::Terrain> terrain_;
     std::vector<poligon::RenderModel> render_models_;
     Kind tall_pine_, pine_, broadleaf_, small_tree_, fir_sapling_, pine_sapling_, shrub_, low_shrub_, fern_, nettle_,
         grass_, boulder_, rocks_, stump_, fallen_trunk_;
@@ -910,14 +913,16 @@ poligon::RenderSettings MakeForestSettings() {
     environment.sky_zenith = {0.18f, 0.34f, 0.72f, 1.0f};
     environment.sky_horizon = {0.72f, 0.76f, 0.80f, 1.0f};
     environment.sky_ground = {0.20f, 0.19f, 0.16f, 1.0f};
-    environment.shadow_distance = 90.0f;
+    environment.shadow_distance = 90.0f;  // trees stop casting shadows there; see kShadowDistance
     environment.ambient_occlusion = true;
     environment.ambient_occlusion_radius = 0.5f;
     environment.volumetric_fog = true;
-    environment.fog_density = 0.012f;
-    environment.fog_color = {0.80f, 0.78f, 0.70f, 1.0f};
-    environment.fog_height_falloff = 0.05f;
-    environment.fog_base_height = 2.0f;
+    // Mist lies in the valley, 70 m below the start, and thins out towards the hilltops,
+    // so the view from the top stays clear.
+    environment.fog_density = 0.0011f;
+    environment.fog_color = {0.78f, 0.80f, 0.80f, 1.0f};
+    environment.fog_height_falloff = 0.03f;
+    environment.fog_base_height = -60.0f;
     environment.fog_shadow_brightness = 0.22f;
     environment.fog_sun_glow = 1.2f;
 
@@ -935,8 +940,8 @@ int main(int argc, char** argv) {
 
     poligon::CommandLineOptions options;
     std::string error;
-    // Default: in the clearing, looking towards the sun.
-    float view[4] = {0.0f, 0.0f, 225.0f, 4.0f};
+    // Default: on the hilltop, looking east over the valley.
+    float view[4] = {0.0f, 0.0f, 270.0f, -6.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
         if (options.positional.size() > 5 || (options.positional.size() == 5 && options.positional[4] != "collision")) {
             error = "expected at most X Z TURN TILT and the word collision";

@@ -192,6 +192,42 @@ struct TextureOptions {
     bool generate_mipmaps = true;
 };
 
+// Identifies a terrain created by Renderer. An id of 0 is never a valid terrain.
+struct TerrainHandle {
+    std::uint32_t id = 0;
+};
+
+// One of the ground textures of a terrain.
+struct TerrainLayer {
+    TextureHandle color;
+    // Create it with TextureOptions::is_color = false.
+    TextureHandle normal;
+    // The texture repeats after this many meters.
+    float tile_size = 3.0f;
+};
+
+// How a terrain looks: two ground textures mixed in large irregular patches, and a plain
+// color on slopes too steep for plants.
+struct TerrainMaterial {
+    TerrainLayer layers[2];
+    Color steep_color{0.42f, 0.34f, 0.22f, 1.0f};
+    // The steep color starts to show at the first slope and is all there is at the second.
+    float steep_start_degrees = 30.0f;
+    float steep_end_degrees = 42.0f;
+    float roughness = 0.95f;
+};
+
+// A square piece of a terrain to draw: (x, z) is its corner with the smallest
+// coordinates, in world meters. min_height and max_height enclose the land inside it
+// (world heights); they are used for culling.
+struct TerrainPatch {
+    float x = 0.0f;
+    float z = 0.0f;
+    float size = 0.0f;
+    float min_height = 0.0f;
+    float max_height = 0.0f;
+};
+
 // How a surface looks. This is the metallic-roughness material model of glTF.
 struct Material {
     // Base color; multiplied by `texture` when there is one.
@@ -285,6 +321,17 @@ public:
     // Square with edge length 1 in the XZ plane, centered at the origin, facing +Y.
     // The texture's top edge lies along -Z.
     MeshHandle CreatePlaneMesh();
+
+    // Copies a height map to the graphics card: `heights` holds width x depth values, row
+    // by row, `spacing` meters apart. `origin` is the world position of the first point;
+    // its y is added to every height. See poligon/terrain.h, which is the usual way in.
+    TerrainHandle CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::vec3& origin);
+    void DestroyTerrain(TerrainHandle terrain);
+    // Draws pieces of a terrain. Each patch is one flat grid of 64 x 64 cells stretched
+    // over its square and lifted to the land's height, so a large patch is coarse and a
+    // small one fine. All patches of a call cost one draw call per pass, and each is culled
+    // on its own. Patch corners should lie on height map points.
+    void DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count);
 
     // Copies the image to the graphics card. Textures repeat outside the 0..1 coordinate range.
     TextureHandle CreateTexture(const Image& image, const TextureOptions& options = TextureOptions{});
