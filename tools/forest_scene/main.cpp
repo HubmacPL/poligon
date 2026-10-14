@@ -64,7 +64,7 @@ constexpr float kTreeMediumDetail = 70.0f;
 constexpr float kTreeLowDetail = 450.0f;
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
-constexpr float kShadowDistance = 90.0f;
+constexpr float kShadowDistance = 65.0f;
 
 // Repeatable random numbers: the same forest on every run and on every machine.
 class Random {
@@ -913,7 +913,7 @@ poligon::RenderSettings MakeForestSettings() {
     environment.sky_zenith = {0.18f, 0.34f, 0.72f, 1.0f};
     environment.sky_horizon = {0.72f, 0.76f, 0.80f, 1.0f};
     environment.sky_ground = {0.20f, 0.19f, 0.16f, 1.0f};
-    environment.shadow_distance = 90.0f;  // trees stop casting shadows there; see kShadowDistance
+    environment.shadow_distance = kShadowDistance;
     environment.ambient_occlusion = true;
     environment.ambient_occlusion_radius = 0.5f;
     environment.volumetric_fog = true;

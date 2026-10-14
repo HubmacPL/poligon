@@ -34,7 +34,7 @@ terrain.Draw(camera);
 
 ## W forest_scene
 
-`forest_scene` wczytuje `poligon-assets/terrain/batorz/batorz_6km_1m.heights` (wzgórza z szumu, jeśli pliku nie ma). Początek układu świata to szczyt najbliższego wzgórza na zachód od wsi, 70 m nad doliną; gracz startuje tam, patrząc na wschód. Około 21000 roślin i kamieni stoi w promieniu 250 m od startu, żadna na zboczu powyżej 33 stopni, z polaną na szczycie i otwartym klinem na wschód dla widoku. Zmierzone na GTX 980: 18 do 20 ms na klatkę.
+`forest_scene` wczytuje `poligon-assets/terrain/batorz/batorz_6km_1m.heights` (wzgórza z szumu, jeśli pliku nie ma). Początek układu świata to szczyt najbliższego wzgórza na zachód od wsi, 70 m nad doliną; gracz startuje tam, patrząc na wschód. Około 21000 roślin i kamieni stoi w promieniu 250 m od startu, żadna na zboczu powyżej 33 stopni, z polaną na szczycie i otwartym klinem na wschód dla widoku. Zmierzone na GTX 980 z oknem: 16,6 ms na klatkę w lesie i ze skraju wzgórza, około 20 ms (chwilami poniżej 60 klatek na sekundę) na starcie. Drzewa rzucają cienie do 65 m.
 
 ## Mapy wysokości
 

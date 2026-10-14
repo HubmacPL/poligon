@@ -34,7 +34,7 @@ terrain.Draw(camera);
 
 ## In forest_scene
 
-`forest_scene` loads `poligon-assets/terrain/batorz/batorz_6km_1m.heights` (hills from noise if the file is missing). The world's origin is the top of the nearest hill west of the village, 70 m above the valley; the player starts there looking east. About 21000 plants and rocks stand within 250 m of the start, none on slopes over 33 degrees, with a clearing on the top and an open wedge to the east for the view. Measured on the GTX 980: 18 to 20 ms per frame.
+`forest_scene` loads `poligon-assets/terrain/batorz/batorz_6km_1m.heights` (hills from noise if the file is missing). The world's origin is the top of the nearest hill west of the village, 70 m above the valley; the player starts there looking east. About 21000 plants and rocks stand within 250 m of the start, none on slopes over 33 degrees, with a clearing on the top and an open wedge to the east for the view. Measured on the GTX 980 with a window: 16.6 ms per frame inside the forest and from the brow of the hill, about 20 ms (dropping below 60 frames per second at times) at the start. Trees cast shadows up to 65 m.
 
 ## Height maps
 
