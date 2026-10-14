@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <initializer_list>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -440,14 +441,39 @@ private:
         fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false);
     }
 
-    // Three foxes in the clearing: one walks around it, one runs around it the other way,
-    // one stands and looks about. They follow the ground but know nothing of each other.
+    // The first clip whose name contains one of the given words, tried in order; clip 0 if none does.
+    int FindClipLike(std::initializer_list<const char*> words) const {
+        for (const char* word : words) {
+            for (int clip = 0; clip < fox_animations_->GetClipCount(); ++clip) {
+                if (std::string(fox_animations_->GetClipName(clip)).find(word) != std::string::npos) {
+                    return clip;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Foxes in the clearing: some walk or run around it, some stand. They follow the ground
+    // but know nothing of each other. The realistic fox is used when it is there, otherwise
+    // the simple sample one.
     void AddAnimals() {
-        const std::filesystem::path file = assets_ / "khronos" / "fox" / "Fox.glb";
+        const std::filesystem::path candidates[] = {
+            assets_ / "sketchfab" / "fox_realistic_demo" / "source" / "unpacked" / "source" / "FOX_DEMO.fbx",
+            assets_ / "khronos" / "fox" / "Fox.glb",
+        };
         poligon::Model model;
-        std::string error;
-        if (!poligon::LoadModelFromFile(file.string().c_str(), model, error) || model.animations.empty()) {
-            std::printf("forest_scene: no animals: %s\n", error.empty() ? "the fox model has no animations" : error.c_str());
+        std::string error = "no fox model in poligon-assets";
+        std::error_code file_error;
+        for (const std::filesystem::path& file : candidates) {
+            if (std::filesystem::exists(file, file_error) &&
+                poligon::LoadModelFromFile(file.string().c_str(), model, error) && !model.animations.empty()) {
+                std::printf("forest_scene: fox model %s\n", file.filename().string().c_str());
+                break;
+            }
+            model = poligon::Model{};
+        }
+        if (model.animations.empty()) {
+            std::printf("forest_scene: no animals: %s\n", error.c_str());
             return;
         }
         fox_model_ = poligon::UploadModel(renderer_, model);
@@ -455,22 +481,29 @@ private:
         // The model is in centimeters and rather large for a fox.
         fox_scale_ = 0.45f / (model.bounds_max.y - model.bounds_min.y);
 
-        const auto add = [this](const char* clip_name, float radius, float speed, float start_angle) -> Animal& {
+        const auto add = [this](int clip, float radius, float speed, float start_angle) -> Animal& {
             Animal animal;
             animal.player = std::make_unique<poligon::AnimationPlayer>(*fox_animations_);
-            const int clip = fox_animations_->FindClip(clip_name);
-            animal.player->Play(clip >= 0 ? clip : 0, 0.0f);
+            animal.player->Play(clip, 0.0f);
             animal.circle_radius = radius;
             animal.meters_per_second = speed;
             animal.start_angle = start_angle;
             animals_.push_back(std::move(animal));
             return animals_.back();
         };
-        add("Walk", 3.5f, 0.55f, 0.6f);
-        add("Run", 5.2f, -3.2f, 2.5f);
-        Animal& watcher = add("Survey", 0.0f, 0.0f, 0.0f);
+        // Models name their clips differently; pick by what the name contains.
+        const int walk = FindClipLike({"Walk"});
+        const int run = FindClipLike({"Run", "Walk"});
+        const int stand = FindClipLike({"Stand", "Survey", "Idle"});
+        const int howl = FindClipLike({"Howl", "Stand", "Survey"});
+        add(walk, 3.5f, run == walk ? 1.1f : 0.55f, 0.6f);
+        add(run, 5.2f, run == walk ? -1.1f : -3.2f, 2.5f);
+        Animal& watcher = add(stand, 0.0f, 0.0f, 0.0f);
         watcher.place = {-1.5f, -2.5f};
         watcher.facing_degrees = 140.0f;
+        Animal& howler = add(howl, 0.0f, 0.0f, 0.0f);
+        howler.place = {1.8f, 1.2f};
+        howler.facing_degrees = 250.0f;
         for (Animal& animal : animals_) {
             PlaceAnimal(animal);
         }

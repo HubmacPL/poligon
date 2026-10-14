@@ -37,7 +37,7 @@ poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices())
 - Pracę wykonuje biblioteka ozz-animation (MIT); nic z niej nie wystaje poza `animation.cpp`. Klipy są przechowywane skompresowane, więc poza wraca z błędem ułamka milimetra na metr. Między dwoma kluczami obroty są mieszane po prostej i normalizowane, co wystarcza przy kluczach tak gęstych, jak w plikach animacji.
 - Klip, który nie wymienia stawu albo jednej z jego trzech części, zostawia tę część w pozie spoczynkowej.
 - Przeglądarka: `model_viewer PLIK OBRÓT POCHYLENIE ODLEGŁOŚĆ KLIP` gra wskazany klip; C przełącza na następny. Z `--headless --ticks N` obraz powstaje N sześćdziesiątych sekundy od początku klipu.
-- `forest_scene` ma na polanie trzy lisy (idący, biegnący, rozglądający się), gdy istnieje `poligon-assets/khronos/fox/Fox.glb`.
+- `forest_scene` ma na polanie cztery lisy (dwa krążące, jeden stojący, jeden wyjący). Używa realistycznego lisa z `poligon-assets/sketchfab/fox_realistic_demo` (FBX, 103 stawy), jeśli tam jest, a w przeciwnym razie próbki Khronosa z `poligon-assets/khronos/fox`.
 
 ## Od pozy do obrazu
 

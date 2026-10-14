@@ -86,7 +86,8 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     material.base_color = {color.r, color.g, color.b, color.a};
 
     aiString alpha_mode;
-    if (source.Get(AI_MATKEY_GLTF_ALPHAMODE, alpha_mode) == aiReturn_SUCCESS) {
+    const bool file_states_alpha_mode = source.Get(AI_MATKEY_GLTF_ALPHAMODE, alpha_mode) == aiReturn_SUCCESS;
+    if (file_states_alpha_mode) {
         if (std::strcmp(alpha_mode.C_Str(), "MASK") == 0) {
             material.alpha_cutoff = 0.5f;
             source.Get(AI_MATKEY_GLTF_ALPHACUTOFF, material.alpha_cutoff);
@@ -106,6 +107,22 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     const aiTextureType base_color_kinds[] = {aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE};
     LoadMaterialTexture(scene, source, model_directory, base_color_kinds, 2, material.name,
                         material.base_color_texture, warnings);
+
+    // Formats that cannot say "this material is a cut-out" (FBX, OBJ) still use textures
+    // with transparency for fur, whiskers and leaves. If a good part of the texture is
+    // transparent, treat the material as a double-sided cut-out; otherwise such parts show
+    // as solid rectangles.
+    if (!file_states_alpha_mode && material.base_color_texture.width > 0) {
+        const std::vector<std::uint8_t>& pixels = material.base_color_texture.pixels;
+        size_t transparent = 0;
+        for (size_t i = 3; i < pixels.size(); i += 4) {
+            transparent += pixels[i] < 128 ? 1 : 0;
+        }
+        if (transparent * 100 >= pixels.size() / 4) {  // at least 1% of the pixels
+            material.alpha_cutoff = 0.5f;
+            material.double_sided = true;
+        }
+    }
 
     // A cut-out material whose texture has no transparent pixel draws its whole squares, which
     // shows as leaves with a solid background. The usual cause: the texture is a JPEG (no
