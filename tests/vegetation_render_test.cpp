@@ -144,6 +144,45 @@ int main(int argc, char** argv) {
     vegetation.ClearInstances();
     Expect(vegetation.GetInstanceCount() == 0, "all plants can be removed");
 
+    // Fading between levels: red up to 20 m fades into blue over the last half of its
+    // range (10 to 20 m). A plant at 15 m is halfway: both cubes are drawn, each pixel of
+    // its outline comes from exactly one of them, about half from each.
+    poligon::VegetationSpecies fading = species;
+    fading.levels[0].max_distance = 20.0f;
+    fading.fade_width = 0.5f;
+    fading.shadow_distance = 0.0f;
+    poligon::Vegetation fading_vegetation(32.0f);
+    fading_vegetation.AddInstance(fading_vegetation.AddSpecies(fading), glm::translate(identity, {15.0f, 1.0f, 0.0f}));
+    renderer.BeginFrame(camera, light);
+    fading_vegetation.Draw(renderer, camera);
+    renderer.EndFrame();
+    renderer.CaptureFrame(frame);
+    int red_pixels = 0;
+    int blue_pixels = 0;
+    int other_pixels = 0;
+    // The middle of the cube's top: 1.4 x 1.4 m, well inside its 2 x 2 m outline.
+    for (int y = ToPixel(-0.7f); y < ToPixel(0.7f); ++y) {
+        for (int x = ToPixel(14.3f); x < ToPixel(15.7f); ++x) {
+            const std::uint8_t* pixel = &frame.pixels[static_cast<size_t>(y * frame.width + x) * 4];
+            if (pixel[0] == 255 && pixel[2] == 0) {
+                ++red_pixels;
+            } else if (pixel[0] == 0 && pixel[2] == 255) {
+                ++blue_pixels;
+            } else {
+                ++other_pixels;
+            }
+        }
+    }
+    const int covered = red_pixels + blue_pixels;
+    if (other_pixels != 0 || red_pixels * 4 < covered || blue_pixels * 4 < covered) {
+        std::printf("  fade: red %d, blue %d, other %d\n", red_pixels, blue_pixels, other_pixels);
+    }
+    Expect(fading_vegetation.GetStats().instances_fading == 1 && fading_vegetation.GetStats().instances_per_level[0] == 1 &&
+               fading_vegetation.GetStats().instances_per_level[1] == 1,
+           "a plant within the fade is handed over at both levels");
+    Expect(other_pixels == 0, "the two fading levels together cover every pixel of the plant");
+    Expect(red_pixels * 4 >= covered && blue_pixels * 4 >= covered, "halfway through the fade both levels show about equally");
+
     std::printf("vegetation_render_test finished\n");
     return test::ExitCode();
 }

@@ -1,5 +1,7 @@
-// Fragment shader of the shadow pass. Only depth is written; the shader exists so that
-// cut-out materials (leaves) cast shadows of their visible shape, not of their whole square.
+// Fragment shader of the shadow pass and of the depth pass. Only depth is written; the
+// shader exists so that cut-out materials (leaves) cast shadows of their visible shape, not
+// of their whole square, and so that plants fading between levels of detail do so here too.
+#include "common.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
 Texture2D<float4> base_texture : register(t0, space2);
@@ -17,9 +19,13 @@ struct FragmentInput {
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
+    float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
 };
 
 void main(FragmentInput input) {
+    if (!KeptByFade(input.fade, input.clip_position.xy)) {
+        discard;
+    }
     if (material_factors.z > 0.0) {
         float alpha = base_texture.Sample(base_sampler, input.uv).a * input.color.a;
         if (alpha < material_factors.z) {

@@ -37,6 +37,7 @@
 #include "poligon/debug_ui.h"
 #include "poligon/free_camera.h"
 #include "poligon/game_loop.h"
+#include "poligon/impostor.h"
 #include "poligon/input.h"
 #include "poligon/model.h"
 #include "poligon/physics.h"
@@ -49,6 +50,8 @@
 namespace {
 
 constexpr float kForestHalfSize = 250.0f;  // plants stand within this distance of the start
+// Beyond that, big trees alone continue to this distance; far away they are impostors.
+constexpr float kFarForestHalfSize = 1200.0f;
 // Collisions exist within this distance of the start; fences stand at its edge.
 constexpr float kPlayHalfSize = 500.0f;
 // Where the player starts on the Batorz map, in meters from its north-west corner: the top
@@ -59,16 +62,21 @@ constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
 // How far each kind of thing is drawn (meters). Trees have simpler meshes for the two
 // longer ranges; everything else has one mesh and simply stops being drawn.
-// How far each of the three levels of detail is used, for kinds that have simpler levels.
+// How far each level of detail is used, for kinds that have simpler levels. `impostor`:
+// how far a baked impostor (poligon-assets/impostors/NAME.impostor, made by
+// impostor_baker) is drawn after the low level; 0 = no impostor. Without the file the low
+// level reaches to `low_without_impostor` instead.
 struct LevelDistances {
     float full;
     float medium;
     float low;
+    float impostor;
+    float low_without_impostor;
 };
-constexpr LevelDistances kTreeLevels{28.0f, 70.0f, 450.0f};
-constexpr LevelDistances kYoungTreeLevels{28.0f, 70.0f, 150.0f};
+constexpr LevelDistances kTreeLevels{28.0f, 70.0f, 150.0f, 1700.0f, 450.0f};
+constexpr LevelDistances kYoungTreeLevels{28.0f, 70.0f, 150.0f, 0.0f, 150.0f};
 // Rocks, stumps, fallen trunks and shrubs.
-constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f};
+constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f, 0.0f, 150.0f};
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
@@ -559,6 +567,15 @@ private:
                         species.levels.push_back(std::move(simpler));
                     }
                 }
+                // The farthest level: one card with pictures of the tree.
+                poligon::VegetationLevel far;
+                far.impostor = LoadImpostor(lod_name, levels);
+                if (far.impostor.id != 0) {
+                    far.max_distance = levels.impostor;
+                    species.levels.push_back(far);
+                } else {
+                    species.levels.back().max_distance = levels.low_without_impostor;
+                }
                 species.shadow_distance = is_small ? 20.0f : kShadowDistance;
                 species.shadow_level_bias = 1;
             } else {
@@ -575,6 +592,21 @@ private:
         std::fflush(stdout);
         ++loaded_kind_count_;
         return kind;
+    }
+
+    // The impostor baked for a kind, if `levels` asks for one and its file exists.
+    poligon::ImpostorHandle LoadImpostor(const char* lod_name, const LevelDistances& levels) {
+        if (levels.impostor <= 0.0f) {
+            return {};
+        }
+        const std::filesystem::path file = assets_ / "impostors" / (std::string(lod_name) + ".impostor");
+        poligon::Impostor impostor;
+        std::string error;
+        if (!std::filesystem::exists(file) || !poligon::LoadImpostor(file.string().c_str(), impostor, error)) {
+            std::printf("forest_scene: %s has no impostor (%s)\n", lod_name, error.empty() ? "no file" : error.c_str());
+            return {};
+        }
+        return renderer_.CreateImpostor(impostor);
     }
 
     // The meshes of one simpler level of a variant: those of the simpler file's nodes named
@@ -795,10 +827,13 @@ private:
                               glm::rotate(glm::mat4(1.0f), turn, {0.0f, 1.0f, 0.0f}) *
                               glm::scale(glm::mat4(1.0f), glm::vec3(scale));
 
-        // What blocks the way gets a body in the physics world.
+        // What blocks the way gets a body in the physics world, where the player can walk.
+        const bool in_play_area = std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize;
         poligon::BodySettings body;
         body.rotation = glm::angleAxis(turn, glm::vec3(0.0f, 1.0f, 0.0f));
-        if (kind.collision == Collision::Trunk) {
+        if (!in_play_area) {
+            // nothing to collide with out there
+        } else if (kind.collision == Collision::Trunk) {
             const float half_height = std::min(variant.height * scale * 0.5f, 4.0f);
             body.position = placement.position + glm::vec3(0.0f, half_height - 0.5f, 0.0f);
             physics_.AddCylinder(half_height, kind.trunk_radius * scale, body);
@@ -830,15 +865,18 @@ private:
         // Big trees: one per 9 m square, shifted at random within it, with gaps. Two places
         // stay open: a clearing on the hilltop where the walk starts, and a wide wedge to
         // the east of it, so that the valley can be seen from the top.
+        // Beyond kForestHalfSize the big trees go on alone, out to kFarForestHalfSize; the
+        // wedge to the east stays open for 400 m, so the far forest shows in the panorama.
         const float spacing = 9.0f;
-        for (float cell_z = -kForestHalfSize; cell_z < kForestHalfSize; cell_z += spacing) {
-            for (float cell_x = -kForestHalfSize; cell_x < kForestHalfSize; cell_x += spacing) {
+        for (float cell_z = -kFarForestHalfSize; cell_z < kFarForestHalfSize; cell_z += spacing) {
+            for (float cell_x = -kFarForestHalfSize; cell_x < kFarForestHalfSize; cell_x += spacing) {
                 const float x = cell_x + random.Between(1.0f, spacing - 1.0f);
                 const float z = cell_z + random.Between(1.0f, spacing - 1.0f);
                 const float choice = random.Next();
                 const float scale = random.Between(0.8f, 1.2f);
                 const bool in_clearing = x * x + z * z < 14.0f * 14.0f;
-                const bool in_view_wedge = x > 5.0f && std::fabs(z) < x * 0.75f;
+                const bool in_view_wedge = x > 5.0f && x < 400.0f && std::fabs(z) < x * 0.75f;
+                const bool near_start = std::fabs(x) < kForestHalfSize && std::fabs(z) < kForestHalfSize;
                 if (in_clearing || in_view_wedge || choice < 0.22f) {
                     continue;
                 }
@@ -852,8 +890,8 @@ private:
                 } else {
                     Place(oak_, random, x, z, scale);
                 }
-                // Something at the foot of some trees.
-                if (random.Next() < 0.35f) {
+                // Something at the foot of some trees, near the start.
+                if (random.Next() < 0.35f && near_start) {
                     Place(fern_, random, x + random.Between(-1.2f, 1.2f), z + random.Between(-1.2f, 1.2f),
                           random.Between(1.0f, 1.6f));
                 }

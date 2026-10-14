@@ -75,6 +75,9 @@ int Vegetation::AddSpecies(const VegetationSpecies& species) {
     if (species.levels.empty() || species.levels.size() > kMaxLevels) {
         FatalError("Vegetation::AddSpecies: a species needs between 1 and 8 levels");
     }
+    if (species.fade_width < 0.0f || species.fade_width >= 1.0f) {
+        FatalError("Vegetation::AddSpecies: fade_width must be at least 0 and below 1");
+    }
     float previous = 0.0f;
     for (const VegetationLevel& level : species.levels) {
         if (level.max_distance <= previous) {
@@ -168,18 +171,34 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                 continue;  // every plant of this species in the cell is out of range
             }
             cell_used = true;
-            const auto level_at = [&data, level_count](float distance) {
-                int level = 0;
-                while (level < level_count && distance > data.level_distance[level]) {
-                    ++level;
+            // The level a plant at this distance shows, and how far it is into the fade
+            // towards the next level: 0 = not fading, up to 1 at the level's end.
+            // Level level_count means "not drawn".
+            const float fade_width = data.species.fade_width;
+            const auto choose = [&data, level_count, fade_width](float distance, float& fade) {
+                fade = 0.0f;
+                for (int level = 0; level < level_count; ++level) {
+                    const float end = data.level_distance[level];
+                    const float start = end * (1.0f - fade_width);
+                    if (distance <= start) {
+                        return level;
+                    }
+                    if (distance <= end) {
+                        fade = (distance - start) / (end - start);
+                        return level;
+                    }
                 }
-                return level;  // level_count means "not drawn"
+                return level_count;
             };
-            const int nearest_level = level_at(nearest);
-            const bool one_level = nearest_level == level_at(farthest);
+            float nearest_fade = 0.0f;
+            float farthest_fade = 0.0f;
+            const int nearest_level = choose(nearest, nearest_fade);
+            const bool one_level = nearest_level == choose(farthest, farthest_fade) && nearest_fade == 0.0f &&
+                                   farthest_fade == 0.0f;
             const bool one_shadow_answer = (nearest <= data.shadow_distance) == (farthest <= data.shadow_distance);
             if (one_level && one_shadow_answer) {
-                // The whole cell falls into one level: hand its plants over in one piece.
+                // The whole cell falls into one level, with nothing fading: hand its plants
+                // over in one piece.
                 LevelLists& lists = data.lists[nearest_level];
                 std::vector<glm::mat4>& list = nearest <= data.shadow_distance ? lists.with_shadow : lists.without_shadow;
                 list.insert(list.end(), entry.transforms.begin(), entry.transforms.end());
@@ -187,12 +206,31 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
             }
             for (const glm::mat4& transform : entry.transforms) {
                 const float distance = glm::distance(eye, glm::vec2(transform[3].x, transform[3].z));
-                const int level = level_at(distance);
+                float fade = 0.0f;
+                const int level = choose(distance, fade);
                 if (level == level_count) {
                     continue;
                 }
-                LevelLists& lists = data.lists[level];
-                (distance <= data.shadow_distance ? lists.with_shadow : lists.without_shadow).push_back(transform);
+                const bool with_shadow = distance <= data.shadow_distance;
+                const auto add = [&data, with_shadow](int to_level, const glm::mat4& placed) {
+                    LevelLists& lists = data.lists[to_level];
+                    (with_shadow ? lists.with_shadow : lists.without_shadow).push_back(placed);
+                };
+                if (fade == 0.0f) {
+                    add(level, transform);
+                    continue;
+                }
+                // The last value of the matrix carries the fade to the shaders (see
+                // Renderer::DrawMeshInstances): this level keeps the pixels the next one leaves.
+                ++impl.stats.instances_fading;
+                glm::mat4 fading_out = transform;
+                fading_out[3][3] = -fade;
+                add(level, fading_out);
+                if (level + 1 < level_count) {
+                    glm::mat4 fading_in = transform;
+                    fading_in[3][3] = fade;
+                    add(level + 1, fading_in);
+                }
             }
         }
         if (!cell_used) {
@@ -200,15 +238,22 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
         }
     }
 
-    // Hands a list to the renderer once per part of the level's meshes.
+    // Hands a list to the renderer once per part of the level's meshes, or once as an impostor.
     const auto submit = [&impl, &renderer](const VegetationLevel& level, const std::vector<glm::mat4>& transforms,
                                            const InstanceOptions& options) {
         if (transforms.empty()) {
             return;
         }
+        if (level.impostor.id != 0) {
+            renderer.DrawImpostorInstances(level.impostor, transforms.data(), static_cast<int>(transforms.size()), options);
+            ++impl.stats.batches;
+            return;
+        }
         for (const VegetationPart& part : level.parts) {
             const glm::mat4* data = transforms.data();
             if (part.local != glm::mat4(1.0f)) {
+                // The plant's matrix times the part's; the fade in [3][3] carries over, since
+                // part matrices keep 1 there.
                 impl.part_transforms.resize(transforms.size());
                 for (size_t i = 0; i < transforms.size(); ++i) {
                     impl.part_transforms[i] = transforms[i] * part.local;
@@ -227,19 +272,26 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
     const InstanceOptions view_and_shadow;
 
     for (SpeciesData& data : impl.species) {
-        const int level_count = static_cast<int>(data.species.levels.size());
+        const std::vector<VegetationLevel>& levels = data.species.levels;
+        const int level_count = static_cast<int>(levels.size());
         for (int level = 0; level < level_count; ++level) {
             const LevelLists& lists = data.lists[level];
             impl.stats.instances_per_level[level] += static_cast<int>(lists.with_shadow.size() + lists.without_shadow.size());
-            const VegetationLevel& look = data.species.levels[static_cast<size_t>(level)];
+            const VegetationLevel& look = levels[static_cast<size_t>(level)];
             submit(look, lists.without_shadow, view_only);
-            const int shadow_level = glm::min(level + glm::max(data.species.shadow_level_bias, 0), level_count - 1);
-            if (shadow_level == level) {
+            // Shadows come from a simpler mesh level, never from an impostor.
+            int shadow_level = glm::min(level + glm::max(data.species.shadow_level_bias, 0), level_count - 1);
+            while (shadow_level > level && levels[static_cast<size_t>(shadow_level)].impostor.id != 0) {
+                --shadow_level;
+            }
+            if (look.impostor.id != 0) {
+                submit(look, lists.with_shadow, view_only);
+            } else if (shadow_level == level) {
                 submit(look, lists.with_shadow, view_and_shadow);
             } else {
                 // The picture gets this level's meshes, the shadow image a simpler level's.
                 submit(look, lists.with_shadow, view_only);
-                submit(data.species.levels[static_cast<size_t>(shadow_level)], lists.with_shadow, shadow_only);
+                submit(levels[static_cast<size_t>(shadow_level)], lists.with_shadow, shadow_only);
             }
         }
     }

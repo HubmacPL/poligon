@@ -289,6 +289,40 @@ struct InstanceOptions {
     std::uint8_t shadow_cascades = 0x0F;
 };
 
+// Identifies an impostor created by Renderer::CreateImpostor. An id of 0 means "none".
+struct ImpostorHandle {
+    std::uint32_t id = 0;
+};
+
+// One piece of a model to bake into an impostor: a mesh, its material, and where it sits in
+// the model.
+struct ImpostorPart {
+    MeshHandle mesh;
+    Material material;
+    glm::mat4 transform{1.0f};
+};
+
+// Pictures of a model taken from many directions, for drawing it far away as one flat card
+// that always faces the camera (an "impostor"). Made by Renderer::BakeImpostor, kept in
+// files by poligon/impostor.h, drawn after Renderer::CreateImpostor.
+//
+// The pictures lie side by side in two images, frames_per_side x frames_per_side of them.
+// Frame (column, row) looks at the model from the direction that the grid point
+// (column, row) maps to on the half sphere above it: the middle of the grid looks straight
+// down, its edge from the horizon ("hemi-octahedral" layout, see engine/shaders/impostor.hlsli).
+// The pictures hold what the surface is, not how it is lit, so an impostor is lit by the
+// current sun and sky like everything else.
+struct Impostor {
+    // Base color (sRGB-encoded); alpha says where the model is.
+    Image color;
+    // Direction each pixel faces, in the model's own coordinates, as 0..1 per axis; same alpha.
+    Image normal;
+    int frames_per_side = 0;
+    // Middle of the model in its own coordinates, and the radius around it that each frame shows.
+    glm::vec3 center{0.0f};
+    float radius = 0.0f;
+};
+
 // Draws lit meshes. A frame goes through these stages: shadows of the sun, ambient occlusion,
 // the scene itself (multisampled, in linear wide-range colors), volumetric fog, bloom, tone
 // mapping to an off-screen image. Stages that are turned off are skipped.
@@ -351,6 +385,10 @@ public:
     // matrix per copy. This is the way to draw vegetation. Each copy is culled on its own
     // against the camera's view and against each shadow cascade. The matrices are copied,
     // so the array need not outlive the call. Not for skinned meshes.
+    // The last value of each matrix ([3][3]), 1 in an ordinary transform, carries a fade
+    // between levels of detail: between 0 and 1 that share of the copy's pixels is drawn,
+    // between -1 and 0 that share is left out, by a fixed pattern, so that a copy fading out
+    // and one fading in at the same place fill each pixel exactly once. Vegetation sets it.
     void DrawMeshInstances(MeshHandle mesh, const Material& material, const glm::mat4* transforms, int count,
                            const InstanceOptions& options = InstanceOptions{});
     // Draws a mesh made by CreateSkinnedMesh in a pose. `joint_matrices` come from
@@ -358,6 +396,24 @@ public:
     // copied, so the array need not outlive the call. `transform` places the whole model.
     void DrawSkinnedMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material,
                          const glm::mat4* joint_matrices, int joint_count);
+
+    // Photographs a model for an impostor (see Impostor): frames_per_side x frames_per_side
+    // pictures of frame_size x frame_size pixels, without perspective. Cut-out materials are
+    // cut out as when drawn. Call outside BeginFrame/EndFrame; it waits until the graphics
+    // card has finished.
+    void BakeImpostor(const ImpostorPart* parts, int count, int frames_per_side, int frame_size, Impostor& impostor);
+    // Copies an impostor's pictures to the graphics card.
+    ImpostorHandle CreateImpostor(const Impostor& impostor);
+    // Call outside BeginFrame/EndFrame. The handle must not be used afterwards.
+    void DestroyImpostor(ImpostorHandle impostor);
+    // Draws an impostor once per transform, like DrawMeshInstances: each copy is a card the
+    // size of the model facing the camera, showing the four baked pictures nearest to the
+    // direction of view blended together. The transforms place the model as they would place
+    // its meshes; rotation about the vertical and uniform scale are allowed. Impostors cast
+    // no shadows (options.shadow_cascades is ignored): they are meant for distances beyond
+    // the shadows' reach. The fade in [3][3] works as for DrawMeshInstances.
+    void DrawImpostorInstances(ImpostorHandle impostor, const glm::mat4* transforms, int count,
+                               const InstanceOptions& options = InstanceOptions{});
     void EndFrame();
 
     // Copies the last finished frame from the graphics card into `image`.

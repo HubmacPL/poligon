@@ -2,9 +2,9 @@
 
 Rysowanie roślin, kamieni i innych rzeczy, które stoją w wielkich ilościach: instancjonowanie, poziomy szczegółowości, komórki.
 
-Nagłówki: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`). Przykład: `examples/vegetation`. Testy: `tests/vegetation_render_test.cpp`, część o instancjonowaniu w `tests/scene_render_test.cpp`.
+Nagłówki: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`), `poligon/impostor.h`. Narzędzie: `impostor_baker`. Przykłady: `examples/vegetation`, `examples/impostor`. Testy: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, część o instancjonowaniu w `tests/scene_render_test.cpp`.
 
-**Stan: fundament.** Gotowe: instancjonowanie, poziomy szczegółowości wybierane według odległości, komórki, osobne traktowanie cieni, narzędzie robiące uproszczone poziomy drzew. Jeszcze nie: płynne przejścia między poziomami, płaskie obrazki dla najdalszych drzew (impostory), wiatr, rozmieszczanie roślin regułami terenu.
+**Stan:** instancjonowanie, poziomy szczegółowości wybierane według odległości, komórki, osobne traktowanie cieni, impostory jako najdalszy poziom, płynne przejścia między poziomami, narzędzia do prostszych poziomów drzew i do impostorów. Jeszcze nie: wiatr, rozmieszczanie roślin regułami terenu, rośliny tworzone w locie wokół gracza.
 
 ## Pojęcia
 
@@ -12,6 +12,8 @@ Nagłówki: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`). 
 - **Poziom szczegółowości** (LOD): ta sama roślina jako kilka siatek, od pełnej z bliska po proste z daleka.
 - **Komórka**: kwadratowy kawałek świata (domyślnie 32 m), który trzyma swoje rośliny. Całe komórki można pominąć albo przekazać bez patrzenia na pojedyncze rośliny.
 - **Kartka liści**: mały płaski kawałek ze zdjęciem gałązki, wycinany przezroczystością. Korony drzew składają się z tysięcy takich kartek.
+- **Impostor**: zastępca modelu widzianego z daleka: jedna płaska karta zawsze zwrócona do kamery, pokazująca zdjęcia modelu zrobione wcześniej z wielu kierunków.
+- **Przenikanie kropkowane** (dithered fade): dwa poziomy rośliny rysowane naraz, każdy zostawia piksele, które drugi pomija, według stałego wzoru, więc jeden rozpływa się w drugim zamiast przeskakiwać.
 
 ## Instancjonowanie w rendererze
 
@@ -43,6 +45,31 @@ vegetation.Draw(renderer, camera);
 - `SetDistanceScale(detail, shadow)` mnoży wszystkie odległości poziomów i odległości cieni, do strojenia suwakami.
 - `GetStats()`: rośliny na poziom, pominięte komórki, partie.
 - Siatki i tekstury należą do wywołującego; system trzyma tylko uchwyty i przekształcenia.
+- `VegetationSpecies::fade_width` (domyślnie 0,1): część odległości każdego poziomu, na której roślina przechodzi w następny poziom, a za ostatnim w nic. Roślina w 66 m poziomu kończącego się na 70 m jest rysowana na obu poziomach. Przenikanie jedzie w ostatniej wartości macierzy każdej instancji (`[3][3]`, 1 w zwykłym przekształceniu): między 0 a 1 zostaje taka część pikseli kopii, między -1 a 0 taka część jest pomijana. Każdy shader wierzchołków przekazuje ją dalej, a shadery pikseli przebiegu sceny, cieni i głębi ją stosują (`KeptByFade` w `common.hlsli`), więc cienie i mgła idą za nią. Bez czasowego wygładzania krawędzi wzór może być widoczny jako drobne ziarno na nielicznych roślinach w trakcie przejścia.
+- Poziom z ustawionym `impostor` jest rysowany jako ten impostor zamiast swoich części (`DrawImpostorInstances`). Impostory nie rzucają cieni; jeśli poziomem cienia byłby impostor, cień rzuca ostatni poziom z siatkami.
+
+## Impostory
+
+```cpp
+poligon::Impostor pictures;
+renderer.BakeImpostor(parts, part_count, 8, 128, pictures);   // 8 x 8 kierunków, po 128 px
+poligon::SaveImpostor("pine.impostor", pictures);           // albo LoadImpostor
+const poligon::ImpostorHandle pine_card = renderer.CreateImpostor(pictures);
+pine.levels.push_back({{}, 1700.0f});                       // poziom rysowany do 1700 m ...
+pine.levels.back().impostor = pine_card;                    // ... jako impostor
+```
+
+- `BakeImpostor` fotografuje model naszym własnym rendererem, bez perspektywy, z 8 × 8 kierunków rozłożonych po półkuli nad nim (układ „półoktaedryczny”: środek siatki patrzy prosto w dół, jej brzeg od horyzontu). Każde zdjęcie zawiera to, czym jest powierzchnia, a nie jak jest oświetlona: kolor z pokryciem i kierunek, w który zwrócony jest każdy piksel. W grze impostor jest oświetlany przez `lighting.hlsli` jak wszystko inne, więc idzie za słońcem, niebem i mgłą.
+- Rysowanie: jedna karta na instancję, wielkości modelu, zwrócona do kamery. Dla każdego piksela czytane są cztery klatki najbliższe kierunkowi patrzenia (każda w punkcie, w którym piksel karty pada na płaszczyznę zdjęcia tej klatki) i mieszane według tego, jak blisko jest każdy kierunek. Z boku i ze wzgórza obraz zmienia się płynnie, gdy kamera się porusza.
+- Instancja może być obrócona wokół pionu i równo przeskalowana; wypalone normalne obracają się razem z nią.
+- Pliki: `NAZWA.impostor` (klatki, środek, promień jako tekst), `NAZWA_color.png`, `NAZWA_normal.png` (`poligon/impostor.h`).
+- `impostor_baker MODEL WYJŚCIE.impostor [--frames N] [--size PIKSELE] [--keep-origin]` wypala jeden plik modelu. Stopa modelu trafia do początku układu, tak jak w `forest_scene`; `--keep-origin` zostawia ją w bok tam, gdzie ma ją plik (generowane drzewa mają tam pień).
+- Jeden impostor z 8 × 8 klatek po 128 px to dwa obrazy 1024 × 1024, 11 MB na karcie graficznej z mipmapami; kompresja tekstur zmniejszy to później.
+- Ograniczenia: karta jest płaska, więc jej obrys nie zmienia się, gdy kamera przesunie się tylko trochę bliżej albo w bok, i nie zasłania ziemi za sobą tak jak pełna korona; przeznaczona na 100 m i dalej. Kula modelu jest pokazana w pełnym rozmiarze w każdej klatce, więc wysokie, smukłe drzewo wypełnia tylko część klatki.
+
+## W forest_scene
+
+Sosna, świerk, brzoza i dąb mają impostory w `poligon-assets/impostors` (wypalone przez `impostor_baker ... --keep-origin`). Ich poziomy: pełna siatka do 28 m, średnia do 70 m, niska do 150 m, impostor do 1700 m, każdy z przejściem na ostatniej dziesiątej części. Duże drzewa stoją teraz do 1200 m od startu (około 55000; podszyt zostaje w promieniu 250 m, fizyka 500 m), a otwarty klin na wschód od startu kończy się na 400 m, więc daleki las widać w panoramie. Zmierzone (bez okna, release, 150 klatek): 7,7 ms ze skraju wzgórza z lasem po horyzont (9,9 ms z siatkami do 450 m i niczym dalej), 13,1 ms w lesie.
 
 ## Drzewa forest_scene
 
@@ -94,8 +121,6 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚ
 
 ## Znane ograniczenia
 
-- Roślina zmienia poziom w jednej klatce; nie ma jeszcze płynnego przejścia, więc zmianę widać w marszu.
-- Jeszcze bez impostorów: najdalszy poziom to wciąż siatka.
 - Bez wiatru.
 - Rośliny rozmieszcza wywołujący; reguły zależne od wysokości terenu, nachylenia i rodzaju podłoża przyjdą razem z terenem.
 - Odrzucanie działa na procesorze, roślina po roślinie. Wystarcza dla dziesiątek tysięcy roślin; kilometr kwadratowy gęstego poszycia będzie go potrzebował na karcie graficznej.

@@ -21,6 +21,7 @@ poligon_add_example(model ${CMAKE_BINARY_DIR}/test_output)
 poligon_add_example(animation ${CMAKE_BINARY_DIR}/test_output/example_animation.png)
 poligon_add_example(terrain ${CMAKE_BINARY_DIR}/test_output/example_terrain.png)
 poligon_add_example(vegetation ${CMAKE_BINARY_DIR}/test_output/example_vegetation.png)
+poligon_add_example(impostor ${CMAKE_BINARY_DIR}/test_output/example_impostor.png)
 poligon_add_example(physics ${CMAKE_BINARY_DIR}/test_output/example_physics.png)
 poligon_add_example(debug_ui --headless ${CMAKE_BINARY_DIR}/test_output/example_render_settings.txt
                     ${CMAKE_BINARY_DIR}/test_output/example_debug_ui.png)

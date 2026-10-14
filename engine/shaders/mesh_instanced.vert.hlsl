@@ -4,7 +4,9 @@
 //
 // The transforms of every instance drawn this frame sit in one buffer; `uv_scale.z` says
 // where this call's instances start in it. The buffer is read as plain bytes, 64 per matrix
-// (four columns of four floats), for the reason given in mesh_skinned.vert.hlsl.
+// (four columns of four floats), for the reason given in mesh_skinned.vert.hlsl. The last
+// float of each matrix, 1 in an ordinary transform, carries the instance's fade between
+// levels of detail (see KeptByFade in common.hlsli).
 
 [[vk::binding(0, 0)]]
 ByteAddressBuffer instance_matrices : register(t0, space0);
@@ -32,6 +34,7 @@ struct VertexOutput {
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
+    float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
 };
 
 VertexOutput main(VertexInput input) {
@@ -39,15 +42,16 @@ VertexOutput main(VertexInput input) {
     float3 column0 = asfloat(instance_matrices.Load3(address));
     float3 column1 = asfloat(instance_matrices.Load3(address + 16));
     float3 column2 = asfloat(instance_matrices.Load3(address + 32));
-    float3 column3 = asfloat(instance_matrices.Load3(address + 48));
+    float4 column3 = asfloat(instance_matrices.Load4(address + 48));
 
     VertexOutput output;
-    float3 world_position = column0 * input.position.x + column1 * input.position.y + column2 * input.position.z + column3;
+    float3 world_position = column0 * input.position.x + column1 * input.position.y + column2 * input.position.z + column3.xyz;
     output.clip_position = mul(view_projection, float4(world_position, 1.0));
     // Correct for rotation and for scaling that is the same along all axes.
     output.world_normal = column0 * input.normal.x + column1 * input.normal.y + column2 * input.normal.z;
     output.color = object_color;
     output.uv = input.uv * uv_scale.xy;
     output.world_position = world_position;
+    output.fade = column3.w;
     return output;
 }

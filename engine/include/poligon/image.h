@@ -39,4 +39,9 @@ bool LoadImageFromMemory(const void* data, size_t size, Image& image, std::strin
 // Writes an image as PNG. Returns false if the image is empty or the file cannot be written.
 bool SaveImageToPng(const char* path, const Image& image);
 
+// Gives fully transparent pixels the average color of their visible neighbors, reaching one
+// pixel further per pass. A texture is filtered across the edge of what it shows; without
+// this, cut-out edges (leaves) would get a dark rim from the color hidden under alpha 0.
+void BleedColorsIntoTransparentPixels(Image& image, int passes);
+
 } // namespace poligon

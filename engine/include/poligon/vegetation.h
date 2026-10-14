@@ -21,6 +21,11 @@ namespace poligon {
 //   skipped without looking at its plants, and a cell that lies wholly within one level's
 //   range is handed over in one piece.
 // - Shadows can use a simpler level than the picture, and stop at a shorter distance.
+// - The farthest level can be an impostor: one card showing baked pictures of the plant
+//   (Renderer::BakeImpostor), so that a forest reaches the horizon.
+// - A plant does not jump from one level to the next: over the last stretch of a level's
+//   range both levels are drawn, one dissolving pixel by pixel as the other appears
+//   ("dithered fade", see Renderer::DrawMeshInstances). After the last level it dissolves away.
 //
 // Plants are placed once (AddInstance) and stay; Draw is called every frame.
 
@@ -31,9 +36,13 @@ struct VegetationPart {
     glm::mat4 local{1.0f};
 };
 
-// How a plant looks within a range of distances.
+// How a plant looks within a range of distances: its meshes, or an impostor.
 struct VegetationLevel {
     std::vector<VegetationPart> parts;
+    // When set, the level is drawn as this impostor instead of `parts`. Impostors cast no
+    // shadows; a species whose shadow level would be an impostor uses its last mesh level
+    // for shadows instead.
+    ImpostorHandle impostor;
     // This level is used up to this distance from the camera (meters). Levels are listed
     // nearest first; beyond the last level's distance the plant is not drawn at all.
     float max_distance = 0.0f;
@@ -46,17 +55,24 @@ struct VegetationSpecies {
     // Shadows are drawn with a level this many steps simpler than the picture (0 = the
     // same). Shadows hide most detail, so 1 is usually invisible and saves a lot.
     int shadow_level_bias = 0;
+    // Share of each level's distance over which the plant fades into the next level (into
+    // nothing after the last one). 0.1 with a level ending at 70 m: from 63 m to 70 m.
+    // 0 = the level changes at once.
+    float fade_width = 0.1f;
 };
 
 // What the last Draw did.
 struct VegetationStats {
     int instances_total = 0;
     // Plants handed to the renderer, per level (index 0 = most detailed, up to 8 levels).
+    // A plant fading between two levels counts in both.
     int instances_per_level[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    // Plants that were fading between levels (or out after the last one).
+    int instances_fading = 0;
     // Cells looked at, and cells skipped whole because nothing in them was within range.
     int cells_total = 0;
     int cells_skipped = 0;
-    // Renderer::DrawMeshInstances calls made.
+    // Renderer::DrawMeshInstances and DrawImpostorInstances calls made.
     int batches = 0;
 };
 

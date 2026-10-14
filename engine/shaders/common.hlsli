@@ -31,3 +31,48 @@ float3 ViewPosition(float2 uv, float depth, float4 projection_info) {
 float InterleavedGradientNoise(float2 pixel) {
     return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
 }
+
+// Fading between two levels of detail: while a plant changes level, both levels are drawn
+// and each keeps the pixels the other drops, by a fixed per-pixel threshold ("dithered
+// fade"). `fade` comes with each instance: 1 = drawn whole; between 0 and 1 = fading in,
+// that share of pixels kept; between -1 and 0 = fading out, that share of pixels dropped.
+bool KeptByFade(float fade, float2 pixel) {
+    if (fade >= 1.0) {
+        return true;
+    }
+    float threshold = InterleavedGradientNoise(pixel);
+    return fade > 0.0 ? threshold < fade : threshold >= -fade;
+}
+
+// Linear color to the sRGB encoding 8-bit color images use.
+float3 LinearToSrgb(float3 color) {
+    float3 low = color * 12.92;
+    float3 high = 1.055 * pow(max(color, 0.0), 1.0 / 2.4) - 0.055;
+    return lerp(high, low, step(color, 0.0031308));
+}
+
+// A normal map sample (`map`, already turned from 0..1 into -1..1) applied to a surface
+// normal, in world space. The tangent directions are derived from how position and texture
+// coordinates change across the pixel, so meshes need no stored tangents.
+float3 ApplyNormalMapSample(float3 map, float3 normal, float3 world_position, float2 uv) {
+    // Normal maps follow the OpenGL convention: red tilts the surface along u, green towards
+    // the top of the image. The frame built below comes out mirrored in our screen space
+    // (y runs down the screen), and v runs down the image; together that means the red
+    // direction must be negated and the green one kept. tests/scene_render_test.cpp checks both.
+    map.x = -map.x;
+
+    float3 dp1 = ddx(world_position);
+    float3 dp2 = ddy(world_position);
+    float2 duv1 = ddx(uv);
+    float2 duv2 = ddy(uv);
+    float3 dp2_perp = cross(dp2, normal);
+    float3 dp1_perp = cross(normal, dp1);
+    float3 tangent = dp2_perp * duv1.x + dp1_perp * duv2.x;
+    float3 bitangent = dp2_perp * duv1.y + dp1_perp * duv2.y;
+    float scale = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    if (scale <= 0.0) {
+        return normal;
+    }
+    float inverse_length = rsqrt(scale);
+    return normalize(tangent * (map.x * inverse_length) + bitangent * (map.y * inverse_length) + normal * map.z);
+}

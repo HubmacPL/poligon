@@ -24,6 +24,7 @@ add_library(poligon_engine STATIC
   src/game_loop.cpp
   src/height_map.cpp
   src/image.cpp
+  src/impostor.cpp
   src/input.cpp
   src/model.cpp
   src/stb_image_impl.cpp
@@ -92,6 +93,7 @@ function(poligon_embed_shader source stage symbol header)
     COMMAND ${CMAKE_COMMAND} -DINPUT=${spirv} -DOUTPUT=${output_dir}/${header}_spirv.h -DSYMBOL=${symbol}Spirv -P ${embed}
     # Every shader may include the shared .hlsli files, so a change there rebuilds all of them.
     DEPENDS ${input} ${embed} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting.hlsli
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.hlsli
     COMMENT "Compiling shader ${source}"
     VERBATIM)
   target_sources(poligon_engine PRIVATE ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h)
@@ -115,3 +117,7 @@ poligon_embed_shader(shaders/fog_composite.frag.hlsl fragment kFogCompositeFrag 
 poligon_embed_shader(shaders/bloom_down.frag.hlsl fragment kBloomDownFrag bloom_down_frag)
 poligon_embed_shader(shaders/bloom_up.frag.hlsl fragment kBloomUpFrag bloom_up_frag)
 poligon_embed_shader(shaders/luminance.frag.hlsl fragment kLuminanceFrag luminance_frag)
+poligon_embed_shader(shaders/impostor.vert.hlsl vertex kImpostorVert impostor_vert)
+poligon_embed_shader(shaders/impostor.frag.hlsl fragment kImpostorFrag impostor_frag)
+poligon_embed_shader(shaders/impostor_depth.frag.hlsl fragment kImpostorDepthFrag impostor_depth_frag)
+poligon_embed_shader(shaders/impostor_bake.frag.hlsl fragment kImpostorBakeFrag impostor_bake_frag)

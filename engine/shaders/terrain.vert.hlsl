@@ -49,6 +49,7 @@ struct VertexOutput {
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
+    float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
 };
 
 VertexOutput main(VertexInput input) {
@@ -72,5 +73,6 @@ VertexOutput main(VertexInput input) {
     output.color = object_color;
     output.uv = point_position;
     output.world_position = world_position;
+    output.fade = 1.0;
     return output;
 }

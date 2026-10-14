@@ -41,37 +41,14 @@ struct FragmentInput {
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
+    float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
     bool is_front_face : SV_IsFrontFace;
 };
 
-// Normal from the normal map, turned into world space. The tangent directions are derived
-// from how position and texture coordinates change across the pixel, so meshes need no
-// stored tangents.
-float3 ApplyNormalMap(float3 normal, float3 world_position, float2 uv) {
-    float3 map = normal_texture.Sample(normal_sampler, uv).xyz * 2.0 - 1.0;
-    // Normal maps follow the OpenGL convention: red tilts the surface along u, green towards
-    // the top of the image. The frame built below comes out mirrored in our screen space
-    // (y runs down the screen), and v runs down the image; together that means the red
-    // direction must be negated and the green one kept. tests/scene_render_test.cpp checks both.
-    map.x = -map.x;
-
-    float3 dp1 = ddx(world_position);
-    float3 dp2 = ddy(world_position);
-    float2 duv1 = ddx(uv);
-    float2 duv2 = ddy(uv);
-    float3 dp2_perp = cross(dp2, normal);
-    float3 dp1_perp = cross(normal, dp1);
-    float3 tangent = dp2_perp * duv1.x + dp1_perp * duv2.x;
-    float3 bitangent = dp2_perp * duv1.y + dp1_perp * duv2.y;
-    float scale = max(dot(tangent, tangent), dot(bitangent, bitangent));
-    if (scale <= 0.0) {
-        return normal;
-    }
-    float inverse_length = rsqrt(scale);
-    return normalize(tangent * (map.x * inverse_length) + bitangent * (map.y * inverse_length) + normal * map.z);
-}
-
 float4 main(FragmentInput input) : SV_Target0 {
+    if (!KeptByFade(input.fade, input.clip_position.xy)) {
+        discard;
+    }
     // Color textures are stored sRGB-encoded; the texture format makes this sample linear.
     float4 texel = base_texture.Sample(base_sampler, input.uv);
     float alpha = texel.a * input.color.a;
@@ -109,7 +86,8 @@ float4 main(FragmentInput input) : SV_Target0 {
     surface.surface_normal = normalize(input.world_normal) * (input.is_front_face ? 1.0 : -1.0);
     surface.normal = surface.surface_normal;
     if (material_flags.x > 0.5) {
-        surface.normal = ApplyNormalMap(surface.surface_normal, input.world_position, input.uv);
+        float3 map = normal_texture.Sample(normal_sampler, input.uv).xyz * 2.0 - 1.0;
+        surface.normal = ApplyNormalMapSample(map, surface.surface_normal, input.world_position, input.uv);
     }
     surface.world_position = input.world_position;
     surface.pixel = input.clip_position.xy;

@@ -1,0 +1,2 @@
+add_executable(impostor_baker main.cpp)
+target_link_libraries(impostor_baker PRIVATE poligon_engine poligon_build_options)

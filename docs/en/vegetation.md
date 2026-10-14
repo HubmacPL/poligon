@@ -2,9 +2,9 @@
 
 Drawing plants, rocks and other things that stand around in great numbers: instancing, levels of detail, cells.
 
-Headers: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`). Example: `examples/vegetation`. Tests: `tests/vegetation_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
+Headers: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`), `poligon/impostor.h`. Tool: `impostor_baker`. Examples: `examples/vegetation`, `examples/impostor`. Tests: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
 
-**State: the foundation.** Done: instancing, levels of detail chosen by distance, cells, separate handling of shadows, a tool that makes simpler levels of trees. Not yet: fading between levels, flat pictures for the farthest trees (impostors), wind, placing plants by rules of the terrain.
+**State:** instancing, levels of detail chosen by distance, cells, separate handling of shadows, impostors for the farthest level, fading between levels, tools for simpler levels of trees and for impostors. Not yet: wind, placing plants by rules of the terrain, plants made on the fly around the player.
 
 ## Terms
 
@@ -12,6 +12,8 @@ Headers: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`). Exa
 - **Level of detail** (LOD): the same plant as several meshes, from the full one for up close to simple ones for far away.
 - **Cell**: a square piece of the world (32 m by default) that holds its own plants. Whole cells can be skipped or handed over without looking at single plants.
 - **Leaf card**: a small flat piece with a picture of a twig, cut out by transparency. Tree crowns are made of thousands of them.
+- **Impostor**: a far-away stand-in for a model: one flat card that always faces the camera and shows pictures of the model taken beforehand from many directions.
+- **Dithered fade**: two levels of a plant drawn at once, each keeping the pixels the other drops by a fixed per-pixel pattern, so one dissolves into the other instead of jumping.
 
 ## Instancing in the renderer
 
@@ -43,6 +45,31 @@ vegetation.Draw(renderer, camera);
 - `SetDistanceScale(detail, shadow)` multiplies all level distances and shadow distances, for tuning with sliders.
 - `GetStats()`: plants per level, cells skipped, batches.
 - Meshes and textures belong to the caller; the system only holds handles and transforms.
+- `VegetationSpecies::fade_width` (default 0.1): the share of each level's distance over which the plant fades into the next level, and into nothing after the last. A plant at 66 m of a level ending at 70 m is drawn at both levels. The fade travels in the last value of each instance matrix (`[3][3]`, 1 in an ordinary transform): between 0 and 1 that share of the copy's pixels is kept, between -1 and 0 that share is dropped. Every vertex shader passes it on and the fragment shaders of the scene, shadow and depth passes apply it (`KeptByFade` in `common.hlsli`), so shadows and fog follow. Without temporal anti-aliasing the pattern can be seen as fine grain on the few plants inside a fade.
+- A level with `impostor` set is drawn as that impostor instead of its parts (`DrawImpostorInstances`). Impostors cast no shadows; if the shadow level would be an impostor, the last mesh level casts the shadow.
+
+## Impostors
+
+```cpp
+poligon::Impostor pictures;
+renderer.BakeImpostor(parts, part_count, 8, 128, pictures);   // 8 x 8 directions, 128 px each
+poligon::SaveImpostor("pine.impostor", pictures);           // or LoadImpostor
+const poligon::ImpostorHandle pine_card = renderer.CreateImpostor(pictures);
+pine.levels.push_back({{}, 1700.0f});                       // a level drawn up to 1700 m ...
+pine.levels.back().impostor = pine_card;                    // ... as the impostor
+```
+
+- `BakeImpostor` photographs the model with our own renderer, without perspective, from 8 x 8 directions spread over the half sphere above it ("hemi-octahedral" layout: the middle of the grid looks straight down, its edge from the horizon). Each picture holds what the surface is, not how it is lit: the base color with coverage, and the direction each pixel faces. In the game the impostor is lit by `lighting.hlsli` like everything else, so it follows the sun, the sky and the fog.
+- Drawing: one card per instance, the size of the model, turned to the camera. For each pixel the four frames nearest to the direction of view are read (each at the point where the card pixel falls on that frame's picture plane) and blended by how near each direction is. Viewed from the side or from a hill the picture changes smoothly as the camera moves around.
+- The instance may turn about the vertical and be scaled evenly; the baked normals turn with it.
+- Files: `NAME.impostor` (frames, center, radius as text), `NAME_color.png`, `NAME_normal.png` (`poligon/impostor.h`).
+- `impostor_baker MODEL OUT.impostor [--frames N] [--size PIXELS] [--keep-origin]` bakes one model file. The foot of the model is put at the origin as `forest_scene` does; `--keep-origin` keeps it where the file has it sideways (generated trees have their trunk there).
+- One impostor of 8 x 8 frames of 128 px is two 1024 x 1024 images, 11 MB on the graphics card with mipmaps; compressed textures will cut that later.
+- Limits: a card is flat, so its outline does not change when the camera moves only a little closer or sideways, and it does not hide the ground behind it as a solid crown would; meant for 100 m and more. The model's sphere is pictured at its full size in every frame, so a tall thin tree fills only part of each frame.
+
+## In forest_scene
+
+Pine, spruce, birch and oak have impostors in `poligon-assets/impostors` (baked with `impostor_baker ... --keep-origin`). Their levels: full mesh to 28 m, medium to 70 m, low to 150 m, impostor to 1700 m, each fading over the last tenth. Big trees now stand out to 1200 m from the start (about 55000 of them; undergrowth stays within 250 m, physics within 500 m), and the open wedge east of the start ends at 400 m, so the far forest shows in the panorama. Measured (headless, release, 150 frames): 7.7 ms from the brow of the hill with the forest to the horizon (9.9 ms with meshes out to 450 m and nothing beyond), 13.1 ms inside the forest.
 
 ## The trees of forest_scene
 
@@ -94,8 +121,6 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- INPUT OUTPUT.g
 
 ## Known limits
 
-- A plant changes level in one frame; there is no fade yet, so the change can be seen when walking.
-- No impostors yet: the farthest level is still a mesh.
 - No wind.
 - Plants are placed by the caller; rules that follow terrain height, slope and ground type come with the terrain.
 - Culling runs on the processor, plant by plant. Fine for tens of thousands of plants; a square kilometer of dense undergrowth will need it on the graphics card.

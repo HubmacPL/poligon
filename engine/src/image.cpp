@@ -148,4 +148,56 @@ bool SaveImageToPng(const char* path, const Image& image) {
     return stbi_write_png(path, image.width, image.height, 4, image.pixels.data(), image.width * 4) != 0;
 }
 
+// Spreads the colors of visible pixels into transparent ones, one pixel further per pass.
+void BleedColorsIntoTransparentPixels(Image& image, int passes) {
+    const int width = image.width;
+    const int height = image.height;
+    std::vector<unsigned char> filled(static_cast<size_t>(width) * static_cast<size_t>(height));
+    for (size_t i = 0; i < filled.size(); ++i) {
+        filled[i] = image.pixels[i * 4 + 3] > 0 ? 1 : 0;
+    }
+
+    for (int pass = 0; pass < passes; ++pass) {
+        std::vector<unsigned char> filled_next = filled;
+        bool changed = false;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+                if (filled[index]) {
+                    continue;
+                }
+                int sum[3] = {0, 0, 0};
+                int count = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = x + dx;
+                        const int ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+                            continue;
+                        }
+                        const size_t neighbor = static_cast<size_t>(ny) * static_cast<size_t>(width) + static_cast<size_t>(nx);
+                        if (filled[neighbor]) {
+                            sum[0] += image.pixels[neighbor * 4 + 0];
+                            sum[1] += image.pixels[neighbor * 4 + 1];
+                            sum[2] += image.pixels[neighbor * 4 + 2];
+                            ++count;
+                        }
+                    }
+                }
+                if (count > 0) {
+                    image.pixels[index * 4 + 0] = static_cast<std::uint8_t>(sum[0] / count);
+                    image.pixels[index * 4 + 1] = static_cast<std::uint8_t>(sum[1] / count);
+                    image.pixels[index * 4 + 2] = static_cast<std::uint8_t>(sum[2] / count);
+                    filled_next[index] = 1;
+                    changed = true;
+                }
+            }
+        }
+        filled = filled_next;
+        if (!changed) {
+            break;
+        }
+    }
+}
+
 } // namespace poligon
