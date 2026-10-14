@@ -7,6 +7,9 @@
 //   terrain_tool rescale IN.heights OUT.heights HORIZONTAL VERTICAL
 //       Turns real land into game land: HORIZONTAL 0.5 halves all distances, VERTICAL
 //       multiplies heights, and the lowest point is moved to height 0.
+//   terrain_tool crop IN.heights OUT.heights CENTER_X CENTER_Z SIZE
+//       Cuts out a square of SIZE meters whose middle is CENTER_X, CENTER_Z (meters from
+//       the map's north-west corner).
 //   terrain_tool preview IN.heights OUT.png
 //       Writes a picture of the map as if lit from the north-west, at most 1024 pixels wide.
 //   terrain_tool info IN.heights
@@ -118,6 +121,27 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (command == "crop" && argc == 7) {
+        poligon::HeightMap map;
+        if (!poligon::LoadHeightMap(argv[2], map, error)) {
+            return Fail(error);
+        }
+        const float size = std::strtof(argv[6], nullptr);
+        const int points = static_cast<int>(size / map.spacing);
+        const int ix = static_cast<int>((std::strtof(argv[4], nullptr) - size * 0.5f) / map.spacing);
+        const int iz = static_cast<int>((std::strtof(argv[5], nullptr) - size * 0.5f) / map.spacing);
+        if (points < 2 || ix < 0 || iz < 0 || ix + points > map.width || iz + points > map.depth) {
+            return Fail("the square does not lie inside the map");
+        }
+        const poligon::HeightMap part = poligon::CropHeightMap(map, ix, iz, points, points);
+        if (!poligon::SaveHeightMap(argv[3], part)) {
+            return Fail(std::string("cannot write ") + argv[3]);
+        }
+        PrintInfo(part);
+        std::printf("saved %s\n", argv[3]);
+        return 0;
+    }
+
     if (command == "preview" && argc == 4) {
         poligon::HeightMap map;
         if (!poligon::LoadHeightMap(argv[2], map, error)) {
@@ -164,6 +188,7 @@ int main(int argc, char** argv) {
 
     std::fprintf(stderr, "usage: terrain_tool join OUT.heights SPACING COLUMNS ROWS FOLDER PREFIX\n"
                          "       terrain_tool rescale IN.heights OUT.heights HORIZONTAL VERTICAL\n"
+                         "       terrain_tool crop IN.heights OUT.heights CENTER_X CENTER_Z SIZE\n"
                          "       terrain_tool preview IN.heights OUT.png\n"
                          "       terrain_tool info IN.heights\n");
     return 2;

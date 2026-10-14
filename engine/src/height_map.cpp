@@ -335,6 +335,23 @@ void PasteHeightMap(HeightMap& map, const HeightMap& tile, int ix, int iz) {
     }
 }
 
+HeightMap CropHeightMap(const HeightMap& map, int ix, int iz, int width, int depth) {
+    if (ix < 0 || iz < 0 || width < 2 || depth < 2 || ix + width > map.width || iz + depth > map.depth) {
+        FatalError("CropHeightMap: the part must be at least 2 x 2 points and lie inside the map");
+    }
+    HeightMap part;
+    part.width = width;
+    part.depth = depth;
+    part.spacing = map.spacing;
+    part.heights.resize(static_cast<size_t>(width) * static_cast<size_t>(depth));
+    for (int row = 0; row < depth; ++row) {
+        std::memcpy(&part.heights[static_cast<size_t>(row) * static_cast<size_t>(width)],
+                    &map.heights[static_cast<size_t>(iz + row) * static_cast<size_t>(map.width) + static_cast<size_t>(ix)],
+                    static_cast<size_t>(width) * sizeof(float));
+    }
+    return part;
+}
+
 void RescaleHeightMap(HeightMap& map, float horizontal_scale, float vertical_scale) {
     if (horizontal_scale <= 0.0f || vertical_scale <= 0.0f) {
         FatalError("RescaleHeightMap: the scales must be above zero");

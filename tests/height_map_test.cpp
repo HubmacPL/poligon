@@ -182,6 +182,12 @@ int main(int argc, char** argv) {
         poligon::PasteHeightMap(whole, tile, 5, 3);
         Expect(whole.heights[3 * 6 + 5] == 110.0f, "a tile hanging over the edge is cut off, not an error");
 
+        // A part of a map keeps the heights and the spacing.
+        const poligon::HeightMap part = poligon::CropHeightMap(slope, 2, 1, 3, 2);
+        Expect(part.width == 3 && part.depth == 2 && Near(part.spacing, 2.0f) && Near(part.heights[0], 4.0f) &&
+                   Near(part.heights[5], 8.0f),
+               "a cut-out part holds the heights of its place in the map");
+
         // Halving distances and keeping heights doubles every slope; the lowest point goes to 0.
         const float slope_before = slope.GetSlopeDegrees(4.0f, 2.0f);
         poligon::HeightMap squeezed = slope;

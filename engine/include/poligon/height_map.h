@@ -65,4 +65,8 @@ void PasteHeightMap(HeightMap& map, const HeightMap& tile, int ix, int iz);
 // and the lowest point is moved to height 0. The number of points stays the same.
 void RescaleHeightMap(HeightMap& map, float horizontal_scale, float vertical_scale);
 
+// The part of a map that starts at point (ix, iz) and is `width` by `depth` points large.
+// The part must lie inside the map.
+HeightMap CropHeightMap(const HeightMap& map, int ix, int iz, int width, int depth);
+
 } // namespace poligon
