@@ -35,7 +35,9 @@ In `game/CMakeLists.txt`:
 - `toy_replay_frame_matches`: the requirement with tolerance.
 - `toy_replay_difference_is_detected`: a run with a recording whose second jump is one tick later must be found different, and the tool must name tick 151. This proves that the test can see a difference and locates it correctly.
 
-Related: `tests/ecs_order_probe.cpp` (flecs repeatability), `game/tests/toy_world_test.cpp` (two worlds in one process).
+Related: `tests/ecs_order_probe.cpp` (flecs repeatability), `game/tests/toy_world_test.cpp` (two worlds in one process), `tests/physics_test.cpp` (the physics world alone).
+
+The toy game is simulated by the physics engine, so all of the tests above cover it too; see [physics.md](physics.md) for what keeps physics repeatable.
 
 ## What breaks determinism
 

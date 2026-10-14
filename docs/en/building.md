@@ -41,6 +41,7 @@ Output goes to `build/<preset>/`; all programs and DLLs to `build/<preset>/bin/`
 - Before adding a dependency: look for it (library-first rule), check its license at the source and get the author's approval.
 - `imgui` with the features `sdl3-binding` and `sdlgpu3-binding` (MIT; pulls in nothing but SDL3): the debug windows.
 - `ozz-animation` 0.17.0 (MIT; depends on nothing but the C++ standard library): skeletal animation. It is not in the vcpkg catalog, so the repository carries its own small port in `ports/ozz-animation` (registered in `vcpkg-configuration.json`), pinned to the release by version and checksum. Only the libraries are built, as DLLs (as static libraries they cannot be linked into the AddressSanitizer build): no tools, importers or samples.
+- `joltphysics` 5.6.0 (MIT; depends on nothing but the C++ standard library): physics.
 - `assimp` (BSD-3; brings kubazip, pugixml and rapidjson under MIT, poly2tri under BSD-3, minizip and zlib under zlib, polyclipping and utfcpp under Boost; vcpkg also lists ISC for a bundled part).
 - `glm` (MIT or "Happy Bunny"; we use it under MIT).
 - `flecs` (MIT; contains pieces under BSD-2, MIT and one in the public domain).

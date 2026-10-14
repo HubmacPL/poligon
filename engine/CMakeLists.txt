@@ -8,6 +8,7 @@ find_package(glm CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(ozz-animation CONFIG REQUIRED)
+find_package(Jolt CONFIG REQUIRED)
 
 add_library(poligon_engine STATIC
   src/animation.cpp
@@ -24,6 +25,7 @@ add_library(poligon_engine STATIC
   src/input.cpp
   src/model.cpp
   src/stb_image_impl.cpp
+  src/physics.cpp
   src/platform.cpp
   src/render_settings.cpp
   src/renderer.cpp
@@ -40,6 +42,8 @@ target_link_libraries(poligon_engine PRIVATE assimp::assimp)
 target_link_libraries(poligon_engine PUBLIC $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
 # ozz-animation samples and blends animation clips (poligon/animation.h). Its types stay inside animation.cpp.
 target_link_libraries(poligon_engine PRIVATE ozz::animation_offline ozz::animation ozz::base)
+# Jolt Physics simulates bodies and characters (poligon/physics.h). Its types stay inside physics.cpp.
+target_link_libraries(poligon_engine PRIVATE Jolt::Jolt)
 # Dear ImGui draws the debug windows (poligon/debug_ui.h). PUBLIC: games and tools call ImGui:: directly.
 target_link_libraries(poligon_engine PUBLIC imgui::imgui)
 # GLM is PUBLIC for the same reason (poligon/math.h). Its configuration must be identical in

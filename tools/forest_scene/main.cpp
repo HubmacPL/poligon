@@ -2,15 +2,18 @@
 // to walk through and look at. It exists to judge the renderer on a real scene and to
 // measure how long a frame takes.
 //
-// Usage: forest_scene [X Z TURN TILT] [standard Poligon options]
+// Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
 //   X Z         where to stand, in meters from the middle of the forest (default 0 0)
 //   TURN TILT   where to look, in degrees (default: towards the sun, level)
+//   collision   the word itself: start with the collision shapes shown
 //   --render-settings FILE   the look to start with, as saved from the settings window
 //
 // Mouse: hold the left button and move to look around.
 // Keys:  W/S walk, A/D step sideways, Left/Right turn, Up/Down look up and down, hold
-//        Left Shift to run. F switches between walking and flying (then E/Q rise and sink).
+//        Left Shift to run, Space to jump. F switches between walking and flying (then E/Q
+//        rise and sink). T throws a crate, B shows the collision shapes as colored boxes.
 //        Tab hides and shows the debug windows.
+// Walking is done by the physics world: trunks, rocks and stumps block the way.
 // The "Render settings" window changes the look while the program runs; its Save button
 // writes forest_render_settings.txt into the poligon-assets folder.
 // Example for the agent:
@@ -35,6 +38,7 @@
 #include "poligon/game_loop.h"
 #include "poligon/input.h"
 #include "poligon/model.h"
+#include "poligon/physics.h"
 #include "poligon/platform.h"
 #include "poligon/render_settings.h"
 #include "poligon/renderer.h"
@@ -44,6 +48,7 @@ namespace {
 constexpr float kForestHalfSize = 70.0f;   // trees stand within this distance of the middle
 constexpr float kGroundHalfSize = 150.0f;  // the ground reaches further, to the fog
 constexpr float kEyeHeight = 1.7f;
+constexpr float kCrateSize = 0.6f;
 // Small plants are not drawn beyond this distance; from there they are a few pixels.
 constexpr float kSmallPlantDistance = 45.0f;
 
@@ -83,6 +88,15 @@ struct Piece {
 struct Variant {
     std::vector<Piece> pieces;
     float height = 0.0f;
+    // Half of the variant's width along x and z, before scaling.
+    glm::vec2 half_width{0.0f};
+};
+
+// What stands in the way of the player and of thrown crates.
+enum class Collision {
+    None,   // plants: walked through
+    Trunk,  // trees: an upright cylinder where the trunk is; the crown does not block
+    Block,  // rocks, stumps, fallen trunks: a box around the whole thing
 };
 
 // The variants of one model file. Several downloaded models hold a row of different
@@ -90,6 +104,9 @@ struct Variant {
 struct Kind {
     std::vector<Variant> variants;
     bool is_small = false;
+    Collision collision = Collision::None;
+    // For Collision::Trunk: radius of the trunk before scaling.
+    float trunk_radius = 0.3f;
 };
 
 struct Placement {
@@ -119,6 +136,9 @@ struct ForestActions {
     poligon::InputAction rise;
     poligon::InputAction toggle_fly;
     poligon::InputAction toggle_windows;
+    poligon::InputAction jump;
+    poligon::InputAction throw_crate;
+    poligon::InputAction toggle_collision_view;
     poligon::InputAction drag_x;
     poligon::InputAction drag_y;
     poligon::InputAction drag_hold;
@@ -134,6 +154,9 @@ ForestActions SetUpInput(poligon::Input& input) {
     actions.rise = input.AddAction("rise");
     actions.toggle_fly = input.AddAction("toggle_fly");
     actions.toggle_windows = input.AddAction("toggle_windows");
+    actions.jump = input.AddAction("jump");
+    actions.throw_crate = input.AddAction("throw_crate");
+    actions.toggle_collision_view = input.AddAction("toggle_collision_view");
     actions.drag_x = input.AddAction("drag_x");
     actions.drag_y = input.AddAction("drag_y");
     actions.drag_hold = input.AddAction("drag_hold");
@@ -151,6 +174,9 @@ ForestActions SetUpInput(poligon::Input& input) {
     input.BindKey(actions.rise, poligon::Key::Q, -1.0f);
     input.BindKey(actions.toggle_fly, poligon::Key::F);
     input.BindKey(actions.toggle_windows, poligon::Key::Tab);
+    input.BindKey(actions.jump, poligon::Key::Space);
+    input.BindKey(actions.throw_crate, poligon::Key::T);
+    input.BindKey(actions.toggle_collision_view, poligon::Key::B);
     input.BindMouseMotion(actions.drag_x, poligon::MouseAxis::X);
     input.BindMouseMotion(actions.drag_y, poligon::MouseAxis::Y);
     input.BindMouseButton(actions.drag_hold, poligon::MouseButton::Left);
@@ -208,9 +234,17 @@ public:
         LoadKinds();
         PlantForest();
         AddAnimals();
+        AddCrates();
+
+        poligon::CharacterSettings walker;
+        walker.position = {view[0], GroundHeight(view[0], view[1]), view[1]};
+        walker_ = physics_.AddCharacter(walker);
+        std::printf("forest_scene: %d physics bodies\n", physics_.GetBodyCount());
     }
 
     int GetLoadedKindCount() const { return loaded_kind_count_; }
+    void ShowCollision(bool show) { show_collision_ = show; }
+    glm::vec3 GetCameraPosition() const { return camera_.position; }
 
     void BeginFrame(poligon::GameLoop& loop) override {
         if (!poligon::ProcessPlatformEvents()) {
@@ -240,23 +274,36 @@ public:
         }
         camera_.Turn(yaw_change, pitch_change);
 
-        const float speed = (input_.IsDown(actions_.run) ? 10.0f : 2.5f) * delta;
+        if (input_.WasPressed(actions_.toggle_collision_view)) {
+            show_collision_ = !show_collision_;
+        }
+        if (input_.WasPressed(actions_.throw_crate)) {
+            ThrowCrate();
+        }
+
+        const float speed = input_.IsDown(actions_.run) ? 10.0f : 2.5f;
         const float forward = input_.GetValue(actions_.walk) * speed;
         const float right = input_.GetValue(actions_.strafe) * speed;
+        if (input_.WasPressed(actions_.toggle_fly) && !flying_) {
+            // Back to walking: the character continues from below where the camera is.
+            physics_.SetCharacterPosition(walker_, camera_.position - glm::vec3(0.0f, kEyeHeight, 0.0f));
+        }
         if (flying_) {
-            camera_.Move(forward, right, input_.GetValue(actions_.rise) * speed);
+            camera_.Move(forward * delta, right * delta, input_.GetValue(actions_.rise) * speed * delta);
+            physics_.SetCharacterInput(walker_, glm::vec3(0.0f), false);
         } else {
-            // Walking: move level whatever the view direction, and stay at eye height above the ground.
+            // Walking: the wish to move is level whatever the view direction; the physics
+            // world keeps the character on the ground and out of trunks and rocks.
             poligon::FreeCamera level = camera_;
             level.pitch_degrees = 0.0f;
+            level.position = glm::vec3(0.0f);
             level.Move(forward, right, 0.0f);
-            camera_.position = level.position;
+            physics_.SetCharacterInput(walker_, level.position, input_.WasPressed(actions_.jump));
         }
-        const float limit = kGroundHalfSize - 20.0f;
-        camera_.position.x = std::clamp(camera_.position.x, -limit, limit);
-        camera_.position.z = std::clamp(camera_.position.z, -limit, limit);
-        const float ground = GroundHeight(camera_.position.x, camera_.position.z);
-        camera_.position.y = flying_ ? std::max(camera_.position.y, ground + 0.3f) : ground + kEyeHeight;
+        physics_.Step(delta);
+        if (!flying_) {
+            camera_.position = physics_.GetCharacterPosition(walker_) + glm::vec3(0.0f, kEyeHeight, 0.0f);
+        }
     }
 
     void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
@@ -272,6 +319,32 @@ public:
             poligon::ShowFrameStatsWindow(renderer_);
         }
         renderer_.DrawMesh(ground_mesh_, glm::mat4(1.0f), ground_material_);
+        for (const poligon::BodyHandle crate : crates_) {
+            renderer_.DrawMesh(cube_mesh_, physics_.GetTransform(crate) * glm::scale(glm::mat4(1.0f), glm::vec3(kCrateSize)),
+                               crate_material_);
+        }
+        if (show_collision_) {
+            // Every body except the ground and the fences, as the box that encloses it:
+            // red = never moves, yellow = moves.
+            for (std::uint32_t id = first_shown_body_id_; id <= physics_.GetLastBodyId(); ++id) {
+                const poligon::BodyHandle body{id};
+                if (!physics_.IsBody(body)) {
+                    continue;
+                }
+                glm::vec3 bounds_min;
+                glm::vec3 bounds_max;
+                physics_.GetBounds(body, bounds_min, bounds_max);
+                if (glm::distance((bounds_min + bounds_max) * 0.5f, camera.position) > 60.0f) {
+                    continue;
+                }
+                const poligon::Color color = physics_.IsDynamic(body) ? poligon::Color{1.0f, 0.9f, 0.1f, 1.0f}
+                                                                       : poligon::Color{1.0f, 0.15f, 0.3f, 1.0f};
+                renderer_.DrawMesh(cube_mesh_,
+                                   glm::translate(glm::mat4(1.0f), (bounds_min + bounds_max) * 0.5f) *
+                                       glm::scale(glm::mat4(1.0f), bounds_max - bounds_min),
+                                   color);
+            }
+        }
         for (Animal& animal : animals_) {
             poligon::DrawModel(renderer_, fox_model_, animal.transform, animal.player->GetJointMatrices());
         }
@@ -328,6 +401,25 @@ private:
         ground_mesh_ = renderer_.CreateMesh(vertices.data(), static_cast<int>(vertices.size()), indices.data(),
                                             static_cast<int>(indices.size()));
 
+        // The same triangles are the ground of the physics world.
+        std::vector<glm::vec3> positions;
+        positions.reserve(vertices.size());
+        for (const poligon::MeshVertex& vertex : vertices) {
+            positions.push_back(vertex.position);
+        }
+        physics_.AddMesh(positions.data(), static_cast<int>(positions.size()), indices.data(),
+                         static_cast<int>(indices.size()), poligon::BodySettings{});
+        // Four fences keep everything inside the part of the ground that has forest around it.
+        const float fence = kGroundHalfSize - 20.0f;
+        for (int side = 0; side < 4; ++side) {
+            const bool along_x = side < 2;
+            const float sign = side % 2 == 0 ? 1.0f : -1.0f;
+            poligon::BodySettings settings;
+            settings.position = along_x ? glm::vec3(sign * fence, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, sign * fence);
+            physics_.AddBox(along_x ? glm::vec3(0.5f, 50.0f, fence) : glm::vec3(fence, 50.0f, 0.5f), settings);
+        }
+        first_shown_body_id_ = physics_.GetLastBodyId() + 1;
+
         const std::filesystem::path folder = assets_ / "polyhaven" / "textures" / "forrest_ground_01";
         ground_material_.texture = LoadTexture(folder / "forrest_ground_01_diff_2k.jpg", true);
         ground_material_.normal_texture = LoadTexture(folder / "forrest_ground_01_nor_gl_2k.jpg", false);
@@ -341,7 +433,9 @@ private:
 
     // Loads one model file and cuts it into variants. With `split`, instances that stand
     // apart from each other become separate variants; otherwise the whole file is one.
-    Kind LoadKind(const char* relative_folder, bool split, bool is_small) {
+    // keep_origin: leave the model where its file put it sideways (a tree's trunk stands at
+    // the file's origin, while the middle of its crown may be well off to one side).
+    Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false) {
         Kind kind;
         kind.is_small = is_small;
         const std::filesystem::path file = FindGltf(assets_ / relative_folder);
@@ -399,9 +493,11 @@ private:
             }
             // Move the group so that the middle of its foot is at the origin.
             const glm::mat4 to_foot = glm::translate(
-                glm::mat4(1.0f), {-(box.min.x + box.max.x) * 0.5f, -box.min.y, -(box.min.z + box.max.z) * 0.5f});
+                glm::mat4(1.0f), {keep_origin ? 0.0f : -(box.min.x + box.max.x) * 0.5f, -box.min.y,
+                                  keep_origin ? 0.0f : -(box.min.z + box.max.z) * 0.5f});
             Variant variant;
             variant.height = box.max.y - box.min.y;
+            variant.half_width = {(box.max.x - box.min.x) * 0.5f, (box.max.z - box.min.z) * 0.5f};
             for (size_t i = 0; i < count; ++i) {
                 if (find_group(i) != root) {
                     continue;
@@ -424,10 +520,10 @@ private:
 
     void LoadKinds() {
         render_models_.reserve(32);
-        tall_pine_ = LoadKind("generated/scots_pine", false, false);
-        pine_ = LoadKind("generated/pine_stock", false, false);
-        broadleaf_ = LoadKind("simplified/jacaranda_tree", false, false);
-        small_tree_ = LoadKind("simplified/island_tree_02", false, false);
+        tall_pine_ = LoadKind("generated/scots_pine", false, false, true);
+        pine_ = LoadKind("generated/pine_stock", false, false, true);
+        broadleaf_ = LoadKind("simplified/jacaranda_tree", false, false, true);
+        small_tree_ = LoadKind("simplified/island_tree_02", false, false, true);
         fir_sapling_ = LoadKind("simplified/fir_sapling", true, false);
         pine_sapling_ = LoadKind("simplified/pine_sapling_small", true, false);
         shrub_ = LoadKind("polyhaven/shrub_02", true, false);
@@ -439,6 +535,57 @@ private:
         rocks_ = LoadKind("polyhaven/rock_moss_set_01", true, false);
         stump_ = LoadKind("polyhaven/tree_stump_01", false, false);
         fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false);
+
+        tall_pine_.collision = Collision::Trunk;
+        tall_pine_.trunk_radius = 0.32f;
+        pine_.collision = Collision::Trunk;
+        pine_.trunk_radius = 0.28f;
+        broadleaf_.collision = Collision::Trunk;
+        broadleaf_.trunk_radius = 0.6f;
+        small_tree_.collision = Collision::Trunk;
+        small_tree_.trunk_radius = 0.12f;
+        boulder_.collision = Collision::Block;
+        rocks_.collision = Collision::Block;
+        stump_.collision = Collision::Block;
+        fallen_trunk_.collision = Collision::Block;
+    }
+
+    // A small pile of crates in the clearing, to knock over.
+    void AddCrates() {
+        cube_mesh_ = renderer_.CreateCubeMesh();
+        crate_material_.color = {0.55f, 0.38f, 0.20f, 1.0f};
+        crate_material_.roughness = 0.9f;
+        const glm::vec2 place{-4.0f, 4.0f};
+        const float ground = GroundHeight(place.x, place.y);
+        for (int layer = 0; layer < 3; ++layer) {
+            for (int i = 0; i < 3 - layer; ++i) {
+                poligon::BodySettings settings;
+                settings.dynamic = true;
+                settings.mass = 8.0f;
+                settings.friction = 0.7f;
+                settings.position = {place.x + (static_cast<float>(i) + static_cast<float>(layer) * 0.5f) * (kCrateSize + 0.02f),
+                                     ground + 0.1f + kCrateSize * (static_cast<float>(layer) + 0.5f), place.y};
+                crates_.push_back(physics_.AddBox(glm::vec3(kCrateSize * 0.5f), settings));
+            }
+        }
+    }
+
+    // Throws a crate from where the player looks. Old thrown crates are removed, so their number stays bounded.
+    void ThrowCrate() {
+        const size_t max_crates = 40;
+        if (crates_.size() >= max_crates) {
+            physics_.RemoveBody(crates_[6]);  // the oldest thrown one; the first six are the pile
+            crates_.erase(crates_.begin() + 6);
+        }
+        const glm::vec3 forward = camera_.GetForward();
+        poligon::BodySettings settings;
+        settings.dynamic = true;
+        settings.mass = 8.0f;
+        settings.friction = 0.7f;
+        settings.bounciness = 0.2f;
+        settings.position = camera_.position + forward * 0.9f;
+        settings.velocity = forward * 12.0f + glm::vec3(0.0f, 2.0f, 0.0f);
+        crates_.push_back(physics_.AddBox(glm::vec3(kCrateSize * 0.5f), settings));
     }
 
     // The first clip whose name contains one of the given words, tried in order; clip 0 if none does.
@@ -539,9 +686,25 @@ private:
         Placement placement;
         placement.variant = &variant;
         placement.position = {x, GroundHeight(x, z) - variant.height * scale * sink, z};
+        const float turn = random.Between(0.0f, 6.2831853f);
         placement.transform = glm::translate(glm::mat4(1.0f), placement.position) *
-                              glm::rotate(glm::mat4(1.0f), random.Between(0.0f, 6.2831853f), {0.0f, 1.0f, 0.0f}) *
+                              glm::rotate(glm::mat4(1.0f), turn, {0.0f, 1.0f, 0.0f}) *
                               glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+
+        // What blocks the way gets a body in the physics world.
+        poligon::BodySettings body;
+        body.rotation = glm::angleAxis(turn, glm::vec3(0.0f, 1.0f, 0.0f));
+        if (kind.collision == Collision::Trunk) {
+            const float half_height = std::min(variant.height * scale * 0.5f, 4.0f);
+            body.position = placement.position + glm::vec3(0.0f, half_height - 0.5f, 0.0f);
+            physics_.AddCylinder(half_height, kind.trunk_radius * scale, body);
+        } else if (kind.collision == Collision::Block) {
+            // Somewhat smaller than the box around the model, whose corners are mostly air.
+            const glm::vec3 half_size{variant.half_width.x * scale * 0.8f, variant.height * scale * 0.45f,
+                                      variant.half_width.y * scale * 0.8f};
+            body.position = placement.position + glm::vec3(0.0f, variant.height * scale * 0.5f, 0.0f);
+            physics_.AddBox(half_size, body);
+        }
         placement.is_small = kind.is_small;
         placements_.push_back(placement);
     }
@@ -621,6 +784,16 @@ private:
     std::vector<Animal> animals_;
     float time_seconds_ = 0.0f;
 
+    // Ground, trunks, rocks, crates and the walking player.
+    poligon::PhysicsWorld physics_;
+    poligon::CharacterHandle walker_;
+    std::vector<poligon::BodyHandle> crates_;
+    poligon::MeshHandle cube_mesh_;
+    poligon::Material crate_material_;
+    // Bodies below this id are the ground and the fences, which the collision view leaves out.
+    std::uint32_t first_shown_body_id_ = 1;
+    bool show_collision_ = false;
+
     poligon::RenderSettings settings_;
     std::string settings_path_;
     poligon::FreeCamera camera_;
@@ -669,10 +842,10 @@ int main(int argc, char** argv) {
     // Default: in the clearing, looking towards the sun.
     float view[4] = {0.0f, 0.0f, 225.0f, 4.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
-        if (options.positional.size() > 4) {
-            error = "expected at most X Z TURN TILT";
+        if (options.positional.size() > 5 || (options.positional.size() == 5 && options.positional[4] != "collision")) {
+            error = "expected at most X Z TURN TILT and the word collision";
         }
-        for (size_t i = 0; i < options.positional.size() && error.empty(); ++i) {
+        for (size_t i = 0; i < options.positional.size() && i < 4 && error.empty(); ++i) {
             char* end = nullptr;
             view[i] = std::strtof(options.positional[i].c_str(), &end);
             if (end == options.positional[i].c_str() || *end != '\0') {
@@ -683,7 +856,7 @@ int main(int argc, char** argv) {
     if (!error.empty()) {
         std::fprintf(stderr,
                      "forest_scene: %s\n"
-                     "usage: forest_scene [X Z TURN TILT] [--headless --ticks N] [--backend d3d12|vulkan]\n"
+                     "usage: forest_scene [X Z TURN TILT [collision]] [--headless --ticks N] [--backend d3d12|vulkan]\n"
                      "                    [--gpu-validation] [--dump-frame PATH.png]\n",
                      error.c_str());
         return 2;
@@ -729,6 +902,7 @@ int main(int argc, char** argv) {
 
     const auto load_start = std::chrono::steady_clock::now();
     ForestGame game(renderer, assets, input, actions, view, settings, settings_path);
+    game.ShowCollision(options.positional.size() == 5);
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s\n", load_seconds);
     if (game.GetLoadedKindCount() == 0) {
@@ -751,6 +925,9 @@ int main(int argc, char** argv) {
     const auto run_start = std::chrono::steady_clock::now();
     const poligon::GameLoopResult result = loop.Run(game);
 
+    const glm::vec3 standing = game.GetCameraPosition();
+    std::printf("camera at %.3f %.3f %.3f\n", static_cast<double>(standing.x), static_cast<double>(standing.y),
+                static_cast<double>(standing.z));
     const poligon::FrameStats stats = renderer.GetFrameStats();
     std::printf("last frame: %d meshes submitted, %d drawn, %d shadow draws\n", stats.meshes_submitted,
                 stats.meshes_drawn, stats.shadow_draws);

@@ -56,7 +56,7 @@ public:
           hash_log_(hash_log),
           settings_(settings),
           settings_path_(settings_path),
-          box_query_(world.query<const toy::Position, const toy::Box>()),
+          box_query_(world.query<const toy::Position, const toy::Rotation, const toy::Box>()),
           ground_query_(world.query<const toy::Ground>()) {}
 
     void Start(poligon::GameLoop& /*loop*/) override {
@@ -110,14 +110,12 @@ public:
             renderer_.DrawMesh(plane_mesh_, glm::scale(glm::mat4(1.0f), {ground.size, 1.0f, ground.size}), material);
         });
 
-        box_query_.each([this](const toy::Position& position, const toy::Box& box) {
+        box_query_.each([this](const toy::Position& position, const toy::Rotation& rotation, const toy::Box& box) {
             // Order of operations, right to left: scale, rotate, then move. Position is the
-            // bottom of the box, the cube mesh is centered, hence the half-height offset.
+            // center of the box, like the cube mesh's own center.
             const glm::mat4 identity(1.0f);
-            const glm::vec3 center = position.value + glm::vec3(0.0f, box.size.y * 0.5f, 0.0f);
-            const glm::mat4 transform = glm::translate(identity, center) *
-                                        glm::rotate(identity, glm::radians(box.rotation_y_degrees), {0.0f, 1.0f, 0.0f}) *
-                                        glm::scale(identity, box.size);
+            const glm::mat4 transform =
+                glm::translate(identity, position.value) * glm::mat4_cast(rotation.value) * glm::scale(identity, box.size);
             poligon::Material material;
             material.color = box.color;
             material.texture = box_texture_;
@@ -167,7 +165,7 @@ private:
     const poligon::Input& input_;
     toy::ToyActions actions_;
     poligon::StateHashLog& hash_log_;
-    flecs::query<const toy::Position, const toy::Box> box_query_;
+    flecs::query<const toy::Position, const toy::Rotation, const toy::Box> box_query_;
     flecs::query<const toy::Ground> ground_query_;
     poligon::MeshHandle cube_mesh_;
     poligon::MeshHandle plane_mesh_;
@@ -275,8 +273,11 @@ int main(int argc, char** argv) {
     renderer_config.debug_ui = true;
     poligon::Renderer renderer(renderer_config);
 
+    // The flecs world uses the physics world in its systems, so physics is declared first
+    // and thereby destroyed last.
+    poligon::PhysicsWorld physics;
     flecs::world world;
-    toy::SetUpToyWorld(world);
+    toy::SetUpToyWorld(world, physics);
 
     poligon::StateHashLog hash_log;
     if (!options.hash_log_path.empty() && !hash_log.Open(options.hash_log_path.c_str(), options.hash_interval)) {

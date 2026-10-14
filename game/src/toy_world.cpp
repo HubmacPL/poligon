@@ -30,14 +30,12 @@ float ClampToUnit(float value) {
 
 void RegisterComponents(flecs::world& world) {
     world.component<Position>().member<glm::vec3>("value");
+    world.component<Rotation>().member<glm::quat>("value");
     world.component<Velocity>().member<glm::vec3>("value");
-    world.component<Box>()
-        .member<glm::vec3>("size")
-        .member<float>("rotation_y_degrees")
-        .member<poligon::Color>("color");
+    world.component<Box>().member<glm::vec3>("size").member<poligon::Color>("color");
     world.component<Ground>().member<float>("size").member<poligon::Color>("color");
+    world.component<Body>().member<std::uint32_t>("handle");
     world.component<Falling>();
-    world.component<Bouncy>().member<float>("bounce_factor").member<std::int32_t>("bounce_count");
     world.component<Lifetime>().member<std::int32_t>("ticks_left");
     world.component<Spawner>()
         .member<std::uint32_t>("random_state")
@@ -54,20 +52,36 @@ void RegisterComponents(flecs::world& world) {
     world.component<CameraRig>().member<float>("yaw_degrees");
 }
 
+// The physics world is not a component (it is not plain data); systems reach it through
+// the flecs world's context pointer, set in SetUpToyWorld.
+poligon::PhysicsWorld& PhysicsOf(const flecs::world& world) {
+    return *static_cast<poligon::PhysicsWorld*>(world.get_ctx());
+}
+
+glm::quat TurnedAroundY(float degrees) {
+    return glm::angleAxis(glm::radians(degrees), glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
 // Systems in one phase run in the order they are created here.
 void CreateSystems(flecs::world& world) {
-    world.system<Velocity>("PlayerControlSystem")
+    world.system<const Body>("PlayerControlSystem")
         .kind(flecs::OnUpdate)
         .with<Player>()
-        .each([](flecs::entity entity, Velocity& velocity) {
+        .each([](flecs::entity entity, const Body& body) {
             const float move_speed = 4.0f;
             const float jump_speed = 6.0f;
-            const PlayerInput& input = entity.world().get<PlayerInput>();
-            velocity.value.x = input.move_x * move_speed;
-            velocity.value.z = input.move_z * move_speed;
+            const flecs::world world = entity.world();
+            const PlayerInput& input = world.get<PlayerInput>();
+            poligon::PhysicsWorld& physics = PhysicsOf(world);
+            const poligon::BodyHandle handle{body.handle};
+            // The player decides the sideways speed outright; falling is left to physics.
+            glm::vec3 velocity = physics.GetVelocity(handle);
+            velocity.x = input.move_x * move_speed;
+            velocity.z = input.move_z * move_speed;
             if (input.jump_pressed) {
-                velocity.value.y = jump_speed;
+                velocity.y = jump_speed;
             }
+            physics.SetVelocity(handle, velocity);
         });
 
     // A system without components to match: runs once per tick.
@@ -91,89 +105,118 @@ void CreateSystems(flecs::world& world) {
             velocity.value.x = RandomRange(spawner.random_state, -2.5f, 2.5f);
             velocity.value.y = RandomRange(spawner.random_state, 4.0f, 8.0f);
             velocity.value.z = RandomRange(spawner.random_state, -2.5f, 2.5f);
+            const Rotation rotation{TurnedAroundY(RandomRange(spawner.random_state, 0.0f, 90.0f))};
             Box box;
             box.size = {size, size, size};
-            box.rotation_y_degrees = RandomRange(spawner.random_state, 0.0f, 90.0f);
             box.color = {RandomRange(spawner.random_state, 0.3f, 1.0f), RandomRange(spawner.random_state, 0.3f, 1.0f),
                          RandomRange(spawner.random_state, 0.3f, 1.0f), 1.0f};
+
+            // The body is created at once; bodies are therefore always added in the same order.
+            poligon::BodySettings settings;
+            settings.position = position.value;
+            settings.rotation = rotation.value;
+            settings.velocity = velocity.value;
+            settings.dynamic = true;
+            settings.mass = 20.0f * size * size * size;
+            settings.bounciness = 0.4f;
+            const poligon::BodyHandle body = PhysicsOf(spawner_entity.world()).AddBox(box.size * 0.5f, settings);
 
             // Creating an entity inside a system is queued and takes effect after the system.
             spawner_entity.world()
                 .entity()
                 .set<Position>(position)
+                .set<Rotation>(rotation)
                 .set<Velocity>(velocity)
                 .set<Box>(box)
-                .set<Bouncy>({0.6f, 0})
+                .set<Body>({body.id})
                 .set<Lifetime>({240})
                 .add<Falling>();
         });
 
-    world.system<Velocity>("GravitySystem")
-        .kind(flecs::OnUpdate)
+    // Physics: one step for the whole world, then copy the results into the components.
+    world.system("PhysicsStepSystem").kind(flecs::OnValidate).run([](flecs::iter& it) {
+        PhysicsOf(it.world()).Step(it.delta_time());
+    });
+
+    world.system<const Body, Position, Rotation, Velocity>("PhysicsReadSystem")
+        .kind(flecs::OnValidate)
         .with<Falling>()
-        .each([](flecs::iter& it, size_t, Velocity& velocity) { velocity.value.y += -9.81f * it.delta_time(); });
-
-    world.system<Position, const Velocity>("MoveSystem")
-        .kind(flecs::OnUpdate)
-        .each([](flecs::iter& it, size_t, Position& position, const Velocity& velocity) {
-            position.value += velocity.value * it.delta_time();
+        .each([](flecs::entity entity, const Body& body, Position& position, Rotation& rotation, Velocity& velocity) {
+            const poligon::PhysicsWorld& physics = PhysicsOf(entity.world());
+            const poligon::BodyHandle handle{body.handle};
+            position.value = physics.GetPosition(handle);
+            rotation.value = physics.GetRotation(handle);
+            velocity.value = physics.GetVelocity(handle);
         });
 
-    world.system<Position, Velocity, Bouncy>("BounceSystem")
-        .kind(flecs::OnUpdate)
-        .each([](Position& position, Velocity& velocity, Bouncy& bouncy) {
-            if (position.value.y < 0.0f) {
-                position.value.y = -position.value.y;
-                velocity.value.y = -velocity.value.y * bouncy.bounce_factor;
-                ++bouncy.bounce_count;
-            }
-        });
-
-    world.system<Lifetime>("LifetimeSystem")
+    world.system<Lifetime, const Body>("LifetimeSystem")
         .kind(flecs::PostUpdate)
-        .each([](flecs::entity entity, Lifetime& lifetime) {
+        .each([](flecs::entity entity, Lifetime& lifetime, const Body& body) {
             --lifetime.ticks_left;
             if (lifetime.ticks_left <= 0) {
-                ++entity.world().get_mut<ToyStats>().expired_count;
+                const flecs::world world = entity.world();
+                ++world.get_mut<ToyStats>().expired_count;
+                PhysicsOf(world).RemoveBody(poligon::BodyHandle{body.handle});
                 entity.destruct();
             }
         });
 }
 
+// A box that stands still, resting on the ground at (x, z).
+void CreateStaticBox(flecs::world& world, const char* name, float x, float z, glm::vec3 size, float turn_degrees,
+                     poligon::Color color) {
+    poligon::BodySettings settings;
+    settings.position = {x, size.y * 0.5f, z};
+    settings.rotation = TurnedAroundY(turn_degrees);
+    const poligon::BodyHandle body = PhysicsOf(world).AddBox(size * 0.5f, settings);
+    world.entity(name)
+        .set<Position>({settings.position})
+        .set<Rotation>({settings.rotation})
+        .set<Box>({size, color})
+        .set<Body>({body.id});
+}
+
 void CreateEntities(flecs::world& world) {
+    poligon::PhysicsWorld& physics = PhysicsOf(world);
     world.set<ToyStats>({0});
     world.set<PlayerInput>({0.0f, 0.0f, false, 0.0f});
     world.set<CameraRig>({0.0f});
 
-    world.entity("ground").set<Ground>({30.0f, {0.25f, 0.45f, 0.20f, 1.0f}});
+    // The ground is a slab one meter thick with its top at height 0.
+    const float ground_size = 30.0f;
+    poligon::BodySettings ground_settings;
+    ground_settings.position = {0.0f, -0.5f, 0.0f};
+    const poligon::BodyHandle ground = physics.AddBox({ground_size * 0.5f, 0.5f, ground_size * 0.5f}, ground_settings);
+    world.entity("ground").set<Ground>({ground_size, {0.25f, 0.45f, 0.20f, 1.0f}}).set<Body>({ground.id});
 
+    // The box the player steers starts high up and falls.
+    poligon::BodySettings player_settings;
+    player_settings.position = {0.0f, 10.5f, 0.0f};
+    player_settings.dynamic = true;
+    player_settings.mass = 20.0f;
+    player_settings.bounciness = 0.5f;
+    const poligon::BodyHandle player = physics.AddBox({0.5f, 0.5f, 0.5f}, player_settings);
     world.entity("big_box")
-        .set<Position>({{0.0f, 10.0f, 0.0f}})
+        .set<Position>({player_settings.position})
+        .set<Rotation>({player_settings.rotation})
         .set<Velocity>({{0.0f, 0.0f, 0.0f}})
-        .set<Box>({{1.0f, 1.0f, 1.0f}, 0.0f, {0.80f, 0.15f, 0.10f, 1.0f}})
-        .set<Bouncy>({0.8f, 0})
+        .set<Box>({{1.0f, 1.0f, 1.0f}, {0.80f, 0.15f, 0.10f, 1.0f}})
+        .set<Body>({player.id})
         .add<Falling>()
         .add<Player>();
 
-    world.entity("pillar_a")
-        .set<Position>({{-3.0f, 0.0f, -2.0f}})
-        .set<Box>({{1.0f, 2.0f, 1.0f}, 20.0f, {0.75f, 0.60f, 0.30f, 1.0f}});
-    world.entity("crate")
-        .set<Position>({{3.0f, 0.0f, -1.0f}})
-        .set<Box>({{1.5f, 1.0f, 1.5f}, -30.0f, {0.30f, 0.40f, 0.75f, 1.0f}});
-    world.entity("stone")
-        .set<Position>({{-1.5f, 0.0f, 3.0f}})
-        .set<Box>({{0.8f, 0.8f, 0.8f}, 45.0f, {0.85f, 0.85f, 0.85f, 1.0f}});
-    world.entity("pillar_b")
-        .set<Position>({{2.0f, 0.0f, 3.5f}})
-        .set<Box>({{0.6f, 3.0f, 0.6f}, 0.0f, {0.55f, 0.30f, 0.60f, 1.0f}});
+    CreateStaticBox(world, "pillar_a", -3.0f, -2.0f, {1.0f, 2.0f, 1.0f}, 20.0f, {0.75f, 0.60f, 0.30f, 1.0f});
+    CreateStaticBox(world, "crate", 3.0f, -1.0f, {1.5f, 1.0f, 1.5f}, -30.0f, {0.30f, 0.40f, 0.75f, 1.0f});
+    CreateStaticBox(world, "stone", -1.5f, 3.0f, {0.8f, 0.8f, 0.8f}, 45.0f, {0.85f, 0.85f, 0.85f, 1.0f});
+    CreateStaticBox(world, "pillar_b", 2.0f, 3.5f, {0.6f, 3.0f, 0.6f}, 0.0f, {0.55f, 0.30f, 0.60f, 1.0f});
 
-    world.entity("spawner").set<Position>({{-4.0f, 0.5f, 4.0f}}).set<Spawner>({2463534242u, 20, 20, 0});
+    world.entity("spawner").set<Position>({{-4.0f, 0.8f, 4.0f}}).set<Spawner>({2463534242u, 20, 20, 0});
 }
 
 } // namespace
 
-void SetUpToyWorld(flecs::world& world) {
+void SetUpToyWorld(flecs::world& world, poligon::PhysicsWorld& physics) {
+    world.set_ctx(&physics);
     poligon::RegisterEngineTypes(world);
     RegisterComponents(world);
     // Systems first: they must all exist before any entity can be deleted (see docs/en/ecs.md).

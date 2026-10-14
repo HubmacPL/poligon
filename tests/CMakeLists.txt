@@ -9,6 +9,7 @@ poligon_add_test(command_line_test)
 poligon_add_test(fixed_step_clock_test)
 poligon_add_test(game_loop_test)
 poligon_add_test(math_test)
+poligon_add_test(physics_test)
 
 find_package(Stb REQUIRED)
 add_executable(image_test image_test.cpp)

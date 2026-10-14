@@ -35,7 +35,9 @@ W `game/CMakeLists.txt`:
 - `toy_replay_frame_matches`: wymóg z tolerancją.
 - `toy_replay_difference_is_detected`: przebieg z nagraniem, w którym drugi skok jest o jeden tick później, musi zostać uznany za inny, a narzędzie musi wskazać tick 151. To dowód, że test widzi różnicę i dobrze ją lokalizuje.
 
-Powiązane: `tests/ecs_order_probe.cpp` (powtarzalność flecs), `game/tests/toy_world_test.cpp` (dwa światy w jednym procesie).
+Powiązane: `tests/ecs_order_probe.cpp` (powtarzalność flecs), `game/tests/toy_world_test.cpp` (dwa światy w jednym procesie), `tests/physics_test.cpp` (sam świat fizyki).
+
+Grę-zabawkę symuluje silnik fizyki, więc wszystkie powyższe testy obejmują także jego; co utrzymuje powtarzalność fizyki, opisuje [physics.md](physics.md).
 
 ## Co psuje determinizm
 
