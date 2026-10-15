@@ -45,7 +45,7 @@ Many copies of one mesh are drawn with `DrawMeshInstances` (one draw call per pa
 - Right-handed world, +Y is up, a camera looks down its local -Z axis.
 - 4x4 column-major matrices, column vectors: `a * b` applies `b` first. The usual object transform is `translate * rotate * scale`.
 - Angles for GLM functions are in radians: `glm::radians(degrees)`.
-- Clip-space depth runs from 0 (near) to 1 (far).
+- Clip-space depth runs from 0 to 1 (`GLM_FORCE_DEPTH_ZERO_TO_ONE`). The camera uses it **reversed**: 1 at the near plane, 0 at the far one (near and far swapped in `glm::perspective`, depth cleared to 0, depth test "greater"). With a floating-point depth image this keeps millimeters of precision kilometers away, where the usual direction has meters and distant land, trees and impostors fight over pixels. Shadow cascades keep the usual direction. Shaders that read the camera's depth treat 0 as the sky.
 - A default-constructed vector is zero, a matrix identity, a quaternion no rotation.
 - Vectors have only `x`, `y`, `z`, `w` members (no aliases such as `.r` or `.s`).
 - `tests/math_test.cpp` guards these conventions.

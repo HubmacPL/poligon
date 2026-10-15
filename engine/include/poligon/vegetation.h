@@ -69,9 +69,11 @@ struct VegetationStats {
     int instances_per_level[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     // Plants that were fading between levels (or out after the last one).
     int instances_fading = 0;
-    // Cells looked at, and cells skipped whole because nothing in them was within range.
+    // Cells looked at, cells skipped whole because nothing in them was within range, and
+    // cells outside the camera's view (their plants are handed over as shadow casters only).
     int cells_total = 0;
     int cells_skipped = 0;
+    int cells_out_of_view = 0;
     // Renderer::DrawMeshInstances and DrawImpostorInstances calls made.
     int batches = 0;
 };

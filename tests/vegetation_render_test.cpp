@@ -114,8 +114,11 @@ int main(int argc, char** argv) {
     vegetation.Draw(renderer, camera);
     renderer.EndFrame();
     renderer.CaptureFrame(frame);
-    Expect(vegetation.GetStats().instances_per_level[0] == 2 && vegetation.GetStats().instances_per_level[1] == 2,
-           "a larger detail distance moves plants to better levels and brings far ones into range");
+    // The plant at 80 m comes into range, but its cell lies outside the picture (the camera
+    // sees 23 m to each side), so it is not handed over for the picture at all.
+    Expect(vegetation.GetStats().instances_per_level[0] == 2 && vegetation.GetStats().instances_per_level[1] == 1 &&
+               vegetation.GetStats().cells_out_of_view >= 1,
+           "a larger detail distance moves plants to better levels; cells outside the view are left out of the picture");
     Expect(PixelAt(frame, 15.0f, 0.0f)[0] == 255, "the plant at 15 m is now red");
     vegetation.SetDistanceScale(1.0f, 1.0f);
 
@@ -135,8 +138,9 @@ int main(int argc, char** argv) {
                     frame_stats.instances_submitted);
     }
     // The camera sees 23 m to each side, so of the three plants in range the one at 30 m
-    // is handed to the renderer but culled there.
-    Expect(frame_stats.instances_submitted == 4 && frame_stats.instances_drawn == 2,
+    // is handed to the renderer but culled there. The two with shadows are handed over a
+    // second time as casters (5 in all).
+    Expect(frame_stats.instances_submitted == 5 && frame_stats.instances_drawn == 2,
            "plants in range but outside the picture are culled by the renderer");
     Expect(frame_stats.shadow_instances >= 2 && frame_stats.shadow_instances <= 8,
            "only the two plants within the shadow distance are drawn into shadow cascades");

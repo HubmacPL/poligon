@@ -11,7 +11,9 @@ float3 SkyColor(float3 direction, float3 zenith, float3 horizon, float3 ground) 
     return lerp(horizon, ground, saturate(-height * 5.0));
 }
 
-// Distance in front of the camera (meters) for a value from the depth image.
+// Distance in front of the camera (meters) for a value from the depth image. The camera's
+// depth runs from 1 at the near plane to 0 far away (reversed depth); the formula holds for
+// either direction, since it only uses the projection matrix.
 // projection_info: x = projection[2][2], y = projection[3][2], z = 1 / projection[0][0],
 // w = 1 / projection[1][1] of the camera's projection matrix.
 float ViewDistance(float depth, float4 projection_info) {

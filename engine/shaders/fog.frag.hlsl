@@ -61,11 +61,12 @@ float4 main(FragmentInput input) : SV_Target0 {
     int2 depth_pixel = min(int2(input.clip_position.xy) * 2, int2(options.zw) - 1);
     float depth = depth_texture.Load(int3(depth_pixel, 0));
     float2 uv = (float2(depth_pixel) + 0.5) / options.zw;
-    float4 world = mul(inverse_view_projection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, min(depth, 0.9999), 1.0));
+    // Depth runs from 1 at the near plane to 0 far away; 0 is the far plane itself (sky).
+    float4 world = mul(inverse_view_projection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0));
     float3 to_surface = world.xyz / world.w - camera_position.xyz;
     float surface_distance = length(to_surface);
     float3 direction = to_surface / surface_distance;
-    float walk_distance = depth >= 1.0 ? options.y : min(surface_distance, options.y);
+    float walk_distance = depth <= 0.0 ? options.y : min(surface_distance, options.y);
 
     // Fog scatters most of the sunlight onwards in nearly the same direction, so it glows
     // when looking towards the sun (Henyey-Greenstein phase function).

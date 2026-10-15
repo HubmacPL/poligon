@@ -122,6 +122,8 @@ void ShowFrameStatsWindow(const Renderer& renderer) {
         ImGui::Text("%.1f frames per second", static_cast<double>(frames_per_second));
         ImGui::Text("%.2f ms per frame", frames_per_second > 0.0f ? 1000.0 / static_cast<double>(frames_per_second) : 0.0);
         const FrameStats stats = renderer.GetFrameStats();
+        ImGui::Text("processor: %.2f ms preparing, %.2f ms waiting for the card", static_cast<double>(stats.cpu_milliseconds),
+                    static_cast<double>(stats.wait_milliseconds));
         ImGui::Text("meshes: %d drawn of %d", stats.meshes_drawn, stats.meshes_submitted);
         ImGui::Text("shadow draws: %d", stats.shadow_draws);
         ImGui::Text("%s, %d x %d, %d samples", renderer.GetBackendName(), renderer.GetWidth(), renderer.GetHeight(),

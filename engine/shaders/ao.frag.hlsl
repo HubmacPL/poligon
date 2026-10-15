@@ -37,8 +37,8 @@ float3 PositionAt(int2 pixel) {
 float main(FragmentInput input) : SV_Target0 {
     int2 pixel = int2(input.clip_position.xy);
     float depth = depth_texture.Load(int3(pixel, 0));
-    if (depth >= 1.0) {
-        return 1.0;  // sky
+    if (depth <= 0.0) {
+        return 1.0;  // sky (depth runs from 1 near to 0 far)
     }
     float3 position = ViewPosition((float2(pixel) + 0.5) / screen.xy, depth, projection_info);
 

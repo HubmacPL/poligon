@@ -278,8 +278,15 @@ struct Material {
     float wind_flutter = 0.0f;
 };
 
-// What the last finished frame cost, for checking that culling works.
+// What the last finished frame cost, for checking that culling works and where time goes.
 struct FrameStats {
+    // Time the processor spent in EndFrame preparing the frame (culling, copying instance
+    // matrices, recording the commands), in milliseconds, and the time handing the commands
+    // to the card took; the latter grows when the card is behind and the processor has to
+    // wait for it. Together with the frame time this says whether the processor or the
+    // card is the bottleneck.
+    float cpu_milliseconds = 0.0f;
+    float wait_milliseconds = 0.0f;
     // DrawMesh calls between BeginFrame and EndFrame.
     int meshes_submitted = 0;
     // Of those, how many were at least partly inside the camera's view and were drawn.

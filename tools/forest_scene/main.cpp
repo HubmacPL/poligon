@@ -340,7 +340,24 @@ public:
         }
     }
 
+    // Average processor time of EndFrame over the run, for the summary at the end.
+    float GetAverageCpuMilliseconds() const {
+        return cpu_frames_ > 0 ? static_cast<float>(cpu_milliseconds_sum_ / cpu_frames_) : 0.0f;
+    }
+    float GetAverageWaitMilliseconds() const {
+        return cpu_frames_ > 0 ? static_cast<float>(wait_milliseconds_sum_ / cpu_frames_) : 0.0f;
+    }
+
     void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
+        if (cpu_frames_ >= 0) {
+            // The statistics describe the previous frame; the first call has none.
+            const poligon::FrameStats stats = renderer_.GetFrameStats();
+            if (stats.cpu_milliseconds > 0.0f) {
+                cpu_milliseconds_sum_ += stats.cpu_milliseconds;
+                wait_milliseconds_sum_ += stats.wait_milliseconds;
+                ++cpu_frames_;
+            }
+        }
         poligon::Camera clip_planes;
         clip_planes.near_plane = 0.1f;
         clip_planes.far_plane = 12000.0f;
@@ -993,6 +1010,9 @@ private:
     std::unique_ptr<poligon::AnimationSet> fox_animations_;
     std::vector<Animal> animals_;
     float time_seconds_ = 0.0f;
+    double cpu_milliseconds_sum_ = 0.0;
+    double wait_milliseconds_sum_ = 0.0;
+    int cpu_frames_ = 0;
 
     // Ground, trunks, rocks, crates and the walking player.
     poligon::PhysicsWorld physics_;
@@ -1151,8 +1171,10 @@ int main(int argc, char** argv) {
     std::printf("camera at %.3f %.3f %.3f\n", static_cast<double>(standing.x), static_cast<double>(standing.y),
                 static_cast<double>(standing.z));
     const poligon::FrameStats stats = renderer.GetFrameStats();
-    std::printf("last frame: %d meshes submitted, %d drawn, %d shadow draws\n", stats.meshes_submitted,
-                stats.meshes_drawn, stats.shadow_draws);
+    std::printf("last frame: %d meshes submitted, %d drawn, %d shadow draws; processor per frame on average: %.2f ms "
+                "preparing, %.2f ms waiting for the card\n",
+                stats.meshes_submitted, stats.meshes_drawn, stats.shadow_draws,
+                static_cast<double>(game.GetAverageCpuMilliseconds()), static_cast<double>(game.GetAverageWaitMilliseconds()));
     std::printf("instances: %d submitted, %d in view, %d in shadow cascades, %d draw calls\n", stats.instances_submitted,
                 stats.instances_drawn, stats.shadow_instances, stats.instance_draw_calls);
     if (!options.dump_frame_path.empty()) {

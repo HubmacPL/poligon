@@ -41,7 +41,7 @@ vegetation.Draw(renderer, camera);
 
 - **Gatunek** to lista poziomów, od najbliższego. Każdy poziom ma części (siatka, materiał, przekształcenie względem stopy rośliny) i odległość, do której jest używany. Za ostatnim poziomem roślina nie jest rysowana.
 - Odległości mierzy się po ziemi od kamery.
-- `Draw` przechodzi komórki w stałej kolejności. Komórka, w której nic nie jest w zasięgu, jest pomijana; komórka leżąca w całości w jednym poziomie jest przekazywana w jednym kawałku; tylko komórki na granicy poziomów są przeglądane roślina po roślinie. Potem każdy gatunek i poziom staje się jednym wywołaniem `DrawMeshInstances` na część.
+- `Draw` przechodzi komórki w stałej kolejności. Komórka, w której nic nie jest w zasięgu, jest pomijana; komórka poza widokiem kamery (jej pudełko powiększone o 30 m na wysokość roślin) przekazuje rośliny tylko jako rzucające cień; komórka leżąca w całości w jednym poziomie jest przekazywana w jednym kawałku; tylko komórki na granicy poziomów są przeglądane roślina po roślinie. Potem każdy gatunek i poziom staje się jednym wywołaniem `DrawMeshInstances` na część dla obrazu, plus wywołania tylko dla cieni (`draw_in_view = false`) dla roślin w zasięgu cieni, rysowanych poziomem cienia.
 - `SetDistanceScale(detail, shadow)` mnoży wszystkie odległości poziomów i odległości cieni, do strojenia suwakami.
 - `GetStats()`: rośliny na poziom, pominięte komórki, partie.
 - Siatki i tekstury należą do wywołującego; system trzyma tylko uchwyty i przekształcenia.

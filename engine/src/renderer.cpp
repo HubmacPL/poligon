@@ -1,6 +1,7 @@
 #include "poligon/renderer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -311,6 +312,14 @@ struct InstanceBatch {
     std::uint32_t list_count[kInstanceListCount];
 };
 
+// True when two materials need the same fragment-shader uniforms and textures, so that a
+// draw following another with such a material can skip binding them again.
+bool SameFragmentBindings(const Material& a, const Material& b) {
+    return a.texture.id == b.texture.id && a.normal_texture.id == b.normal_texture.id &&
+           a.orm_texture.id == b.orm_texture.id && a.metallic == b.metallic && a.roughness == b.roughness &&
+           a.alpha_cutoff == b.alpha_cutoff && a.double_sided == b.double_sided && a.occlusion_in_orm == b.occlusion_in_orm;
+}
+
 // A plane as (normal, distance): points with dot(normal, p) + distance >= 0 are inside.
 // The six sides of the volume a view-projection matrix shows, normals pointing inwards.
 struct ViewVolume {
@@ -318,8 +327,10 @@ struct ViewVolume {
     int plane_count;
 };
 
-// check_near: false for shadow cascades (see IsBoxOutside).
-ViewVolume MakeViewVolume(const glm::mat4& view_projection, bool check_near) {
+// reversed_depth: true for the camera, whose depth runs from 1 at the near plane to 0 far
+// away (see EndFrame); false for shadow cascades, whose depth runs the usual way and whose
+// near plane is not checked (see IsBoxOutside).
+ViewVolume MakeViewVolume(const glm::mat4& view_projection, bool reversed_depth) {
     const auto row = [&view_projection](int i) {
         return glm::vec4(view_projection[0][i], view_projection[1][i], view_projection[2][i], view_projection[3][i]);
     };
@@ -328,9 +339,9 @@ ViewVolume MakeViewVolume(const glm::mat4& view_projection, bool check_near) {
     volume.planes[1] = row(3) - row(0);  // right
     volume.planes[2] = row(3) + row(1);  // bottom
     volume.planes[3] = row(3) - row(1);  // top
-    volume.planes[4] = row(3) - row(2);  // far
-    volume.planes[5] = row(2);           // near (depth runs from 0)
-    volume.plane_count = check_near ? 6 : 5;
+    volume.planes[4] = reversed_depth ? row(2) : row(3) - row(2);  // far
+    volume.planes[5] = row(3) - row(2);                            // near, reversed depth only
+    volume.plane_count = reversed_depth ? 6 : 5;
     for (int i = 0; i < volume.plane_count; ++i) {
         volume.planes[i] /= glm::length(glm::vec3(volume.planes[i]));
     }
@@ -349,9 +360,10 @@ bool IsSphereOutside(const ViewVolume& volume, const glm::vec3& center, float ra
 // True when the box, after `clip_from_mesh`, lies entirely outside the visible volume: all
 // eight corners are beyond the same side of it. A box that is only partly outside, or that
 // surrounds the volume, is never reported as outside.
-// check_near: false for shadow cascades, where geometry nearer to the sun than the cascade
-// still casts shadows into it.
-bool IsBoxOutside(const glm::mat4& clip_from_mesh, const glm::vec3& box_min, const glm::vec3& box_max, bool check_near) {
+// reversed_depth: true for the camera (depth 1 near, 0 far, near plane checked); false for
+// shadow cascades, where geometry nearer to the sun than the cascade still casts shadows
+// into it, so only the far plane counts.
+bool IsBoxOutside(const glm::mat4& clip_from_mesh, const glm::vec3& box_min, const glm::vec3& box_max, bool reversed_depth) {
     int outside[6] = {0, 0, 0, 0, 0, 0};
     for (int corner = 0; corner < 8; ++corner) {
         const glm::vec4 position((corner & 1) ? box_max.x : box_min.x, (corner & 2) ? box_max.y : box_min.y,
@@ -361,8 +373,12 @@ bool IsBoxOutside(const glm::mat4& clip_from_mesh, const glm::vec3& box_min, con
         outside[1] += clip.x > clip.w ? 1 : 0;
         outside[2] += clip.y < -clip.w ? 1 : 0;
         outside[3] += clip.y > clip.w ? 1 : 0;
-        outside[4] += clip.z > clip.w ? 1 : 0;
-        outside[5] += check_near && clip.z < 0.0f ? 1 : 0;
+        if (reversed_depth) {
+            outside[4] += clip.z < 0.0f ? 1 : 0;       // beyond the far plane
+            outside[5] += clip.z > clip.w ? 1 : 0;     // before the near plane
+        } else {
+            outside[4] += clip.z > clip.w ? 1 : 0;
+        }
     }
     for (const int count : outside) {
         if (count == 8) {
@@ -471,8 +487,14 @@ struct Renderer::Impl {
     std::vector<glm::mat4> instance_sources;
     std::vector<InstanceBatch> instance_batches;
     std::vector<glm::mat4> instance_data;
+    // Scratch: the sphere around each instance of the batch being culled (center, radius).
+    std::vector<glm::vec4> instance_spheres;
     SDL_GPUBuffer* instance_buffer = nullptr;
     Uint32 instance_buffer_capacity = 0;
+    // The upload buffer the matrices go through, kept from frame to frame (mapping it with
+    // "cycle" gives fresh memory while the card still reads the previous frame's).
+    SDL_GPUTransferBuffer* instance_transfer = nullptr;
+    Uint32 instance_transfer_capacity = 0;
 
     std::vector<ImpostorData> impostors;
     // The square every impostor is drawn with; made with the first impostor.
@@ -489,6 +511,8 @@ struct Renderer::Impl {
     std::vector<glm::mat4> joint_palette;
     SDL_GPUBuffer* joint_buffer = nullptr;
     Uint32 joint_buffer_capacity = 0;
+    SDL_GPUTransferBuffer* joint_transfer = nullptr;
+    Uint32 joint_transfer_capacity = 0;
 
     SDL_GPUGraphicsPipeline* mesh_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* mesh_pipeline_double_sided = nullptr;
@@ -552,7 +576,8 @@ struct Renderer::Impl {
     }
 
     SDL_GPUTexture* CreateTarget(SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, int width, int height,
-                                 SDL_GPUSampleCount samples, const SDL_FColor* clear_color, const char* what) {
+                                 SDL_GPUSampleCount samples, const SDL_FColor* clear_color, const char* what,
+                                 float clear_depth = 1.0f) {
         SDL_GPUTextureCreateInfo info{};
         info.type = SDL_GPU_TEXTURETYPE_2D;
         info.format = format;
@@ -571,7 +596,7 @@ struct Renderer::Impl {
             SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_B_FLOAT, clear_color->b);
             SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_A_FLOAT, clear_color->a);
         }
-        SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_DEPTH_FLOAT, 1.0f);
+        SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_DEPTH_FLOAT, clear_depth);
         info.props = properties;
         SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
         SDL_DestroyProperties(properties);
@@ -603,8 +628,11 @@ struct Renderer::Impl {
                                        config.width, config.height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color,
                                        "scene target");
         }
+        // The camera's depth runs from 1 at the near plane to 0 far away ("reversed depth"):
+        // a floating-point depth image then keeps millimeters of precision kilometers away,
+        // where the usual direction has meters and distant land and trees fight over pixels.
         scene_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, config.width, config.height,
-                                   samples, nullptr, "scene depth target");
+                                   samples, nullptr, "scene depth target", 0.0f);
         // SAMPLER is needed because the image is copied (blitted) to the window.
         output_target = CreateTarget(kOutputFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
                                      config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "output target");
@@ -615,7 +643,7 @@ struct Renderer::Impl {
 
         const SDL_GPUTextureUsageFlags drawn_and_read = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
         prepass_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                                     config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "depth image");
+                                     config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "depth image", 0.0f);
         ao_target = CreateTarget(kAoFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                  "ambient occlusion image");
         ao_scratch = CreateTarget(kAoFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
@@ -804,7 +832,7 @@ struct Renderer::Impl {
         // With multisampling, the alpha written by the shader decides how many of a pixel's
         // samples are covered; cut-out edges (leaves) become smooth this way.
         mesh_info.multisample_state.enable_alpha_to_coverage = msaa_samples > 1;
-        mesh_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
+        mesh_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER;  // reversed depth, see CreateTargets
         mesh_info.depth_stencil_state.enable_depth_test = true;
         mesh_info.depth_stencil_state.enable_depth_write = true;
         mesh_info.target_info.color_target_descriptions = &scene_color_description;
@@ -821,6 +849,8 @@ struct Renderer::Impl {
         SDL_GPUGraphicsPipelineCreateInfo shadow_info = mesh_info;
         shadow_info.fragment_shader = shadow_fragment;
         shadow_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        // Shadow depth runs the usual way (0 near the sun), as the shadow matrices expect.
+        shadow_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
         // Geometry nearer to the sun than the shadow range is flattened onto its start instead of cut away.
         shadow_info.rasterizer_state.enable_depth_clip = false;
         // Pushes shadow depths slightly away from the sun, more on slanted surfaces, so that
@@ -1227,23 +1257,29 @@ struct Renderer::Impl {
 
     // Copies this frame's joint matrices to the graphics card.
     void UploadJointMatrices(SDL_GPUCommandBuffer* commands) {
-        UploadMatrices(commands, joint_palette, joint_buffer, joint_buffer_capacity);
+        UploadMatrices(commands, joint_palette, joint_buffer, joint_buffer_capacity, joint_transfer, joint_transfer_capacity);
     }
 
     // Draws, in one pass, every instance batch that has something in the given list.
     // material_slot: the fragment uniform slot the pass's shader reads the material from.
     void DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, MeshPass mesh_pass, int list,
                              bool ao_on, SDL_GPUGraphicsPipeline*& bound_pipeline) {
+        // Consecutive batches often share a material (the levels of one species, the parts
+        // of one plant): then the fragment uniforms and textures stay bound. Every call to
+        // the graphics API costs several microseconds, and a frame has hundreds of batches.
+        const Material* bound_material = nullptr;
         for (const InstanceBatch& batch : instance_batches) {
             if (batch.list_count[list] == 0) {
                 continue;
             }
             if (batch.terrain_id != 0) {
                 DrawTerrainBatch(commands, pass, mesh_pass, list, ao_on, batch, bound_pipeline);
+                bound_material = nullptr;
                 continue;
             }
             if (batch.impostor_id != 0) {
                 DrawImpostorBatch(commands, pass, mesh_pass, list, ao_on, batch, bound_pipeline);
+                bound_material = nullptr;
                 continue;
             }
             const Material& material = batch.material;
@@ -1261,26 +1297,29 @@ struct Renderer::Impl {
                 glm::vec4(material.uv_scale.x, material.uv_scale.y, static_cast<float>(batch.list_first[list]), 0.0f);
             object_uniforms.wind_response = glm::vec4(material.wind_bend, material.wind_flutter, 0.0f, 0.0f);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
-            const MaterialUniforms material_uniforms = MakeMaterialUniforms(material);
 
-            SDL_GPUTextureSamplerBinding bindings[5]{};
-            bindings[0].texture = GetTexture(material.texture, white_texture);
-            bindings[0].sampler = texture_sampler;
-            if (mesh_pass == kScenePass) {
-                SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
-                bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
-                bindings[1].sampler = texture_sampler;
-                bindings[2].texture = GetTexture(material.orm_texture, white_texture);
-                bindings[2].sampler = texture_sampler;
-                bindings[3].texture = shadow_atlas;
-                bindings[3].sampler = shadow_sampler;
-                bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
-                bindings[4].sampler = clamp_sampler;
-                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
-            } else {
-                // The depth-only passes need the material only to cut out leaves.
-                SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
-                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 1);
+            if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
+                const MaterialUniforms material_uniforms = MakeMaterialUniforms(material);
+                SDL_GPUTextureSamplerBinding bindings[5]{};
+                bindings[0].texture = GetTexture(material.texture, white_texture);
+                bindings[0].sampler = texture_sampler;
+                if (mesh_pass == kScenePass) {
+                    SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
+                    bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
+                    bindings[1].sampler = texture_sampler;
+                    bindings[2].texture = GetTexture(material.orm_texture, white_texture);
+                    bindings[2].sampler = texture_sampler;
+                    bindings[3].texture = shadow_atlas;
+                    bindings[3].sampler = shadow_sampler;
+                    bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
+                    bindings[4].sampler = clamp_sampler;
+                    SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
+                } else {
+                    // The depth-only passes need the material only to cut out leaves.
+                    SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
+                    SDL_BindGPUFragmentSamplers(pass, 0, bindings, 1);
+                }
+                bound_material = &material;
             }
 
             const Mesh& mesh = meshes[batch.mesh_id - 1];
@@ -1436,6 +1475,22 @@ struct Renderer::Impl {
                 local_center = glm::vec4(impostor.center, 1.0f);
                 local_radius = impostor.radius;
             }
+            // Each instance's sphere is computed once; the lists then only test it.
+            instance_spheres.resize(batch.count);
+            for (std::uint32_t i = 0; i < batch.count; ++i) {
+                const glm::mat4& transform = instance_sources[batch.first_source + i];
+                if (batch.terrain_id != 0) {
+                    // A terrain patch's matrix says: corner, size, and how tall the land in it is.
+                    const glm::vec3 extent(transform[0].x, transform[1].y, transform[2].z);
+                    instance_spheres[i] = glm::vec4(glm::vec3(transform[3]) + extent * 0.5f, glm::length(extent) * 0.5f);
+                    continue;
+                }
+                const glm::vec3 center = glm::vec3(transform * local_center);
+                const float radius = local_radius * std::sqrt(glm::max(glm::dot(transform[0], transform[0]),
+                                                                       glm::max(glm::dot(transform[1], transform[1]),
+                                                                                glm::dot(transform[2], transform[2]))));
+                instance_spheres[i] = glm::vec4(center, radius);
+            }
             for (int list = 0; list < kInstanceListCount; ++list) {
                 batch.list_first[list] = static_cast<std::uint32_t>(instance_data.size());
                 batch.list_count[list] = 0;
@@ -1444,20 +1499,11 @@ struct Renderer::Impl {
                 if (!wanted) {
                     continue;
                 }
+                const ViewVolume& volume = volumes[list];
                 for (std::uint32_t i = 0; i < batch.count; ++i) {
-                    const glm::mat4& transform = instance_sources[batch.first_source + i];
-                    glm::vec3 center = glm::vec3(transform * local_center);
-                    float radius = local_radius * std::sqrt(glm::max(glm::dot(transform[0], transform[0]),
-                                                                     glm::max(glm::dot(transform[1], transform[1]),
-                                                                              glm::dot(transform[2], transform[2]))));
-                    if (batch.terrain_id != 0) {
-                        // A terrain patch's matrix says: corner, size, and how tall the land in it is.
-                        const glm::vec3 extent(transform[0].x, transform[1].y, transform[2].z);
-                        center = glm::vec3(transform[3]) + extent * 0.5f;
-                        radius = glm::length(extent) * 0.5f;
-                    }
-                    if (!IsSphereOutside(volumes[list], center, radius)) {
-                        instance_data.push_back(transform);
+                    const glm::vec4& sphere = instance_spheres[i];
+                    if (!IsSphereOutside(volume, glm::vec3(sphere), sphere.w)) {
+                        instance_data.push_back(instance_sources[batch.first_source + i]);
                         ++batch.list_count[list];
                     }
                 }
@@ -1471,9 +1517,10 @@ struct Renderer::Impl {
         }
     }
 
-    // Copies a list of matrices into a buffer that vertex shaders read, growing it as needed.
+    // Copies a list of matrices into a buffer that vertex shaders read, growing it as needed,
+    // through an upload buffer that is kept between frames.
     void UploadMatrices(SDL_GPUCommandBuffer* commands, const std::vector<glm::mat4>& matrices, SDL_GPUBuffer*& buffer,
-                        Uint32& capacity) {
+                        Uint32& capacity, SDL_GPUTransferBuffer*& transfer, Uint32& transfer_capacity) {
         if (matrices.empty()) {
             return;
         }
@@ -1492,7 +1539,26 @@ struct Renderer::Impl {
             }
         }
         const Uint32 size = count * static_cast<Uint32>(sizeof(glm::mat4));
-        SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(matrices.data(), size);
+        if (count > transfer_capacity) {
+            if (transfer != nullptr) {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+            }
+            transfer_capacity = capacity;
+            SDL_GPUTransferBufferCreateInfo transfer_info{};
+            transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            transfer_info.size = transfer_capacity * static_cast<Uint32>(sizeof(glm::mat4));
+            transfer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
+            if (transfer == nullptr) {
+                FatalSdlError("cannot create upload transfer buffer");
+            }
+        }
+        // cycle = true: the previous frame's upload may still be in flight.
+        void* mapped = SDL_MapGPUTransferBuffer(device, transfer, true);
+        if (mapped == nullptr) {
+            FatalSdlError("cannot map upload transfer buffer");
+        }
+        std::memcpy(mapped, matrices.data(), size);
+        SDL_UnmapGPUTransferBuffer(device, transfer);
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
         SDL_GPUTransferBufferLocation source{};
         source.transfer_buffer = transfer;
@@ -1502,8 +1568,6 @@ struct Renderer::Impl {
         // cycle = true: the previous frame may still be reading the old contents.
         SDL_UploadToGPUBuffer(copy_pass, &source, &destination, true);
         SDL_EndGPUCopyPass(copy_pass);
-        // Released once the copy has run.
-        SDL_ReleaseGPUTransferBuffer(device, transfer);
     }
 
     static MaterialUniforms MakeMaterialUniforms(const Material& material) {
@@ -1655,6 +1719,11 @@ Renderer::~Renderer() {
         }
         if (impl_->instance_buffer != nullptr) {
             SDL_ReleaseGPUBuffer(impl_->device, impl_->instance_buffer);
+        }
+        for (SDL_GPUTransferBuffer* transfer : {impl_->instance_transfer, impl_->joint_transfer}) {
+            if (transfer != nullptr) {
+                SDL_ReleaseGPUTransferBuffer(impl_->device, transfer);
+            }
         }
         for (SDL_GPUGraphicsPipeline* pipeline : impl_->terrain_pipelines) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
@@ -2492,6 +2561,7 @@ void Renderer::EndFrame() {
     const Camera& camera = impl.camera;
     const DirectionalLight& light = impl.light;
     const Environment& environment = impl.environment;
+    const auto cpu_start = std::chrono::steady_clock::now();
 
     SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(impl.device);
     if (commands == nullptr) {
@@ -2500,8 +2570,10 @@ void Renderer::EndFrame() {
 
     const float aspect_ratio = static_cast<float>(impl.config.width) / static_cast<float>(impl.config.height);
     const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    // Near and far swapped: depth 1 at the near plane, 0 at the far one (reversed depth, see
+    // CreateTargets). Everything that reads depth (common.hlsli, ao, fog) follows this.
     const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
-                                                  camera.near_plane, camera.far_plane);
+                                                  camera.far_plane, camera.near_plane);
     const glm::mat4 view_projection = projection * view;
     const glm::vec3 light_direction = glm::normalize(light.direction);
     const bool sun_is_on = light.color.r > 0.0f || light.color.g > 0.0f || light.color.b > 0.0f;
@@ -2525,7 +2597,8 @@ void Renderer::EndFrame() {
             instance_cascades = impl.ComputeCascades();
         }
         impl.CullInstances(view_projection, shadows_on ? &instance_cascades : nullptr);
-        impl.UploadMatrices(commands, impl.instance_data, impl.instance_buffer, impl.instance_buffer_capacity);
+        impl.UploadMatrices(commands, impl.instance_data, impl.instance_buffer, impl.instance_buffer_capacity,
+                            impl.instance_transfer, impl.instance_transfer_capacity);
     }
     impl.UploadJointMatrices(commands);
     impl.stats.meshes_submitted = static_cast<int>(impl.draw_commands.size());
@@ -2607,7 +2680,7 @@ void Renderer::EndFrame() {
     if (ao_on || fog_on) {
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.prepass_depth;
-        depth_info.clear_depth = 1.0f;
+        depth_info.clear_depth = 0.0f;  // reversed depth
         depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
         depth_info.store_op = SDL_GPU_STOREOP_STORE;
         depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
@@ -2681,7 +2754,7 @@ void Renderer::EndFrame() {
 
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.scene_depth;
-        depth_info.clear_depth = 1.0f;
+        depth_info.clear_depth = 0.0f;  // reversed depth
         depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
         depth_info.store_op = SDL_GPU_STOREOP_DONT_CARE;
         depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
@@ -2949,9 +3022,13 @@ void Renderer::EndFrame() {
         }
     }
 
+    const auto submit_start = std::chrono::steady_clock::now();
+    impl.stats.cpu_milliseconds = std::chrono::duration<float, std::milli>(submit_start - cpu_start).count();
     if (!SDL_SubmitGPUCommandBuffer(commands)) {
         FatalSdlError("cannot submit frame");
     }
+    impl.stats.wait_milliseconds =
+        std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - submit_start).count();
     impl.in_frame = false;
     impl.has_finished_frame = true;
 }

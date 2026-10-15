@@ -47,7 +47,7 @@ Wiele kopii jednej siatki rysuje `DrawMeshInstances` (jedno polecenie rysowania 
 - Świat prawoskrętny, +Y w górę, kamera patrzy wzdłuż swojego -Z.
 - Macierze 4x4 kolumnowe, wektory kolumnowe: `a * b` stosuje najpierw `b`. Typowy zapis przekształcenia obiektu: `translate * rotate * scale`.
 - Kąty dla funkcji GLM w radianach: `glm::radians(stopnie)`.
-- Głębia w przestrzeni przycinania od 0 (blisko) do 1 (daleko).
+- Głębia w przestrzeni przycinania od 0 do 1 (`GLM_FORCE_DEPTH_ZERO_TO_ONE`). Kamera używa jej **odwróconej**: 1 na płaszczyźnie bliskiej, 0 na dalekiej (bliska i daleka zamienione w `glm::perspective`, głębia czyszczona do 0, test głębi „większe”). Przy zmiennoprzecinkowym obrazie głębi daje to milimetry precyzji kilometry dalej, tam gdzie zwykły kierunek ma metry i daleki teren, drzewa i impostory walczą o piksele. Kaskady cieni zostają przy zwykłym kierunku. Shadery czytające głębię kamery traktują 0 jako niebo.
 - Wektor utworzony bez wartości jest zerowy, macierz jednostkowa, kwaternion bez obrotu.
 - Wektory mają tylko pola `x`, `y`, `z`, `w` (bez aliasów `.r` czy `.s`).
 - Te ustalenia pilnuje `tests/math_test.cpp`.

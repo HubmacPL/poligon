@@ -19,19 +19,60 @@ struct CellSpecies {
 };
 
 struct Cell {
-    // Box around the feet of the cell's plants; only x and z are used.
+    // Box around the feet of the cell's plants.
     glm::vec2 min{1.0e30f};
     glm::vec2 max{-1.0e30f};
+    float min_y = 1.0e30f;
+    float max_y = -1.0e30f;
     std::vector<CellSpecies> species;
+};
+
+// Plants are at most this tall and wide beyond their foot; the box around a cell's feet
+// grows by this much before it is tested against the camera's view.
+constexpr float kPlantReach = 30.0f;
+
+// The six sides of what a camera sees, as planes (normal, distance) with the inside positive.
+struct ViewVolume {
+    glm::vec4 planes[6];
+
+    static ViewVolume FromCamera(const Camera& camera, float aspect_ratio) {
+        const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+        const glm::mat4 projection =
+            glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio, camera.near_plane, camera.far_plane);
+        const glm::mat4 clip = projection * view;
+        const auto row = [&clip](int i) { return glm::vec4(clip[0][i], clip[1][i], clip[2][i], clip[3][i]); };
+        ViewVolume volume;
+        volume.planes[0] = row(3) + row(0);
+        volume.planes[1] = row(3) - row(0);
+        volume.planes[2] = row(3) + row(1);
+        volume.planes[3] = row(3) - row(1);
+        volume.planes[4] = row(3) - row(2);
+        volume.planes[5] = row(2);
+        for (glm::vec4& plane : volume.planes) {
+            plane /= glm::length(glm::vec3(plane));
+        }
+        return volume;
+    }
+
+    bool Sees(const glm::vec3& center, float radius) const {
+        for (const glm::vec4& plane : planes) {
+            if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 // The transforms collected during one Draw for one species and level, split by whether
 // the plants are within shadow range. Plants whose shadow is fading out are in
 // without_shadow for the picture and again in shadow_fading, with the fade, for the shadow.
+// Plants in cells outside the camera's view cast shadows only (shadow_only).
 struct LevelLists {
     std::vector<glm::mat4> with_shadow;
     std::vector<glm::mat4> without_shadow;
     std::vector<glm::mat4> shadow_fading;
+    std::vector<glm::mat4> shadow_only;
 };
 
 struct SpeciesData {
@@ -53,8 +94,11 @@ struct Vegetation::Impl {
     float detail_scale = 1.0f;
     float shadow_scale = 1.0f;
     VegetationStats stats;
-    // Scratch for parts whose local transform is not the identity.
+    // Scratch for parts whose local transform is not the identity, and for the plants of a
+    // level as the picture draws them (shadowed and unshadowed together).
     std::vector<glm::mat4> part_transforms;
+    std::vector<glm::mat4> view_list;
+    std::vector<glm::mat4> caster_list;
 
     void ApplyScales(SpeciesData& data) const {
         for (size_t i = 0; i < data.species.levels.size(); ++i) {
@@ -104,6 +148,8 @@ void Vegetation::AddInstance(int species, const glm::mat4& transform) {
     Cell& cell = impl_->cells[key];
     cell.min = glm::min(cell.min, foot);
     cell.max = glm::max(cell.max, foot);
+    cell.min_y = glm::min(cell.min_y, transform[3].y);
+    cell.max_y = glm::max(cell.max_y, transform[3].y);
     for (CellSpecies& entry : cell.species) {
         if (entry.species == species) {
             entry.transforms.push_back(transform);
@@ -151,14 +197,29 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
             lists.with_shadow.clear();
             lists.without_shadow.clear();
             lists.shadow_fading.clear();
+            lists.shadow_only.clear();
         }
     }
 
     // Distances are measured along the ground: a plant seen from a hill top is as detailed
     // as one seen from the same distance on the flat.
     const glm::vec2 eye{camera.position.x, camera.position.z};
+    // Cells wholly outside the camera's view only cast shadows: their plants skip the
+    // picture lists, which saves the renderer most of its per-plant culling.
+    const ViewVolume view = ViewVolume::FromCamera(
+        camera, static_cast<float>(renderer.GetWidth()) / static_cast<float>(glm::max(renderer.GetHeight(), 1)));
     for (const auto& [key, cell] : impl.cells) {
         ++impl.stats.cells_total;
+        const glm::vec3 cell_center((cell.min.x + cell.max.x) * 0.5f, (cell.min_y + cell.max_y) * 0.5f + kPlantReach * 0.5f,
+                                    (cell.min.y + cell.max.y) * 0.5f);
+        const float cell_radius =
+            glm::length(glm::vec3(cell.max.x - cell.min.x, cell.max_y - cell.min_y + kPlantReach, cell.max.y - cell.min.y)) *
+                0.5f +
+            kPlantReach;
+        const bool cell_visible = view.Sees(cell_center, cell_radius);
+        if (!cell_visible) {
+            ++impl.stats.cells_out_of_view;
+        }
         // Nearest and farthest the cell's plants can be from the camera.
         const glm::vec2 nearest_point = glm::clamp(eye, cell.min, cell.max);
         const float nearest = glm::distance(eye, nearest_point);
@@ -170,8 +231,8 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
         for (const CellSpecies& entry : cell.species) {
             SpeciesData& data = impl.species[static_cast<size_t>(entry.species)];
             const int level_count = static_cast<int>(data.species.levels.size());
-            if (nearest > data.level_distance[level_count - 1]) {
-                continue;  // every plant of this species in the cell is out of range
+            if (nearest > data.level_distance[level_count - 1] || (!cell_visible && nearest > data.shadow_distance)) {
+                continue;  // every plant of this species in the cell is out of range (or out of view and shadow range)
             }
             cell_used = true;
             // The level a plant at this distance shows, and how far it is into the fade
@@ -205,7 +266,9 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                 // The whole cell falls into one level, with nothing fading: hand its plants
                 // over in one piece.
                 LevelLists& lists = data.lists[nearest_level];
-                std::vector<glm::mat4>& list = nearest <= data.shadow_distance ? lists.with_shadow : lists.without_shadow;
+                std::vector<glm::mat4>& list = !cell_visible                      ? lists.shadow_only
+                                               : nearest <= data.shadow_distance ? lists.with_shadow
+                                                                                 : lists.without_shadow;
                 list.insert(list.end(), entry.transforms.begin(), entry.transforms.end());
                 continue;
             }
@@ -217,14 +280,22 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                     continue;
                 }
                 const bool with_shadow = distance <= data.shadow_distance;
-                const auto add = [&data, with_shadow](int to_level, const glm::mat4& placed) {
+                const auto add = [&data, with_shadow, cell_visible](int to_level, const glm::mat4& placed) {
                     LevelLists& lists = data.lists[to_level];
+                    if (!cell_visible) {
+                        if (with_shadow) {
+                            lists.shadow_only.push_back(placed);
+                        }
+                        return;
+                    }
                     (with_shadow ? lists.with_shadow : lists.without_shadow).push_back(placed);
                 };
                 if (fade == 0.0f) {
                     if (with_shadow && distance > shadow_fade_start) {
                         // Drawn whole, with a shadow that dissolves with distance.
-                        data.lists[level].without_shadow.push_back(transform);
+                        if (cell_visible) {
+                            data.lists[level].without_shadow.push_back(transform);
+                        }
                         glm::mat4 shadow = transform;
                         shadow[3][3] = -(distance - shadow_fade_start) / (data.shadow_distance - shadow_fade_start);
                         data.lists[level].shadow_fading.push_back(shadow);
@@ -282,7 +353,6 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
     view_only.shadow_cascades = 0;
     InstanceOptions shadow_only;
     shadow_only.draw_in_view = false;
-    const InstanceOptions view_and_shadow;
 
     for (SpeciesData& data : impl.species) {
         const std::vector<VegetationLevel>& levels = data.species.levels;
@@ -291,23 +361,27 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
             const LevelLists& lists = data.lists[level];
             impl.stats.instances_per_level[level] += static_cast<int>(lists.with_shadow.size() + lists.without_shadow.size());
             const VegetationLevel& look = levels[static_cast<size_t>(level)];
-            submit(look, lists.without_shadow, view_only);
+            // One batch draws the level in the picture, shadowed and unshadowed plants
+            // together (one draw call per part instead of two); the shadows come from
+            // separate caster batches, which the picture passes skip.
+            impl.view_list.clear();
+            impl.view_list.insert(impl.view_list.end(), lists.without_shadow.begin(), lists.without_shadow.end());
+            impl.view_list.insert(impl.view_list.end(), lists.with_shadow.begin(), lists.with_shadow.end());
+            submit(look, impl.view_list, view_only);
+            if (look.impostor.id != 0) {
+                continue;  // impostors cast no shadows
+            }
             // Shadows come from a simpler mesh level, never from an impostor.
             int shadow_level = glm::min(level + glm::max(data.species.shadow_level_bias, 0), level_count - 1);
             while (shadow_level > level && levels[static_cast<size_t>(shadow_level)].impostor.id != 0) {
                 --shadow_level;
             }
-            if (look.impostor.id != 0) {
-                submit(look, lists.with_shadow, view_only);
-            } else if (shadow_level == level) {
-                submit(look, lists.with_shadow, view_and_shadow);
-                submit(look, lists.shadow_fading, shadow_only);
-            } else {
-                // The picture gets this level's meshes, the shadow image a simpler level's.
-                submit(look, lists.with_shadow, view_only);
-                submit(levels[static_cast<size_t>(shadow_level)], lists.with_shadow, shadow_only);
-                submit(levels[static_cast<size_t>(shadow_level)], lists.shadow_fading, shadow_only);
-            }
+            const VegetationLevel& caster = levels[static_cast<size_t>(shadow_level)];
+            impl.caster_list.clear();
+            impl.caster_list.insert(impl.caster_list.end(), lists.with_shadow.begin(), lists.with_shadow.end());
+            impl.caster_list.insert(impl.caster_list.end(), lists.shadow_only.begin(), lists.shadow_only.end());
+            submit(caster, impl.caster_list, shadow_only);
+            submit(caster, lists.shadow_fading, shadow_only);
         }
     }
 }

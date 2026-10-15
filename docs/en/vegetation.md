@@ -41,7 +41,7 @@ vegetation.Draw(renderer, camera);
 
 - A **species** is a list of levels, nearest first. Each level has parts (mesh, material, transform relative to the plant's foot) and the distance up to which it is used. Beyond the last level the plant is not drawn.
 - Distances are measured along the ground from the camera.
-- `Draw` goes through the cells in a fixed order. A cell with nothing in range is skipped; a cell lying wholly within one level is handed over in one piece; only cells that straddle a boundary are looked at plant by plant. Then each species and level becomes one `DrawMeshInstances` call per part.
+- `Draw` goes through the cells in a fixed order. A cell with nothing in range is skipped; a cell outside the camera's view (its box grown by 30 m for the plants' height) hands its plants over as shadow casters only; a cell lying wholly within one level is handed over in one piece; only cells that straddle a boundary are looked at plant by plant. Then each species and level becomes one `DrawMeshInstances` call per part for the picture, plus caster-only calls (with `draw_in_view = false`) for the plants within shadow range, drawn with the shadow level.
 - `SetDistanceScale(detail, shadow)` multiplies all level distances and shadow distances, for tuning with sliders.
 - `GetStats()`: plants per level, cells skipped, batches.
 - Meshes and textures belong to the caller; the system only holds handles and transforms.
