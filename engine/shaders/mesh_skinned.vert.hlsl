@@ -13,12 +13,14 @@ ByteAddressBuffer joint_matrices : register(t0, space0);
 
 cbuffer FrameUniforms : register(b0, space1) {
     float4x4 view_projection;
+    float4 wind;  // see ApplyWind in common.hlsli
 };
 
 cbuffer ObjectUniforms : register(b1, space1) {
     float4x4 model;
     float4 object_color;
     float4 uv_scale;  // xy: multiplier for texture coordinates, z: index of this mesh's first joint matrix
+    float4 wind_response;  // unused here
 };
 
 struct VertexInput {

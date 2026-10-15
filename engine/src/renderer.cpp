@@ -66,12 +66,14 @@ constexpr int kCascadeCount = 4;
 // Uniform layouts. Each must match the cbuffer of the same name in engine/shaders/*.hlsl.
 struct VertexFrameUniforms {
     glm::mat4 view_projection;
+    glm::vec4 wind{0.0f};
 };
 
 struct ObjectUniforms {
     glm::mat4 model;
     glm::vec4 color;
     glm::vec4 uv_scale;
+    glm::vec4 wind_response{0.0f};
 };
 
 struct FragmentFrameUniforms {
@@ -1198,7 +1200,15 @@ struct Renderer::Impl {
         uniforms.color = ToVec4(command.material.color);
         uniforms.uv_scale = glm::vec4(command.material.uv_scale.x, command.material.uv_scale.y,
                                       static_cast<float>(command.first_joint), 0.0f);
+        uniforms.wind_response = glm::vec4(command.material.wind_bend, command.material.wind_flutter, 0.0f, 0.0f);
         return uniforms;
+    }
+
+    // The frame's wind as the vertex shaders read it (see ApplyWind in common.hlsli).
+    glm::vec4 WindUniform() const {
+        const float length = glm::length(environment.wind_direction);
+        const glm::vec2 direction = length > 0.0001f ? environment.wind_direction / length : glm::vec2(1.0f, 0.0f);
+        return glm::vec4(direction.x, direction.y, glm::max(environment.wind_strength, 0.0f), environment.wind_time);
     }
 
     // Binds the pipeline a draw command needs in the given pass, unless it is bound already.
@@ -1249,6 +1259,7 @@ struct Renderer::Impl {
             object_uniforms.color = ToVec4(material.color);
             object_uniforms.uv_scale =
                 glm::vec4(material.uv_scale.x, material.uv_scale.y, static_cast<float>(batch.list_first[list]), 0.0f);
+            object_uniforms.wind_response = glm::vec4(material.wind_bend, material.wind_flutter, 0.0f, 0.0f);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
             const MaterialUniforms material_uniforms = MakeMaterialUniforms(material);
 
@@ -2563,6 +2574,7 @@ void Renderer::EndFrame() {
 
             VertexFrameUniforms frame_uniforms;
             frame_uniforms.view_projection = cascades.light_view_projection[cascade];
+            frame_uniforms.wind = impl.WindUniform();
             SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
 
             for (const std::uint32_t command_index : impl.cascade_commands[cascade]) {
@@ -2606,6 +2618,7 @@ void Renderer::EndFrame() {
         }
         VertexFrameUniforms frame_uniforms;
         frame_uniforms.view_projection = view_projection;
+        frame_uniforms.wind = impl.WindUniform();
         SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
         SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
         for (const std::uint32_t command_index : impl.visible_commands) {
@@ -2695,6 +2708,7 @@ void Renderer::EndFrame() {
 
         VertexFrameUniforms vertex_frame_uniforms;
         vertex_frame_uniforms.view_projection = view_projection;
+        vertex_frame_uniforms.wind = impl.WindUniform();
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
 
         FragmentFrameUniforms frame_uniforms{};

@@ -272,6 +272,63 @@ int main(int argc, char** argv) {
         Expect(RedIs(frame, kSize / 2, kSize / 2, 89, 3), "automatic exposure follows a change of light gradually");
     }
 
+    // --- Wind ---
+    // A 10 m pole with a bending material, seen from the side. Without wind its top is at
+    // x = 0. With wind blowing towards +x the top moves there (by how much depends on the
+    // gust at the given moment, so several moments are tried) and never upwind.
+    {
+        poligon::Renderer renderer(MakeConfig(backend));
+        const poligon::MeshVertex pole_vertices[4] = {{{-0.3f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+                                                      {{0.3f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+                                                      {{0.3f, 10.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+                                                      {{-0.3f, 10.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}};
+        const std::uint32_t pole_indices[6] = {0, 1, 2, 0, 2, 3};
+        const poligon::MeshHandle pole = renderer.CreateMesh(pole_vertices, 4, pole_indices, 6);
+        poligon::Material bending = white;
+        bending.double_sided = true;
+        bending.wind_bend = 20.0f;
+        poligon::Camera camera;
+        camera.position = {0.0f, 5.0f, 30.0f};
+        camera.target = {0.0f, 5.0f, 0.0f};
+        const glm::ivec2 top = ToPixel(camera, {0.0f, 9.5f, 0.0f});
+        const glm::ivec2 upwind = ToPixel(camera, {-1.5f, 9.5f, 0.0f});
+        const auto is_white = [&frame](glm::ivec2 pixel) {
+            return frame.pixels[static_cast<size_t>(pixel.y * frame.width + pixel.x) * 4] > 200;
+        };
+
+        poligon::Environment still;
+        still.shadows = false;
+        renderer.BeginFrame(camera, MakeFlatLight(1.0f), still);
+        renderer.DrawMesh(pole, identity, bending);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        Expect(is_white(top) && !is_white(upwind), "without wind the pole stands straight");
+
+        poligon::Environment windy = still;
+        windy.wind_direction = {1.0f, 0.0f};
+        windy.wind_strength = 1.0f;
+        bool moved = false;
+        bool went_upwind = false;
+        for (const float time : {0.0f, 0.9f, 1.8f, 2.7f}) {
+            windy.wind_time = time;
+            renderer.BeginFrame(camera, MakeFlatLight(1.0f), windy);
+            renderer.DrawMesh(pole, identity, bending);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            moved = moved || !is_white(top);
+            went_upwind = went_upwind || is_white(upwind);
+        }
+        Expect(moved, "in the wind the top of the pole leaves its place");
+        Expect(!went_upwind, "the pole never bends against the wind");
+
+        // Without a wind response the same pole does not move.
+        renderer.BeginFrame(camera, MakeFlatLight(1.0f), windy);
+        renderer.DrawMesh(pole, identity, white);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        Expect(is_white(top), "a material without a wind response ignores the wind");
+    }
+
     std::printf("effects_render_test finished\n");
     return test::ExitCode();
 }

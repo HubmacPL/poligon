@@ -343,7 +343,10 @@ public:
         const poligon::Camera camera = camera_.ToCamera(clip_planes);
 
         renderer_.SetPostSettings(settings_.post);
-        renderer_.BeginFrame(camera, settings_.sun, settings_.environment);
+        // The wind runs on game time, so a replay moves the plants exactly as the recording did.
+        poligon::Environment environment = settings_.environment;
+        environment.wind_time = time_seconds_;
+        renderer_.BeginFrame(camera, settings_.sun, environment);
         if (show_windows_) {
             poligon::ShowRenderSettingsWindow(renderer_, settings_, settings_path_.c_str());
             poligon::ShowFrameStatsWindow(renderer_);
@@ -471,8 +474,11 @@ private:
     // lod_name: the folder below poligon-assets/lods that holds the two simpler levels of
     // detail (made by tools/assets/make_tree.mjs or simplify_model.py); nullptr for kinds
     // without. `levels` says how far each level is used.
+    // wind: Material::wind_bend and wind_flutter for the kind; flutter goes to the cut-out
+    // (leaf) materials only.
     Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false,
-                  const char* lod_name = nullptr, const LevelDistances& levels = kTreeLevels) {
+                  const char* lod_name = nullptr, const LevelDistances& levels = kTreeLevels,
+                  glm::vec2 wind = {0.0f, 0.0f}) {
         Kind kind;
         kind.is_small = is_small;
         const std::filesystem::path file = FindGltf(assets_ / relative_folder);
@@ -483,7 +489,11 @@ private:
             return kind;
         }
         render_models_.push_back(poligon::UploadModel(renderer_, model));
-        const poligon::RenderModel& render_model = render_models_.back();
+        poligon::RenderModel& render_model = render_models_.back();
+        for (poligon::Material& material : render_model.materials) {
+            material.wind_bend = wind.x;
+            material.wind_flutter = material.alpha_cutoff > 0.0f ? wind.y : 0.0f;
+        }
 
         // The box around each instance.
         const size_t count = model.instances.size();
@@ -653,18 +663,19 @@ private:
     void LoadKinds() {
         render_models_.reserve(32);
         // Trees made with tools/assets/make_tree.mjs from the recipes in tools/assets/trees.
-        pine_ = LoadKind("generated/pine", false, false, true, "pine");
-        spruce_ = LoadKind("generated/spruce", false, false, true, "spruce");
-        birch_ = LoadKind("generated/birch", false, false, true, "birch");
-        oak_ = LoadKind("generated/oak", false, false, true, "oak");
-        young_spruce_ = LoadKind("generated/spruce_young", false, false, true, "spruce_young", kYoungTreeLevels);
-        young_pine_ = LoadKind("generated/pine_young", false, false, true, "pine_young", kYoungTreeLevels);
+        // The last argument is the wind response: bend and flutter (see Material).
+        pine_ = LoadKind("generated/pine", false, false, true, "pine", kTreeLevels, {1.0f, 1.0f});
+        spruce_ = LoadKind("generated/spruce", false, false, true, "spruce", kTreeLevels, {1.0f, 1.0f});
+        birch_ = LoadKind("generated/birch", false, false, true, "birch", kTreeLevels, {1.3f, 1.3f});
+        oak_ = LoadKind("generated/oak", false, false, true, "oak", kTreeLevels, {0.8f, 1.0f});
+        young_spruce_ = LoadKind("generated/spruce_young", false, false, true, "spruce_young", kYoungTreeLevels, {1.5f, 1.0f});
+        young_pine_ = LoadKind("generated/pine_young", false, false, true, "pine_young", kYoungTreeLevels, {1.5f, 1.0f});
         // Simpler levels of downloaded models: tools/assets/simplify_model.py.
-        shrub_ = LoadKind("polyhaven/shrub_02", true, false, false, "shrub_02", kThingLevels);
-        low_shrub_ = LoadKind("polyhaven/shrub_03", true, true);
-        fern_ = LoadKind("polyhaven/fern_02", true, true);
-        nettle_ = LoadKind("polyhaven/nettle_plant", true, true);
-        grass_ = LoadKind("polyhaven/grass_bermuda_01", true, true);
+        shrub_ = LoadKind("polyhaven/shrub_02", true, false, false, "shrub_02", kThingLevels, {2.5f, 1.0f});
+        low_shrub_ = LoadKind("polyhaven/shrub_03", true, true, false, nullptr, kTreeLevels, {4.0f, 1.2f});
+        fern_ = LoadKind("polyhaven/fern_02", true, true, false, nullptr, kTreeLevels, {5.0f, 1.2f});
+        nettle_ = LoadKind("polyhaven/nettle_plant", true, true, false, nullptr, kTreeLevels, {4.0f, 1.0f});
+        grass_ = LoadKind("polyhaven/grass_bermuda_01", true, true, false, nullptr, kTreeLevels, {6.0f, 1.5f});
         boulder_ = LoadKind("polyhaven/boulder_01", false, false, false, "boulder_01", kThingLevels);
         rocks_ = LoadKind("polyhaven/rock_moss_set_01", true, false, false, "rock_moss_set_01", kThingLevels);
         stump_ = LoadKind("polyhaven/tree_stump_01", false, false, false, "tree_stump_01", kThingLevels);
@@ -986,6 +997,8 @@ poligon::RenderSettings MakeForestSettings() {
     environment.fog_base_height = -60.0f;
     environment.fog_shadow_brightness = 0.22f;
     environment.fog_sun_glow = 1.2f;
+    environment.wind_direction = {0.6f, 0.8f};
+    environment.wind_strength = 1.0f;
 
     settings.post.bloom = true;
     settings.post.auto_exposure = true;

@@ -145,6 +145,14 @@ struct Environment {
     // Strength of the glow around the sun. 0 turns it off.
     float fog_sun_glow = 1.0f;
 
+    // Wind: the direction it blows towards (world x and z), its strength (1 = a moderate
+    // breeze; 0 turns the wind off) and how long it has been blowing, in seconds. Give the
+    // game's own time, not the clock, so that replays match. Plants move according to
+    // their materials (Material::wind_bend, wind_flutter); shadows move with them.
+    glm::vec2 wind_direction{1.0f, 0.0f};
+    float wind_strength = 0.0f;
+    float wind_time = 0.0f;
+
     // Ambient occlusion: crevices and places close to other surfaces (the inside of a tree
     // crown, where a trunk meets the ground) receive less ambient light. Computed from what
     // is on screen. Does not affect direct sunlight.
@@ -260,6 +268,14 @@ struct Material {
     // ambient light), used when occlusion_in_orm is true. Create it with is_color = false.
     TextureHandle orm_texture;
     bool occlusion_in_orm = false;
+
+    // How the wind moves a mesh with this material (0 = not at all). wind_bend: the whole
+    // plant leans downwind, by this much times about 3 cm per meter of height at full
+    // strength (1 for a tree, more for short plants, which bend more per meter).
+    // wind_flutter: every vertex shivers on its own, by this much times about 4 cm (leaves,
+    // grass blades). The model's origin counts as the plant's foot.
+    float wind_bend = 0.0f;
+    float wind_flutter = 0.0f;
 };
 
 // What the last finished frame cost, for checking that culling works.

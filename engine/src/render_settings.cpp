@@ -41,6 +41,11 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("fog.shadow_brightness", environment.fog_shadow_brightness, 0.0f, 1.0f);
     visitor.Float("fog.sun_glow", environment.fog_sun_glow, 0.0f, 5.0f);
 
+    visitor.Section("wind");
+    visitor.Float("wind.strength", environment.wind_strength, 0.0f, 3.0f);
+    visitor.Float("wind.direction_x", environment.wind_direction.x, -1.0f, 1.0f);
+    visitor.Float("wind.direction_z", environment.wind_direction.y, -1.0f, 1.0f);
+
     visitor.Section("ambient occlusion");
     visitor.Bool("ambient_occlusion.on", environment.ambient_occlusion);
     visitor.Float("ambient_occlusion.radius", environment.ambient_occlusion_radius, 0.02f, 2.0f);

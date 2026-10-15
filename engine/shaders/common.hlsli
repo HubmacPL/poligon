@@ -44,6 +44,34 @@ bool KeptByFade(float fade, float2 pixel) {
     return fade > 0.0 ? threshold < fade : threshold >= -fade;
 }
 
+// Wind (Environment::wind_*, Material::wind_*). `wind`: xy = the direction it blows towards
+// (world x and z), z = strength, w = time in seconds. `response`: x = how much the plant
+// bends, y = how much its leaves flutter. `foot` is the plant's base (the model's origin),
+// `local` the vertex in the model's own coordinates. Returns the moved world position.
+float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, float2 response) {
+    if (wind.z <= 0.0) {
+        return world_position;
+    }
+    float2 direction = wind.xy;
+    float height = max(world_position.y - foot.y, 0.0);
+    // Gusts travel over the land as two waves; every plant starts them at a slightly
+    // different moment, so that a forest does not move as one.
+    float phase = frac(sin(dot(foot.xz, float2(12.9898, 78.233))) * 43758.5453) * 6.2832;
+    float along = dot(foot.xz, direction);
+    float gust = (0.5 + 0.5 * sin(along * 0.08 - wind.w * 1.2 + phase)) *
+                 (0.7 + 0.3 * sin(along * 0.31 - wind.w * 2.7 + phase * 2.0));
+    // Bending: the whole plant leans downwind, the more the higher up a point is.
+    float bend = response.x * wind.z * gust * height * 0.03;
+    float3 moved = world_position + float3(direction.x, 0.0, direction.y) * bend;
+    // A bent stem does not get longer: the top comes down a little.
+    moved.y -= 0.5 * bend * bend / max(height, 0.5);
+    // Flutter: leaves and blades shiver each on their own, more towards the tips.
+    float seed = dot(local, float3(7.13, 3.71, 5.29));
+    float amplitude = response.y * wind.z * (0.3 + 0.7 * gust) * 0.04 * saturate(height * 2.0);
+    moved += float3(sin(wind.w * 9.0 + seed), 0.5 * sin(wind.w * 7.3 + seed * 1.7), cos(wind.w * 8.1 + seed * 2.3)) * amplitude;
+    return moved;
+}
+
 // Linear color to the sRGB encoding 8-bit color images use.
 float3 LinearToSrgb(float3 color) {
     float3 low = color * 12.92;
