@@ -226,6 +226,8 @@ struct MeshHandle {
     std::uint32_t id = 0;
 };
 
+struct CompressedImage;  // poligon/texture_compression.h
+
 // Identifies a texture created by Renderer. An id of 0 means "no texture".
 struct TextureHandle {
     std::uint32_t id = 0;
@@ -476,6 +478,11 @@ public:
     // Copies `count` images of the same size into one texture array (used for the layers of a
     // terrain, TerrainMaterial). A shader picks the image by number.
     TextureHandle CreateTextureArray(const Image* images, int count, const TextureOptions& options = TextureOptions{});
+    // The same from block-compressed images with their mipmaps (poligon/texture_compression.h),
+    // as the asset cooker makes them: they are copied as they are. Normal maps in Bc5 hold x
+    // and y only; shaders rebuild z.
+    TextureHandle CreateTexture(const CompressedImage& image);
+    TextureHandle CreateTextureArray(const CompressedImage* images, int count);
 
     // Free a mesh or texture before the renderer is destroyed, to release graphics memory.
     // The handle must not be used afterwards; its number is not given out again.
@@ -511,6 +518,9 @@ public:
     void BakeImpostor(const ImpostorPart* parts, int count, int frames_per_side, int frame_size, Impostor& impostor);
     // Copies an impostor's pictures to the graphics card.
     ImpostorHandle CreateImpostor(const Impostor& impostor);
+    // The same from compressed pictures (as cooked; color with alpha, normal with alpha).
+    ImpostorHandle CreateImpostor(const CompressedImage& color, const CompressedImage& normal, int frames_per_side,
+                                  const glm::vec3& center, float radius);
     // Call outside BeginFrame/EndFrame. The handle must not be used afterwards.
     void DestroyImpostor(ImpostorHandle impostor);
     // Draws an impostor once per transform, like DrawMeshInstances: each copy is a card the
@@ -557,6 +567,8 @@ public:
     void SetWindowTitle(const char* title);
 
 private:
+    TextureHandle CreateTextureArray(const CompressedImage* images, int count, bool plain);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

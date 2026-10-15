@@ -59,16 +59,16 @@ Nagłówek: `poligon/graphics_quality.h`. Przykład: `examples/graphics_quality`
 | gęstość i promień pokrywy ziemi | x0,35, x0,6 | x0,65, x0,8 | x1, x1 | x1,5, x1,3 |
 | szczegół terenu | x0,6 | x0,8 | x1 | x1,5 |
 
-Zmierzone w `forest_scene` na terenie generowanym z jego jeziorami, na GTX 980 w 1920 x 1080 (`release`, bez okna, 200 ticków), w milisekundach na klatkę, w czterech widokach używanych przy każdym pomiarze: start z widokiem na jezioro `0 0`, w lesie `-60 -40 225 6`, na brzegu jeziora `-26 -300 5 -4`, wstecz nad lasem `0 0 185 -3`:
+Zmierzone w `forest_scene` na terenie generowanym z jego jeziorami i wypieczonymi assetami (z kompresją blokową), na GTX 980 w 1920 x 1080 (`release`, bez okna, 200 ticków), w milisekundach na klatkę, w czterech widokach używanych przy każdym pomiarze: start z widokiem na jezioro `0 0`, w lesie `-60 -40 225 6`, na brzegu jeziora `-26 -300 5 -4`, wstecz nad lasem `0 0 185 -3`:
 
 | | start | w lesie | brzeg | wstecz |
 |---|---|---|---|---|
-| low | 8,2 | 9,8 | 5,5 | 9,2 |
-| medium | 11,4 | 14,5 | 8,2 | 13,5 |
-| high | 15,3 | 20,1 | 10,1 | 18,1 |
-| ultra | 44,5 | 77,0 | 15,0 | 61,8 |
+| low | 7,2 | 8,0 | 4,6 | 7,4 |
+| medium | 9,6 | 12,8 | 6,8 | 11,3 |
+| high | 12,7 | 16,2 | 9,3 | 15,0 |
+| ultra | 31,7 | 50,5 | 14,0 | 42,8 |
 
-Medium trzyma 60 klatek na sekundę (16,7 ms) wszędzie. W lesie resztę rozstrzygają obrazy cieni: na terenie Batorza high z 2048 pikselami na kaskadę zajmowało 30 ms, bez cieni 17 ms. Woda kosztuje od 0,5 do 2 ms tam, gdzie widać jezioro.
+Medium i high trzymają 60 klatek na sekundę (16,7 ms) wszędzie. Skompresowane tekstury zdjęły z klatki od 10 do 35% (karta czyta ćwierć pamięci). W lesie resztę rozstrzygają obrazy cieni: na terenie Batorza high z 2048 pikselami na kaskadę zajmowało 30 ms, bez cieni 17 ms. Woda kosztuje od 0,5 do 2 ms tam, gdzie widać jezioro.
 
 Pomiar: `forest_scene X Z OBRÓT POCHYLENIE --headless --ticks 200 --quality high --resolution 1920x1080 --dump-frame out.png`. Testy: część o zestawach w `tests/render_settings_test.cpp`, część o skali rysowania w `tests/temporal_aa_test.cpp`, część o dalekich kaskadach w `tests/effects_render_test.cpp`.
 
@@ -163,6 +163,6 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Geometria sceny jest rysowana jeszcze raz dla przebiegu głębi, gdy włączone jest przyciemnianie zagłębień, mgła objętościowa albo TAA, albo gdy multisampling jest wyłączony; bez multisamplingu ten przebieg oszczędza więcej, niż kosztuje (patrz Jakość grafiki).
 - Automatyczna ekspozycja dostosowuje się na klatkę, nie na sekundę, więc jej tempo zależy od liczby klatek na sekundę.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
-- Tekstury są nieskompresowane (4 bajty na piksel plus mipmapy), co przy 4 GB pamięci karty wystarczy na testy, nie na duży świat.
+- Tekstury robione z obrazów (`CreateTexture(const Image&)`) są nieskompresowane (4 bajty na piksel plus mipmapy); wypieczone assety mają kompresję blokową (od ćwierci do ósmej części tego, patrz [assets.md](assets.md)).
 - Kanał alfa tekstury służy tylko do wycinania (`alpha_cutoff`), nigdy do mieszania kolorów.
 - Okno ma stały rozmiar; zmiana rozmiaru nie jest obsługiwana.

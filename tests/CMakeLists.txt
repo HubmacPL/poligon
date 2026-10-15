@@ -40,6 +40,16 @@ foreach(render_test texture_render_test scene_render_test effects_render_test sk
   endforeach()
 endforeach()
 
+# Assets: compression, the list, cooking, loading by name from a folder and an archive,
+# plant variants and the level file; draws a cooked model on both backends.
+add_executable(assets_test assets_test.cpp)
+target_link_libraries(assets_test PRIVATE poligon_engine poligon_build_options)
+foreach(backend d3d12 vulkan)
+  add_test(NAME assets_test_${backend} COMMAND assets_test ${backend} ${CMAKE_BINARY_DIR}/test_output)
+  set_tests_properties(assets_test_${backend} PROPERTIES
+    FAIL_REGULAR_EXPRESSION "D3D12 ERROR;D3D12 WARNING;D3D12 CORRUPTION;Validation Error;VUID-")
+endforeach()
+
 # Model loading: the test writes its own small OBJ and glTF files, then the viewer draws one
 # of them on both backends with the debug layer on.
 add_executable(model_test model_test.cpp)

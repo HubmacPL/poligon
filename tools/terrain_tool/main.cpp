@@ -64,53 +64,10 @@ void PrintInfo(const poligon::HeightMap& map) {
                 counts[0] / total, counts[1] / total, counts[2] / total, counts[3] / total, static_cast<double>(steepest));
 }
 
-// Sets one generator setting from "name=value"; false for an unknown name.
+// Sets one generator setting from "name=value"; false for an unknown name or a bad number.
 bool SetGeneratorSetting(poligon::TerrainGeneratorSettings& s, const char* text) {
     const char* equals = std::strchr(text, '=');
-    if (equals == nullptr) {
-        return false;
-    }
-    const std::string name(text, equals);
-    const char* value = equals + 1;
-    struct FloatSetting {
-        const char* name;
-        float* value;
-    };
-    const FloatSetting floats[] = {{"size", &s.size}, {"spacing", &s.spacing}, {"coarse_spacing", &s.coarse_spacing},
-                                   {"map_spacing", &s.map_spacing}, {"relief", &s.relief}, {"initial_relief", &s.initial_relief},
-                                   {"initial_hill_size", &s.initial_hill_size},
-                                   {"years_per_step", &s.years_per_step}, {"uplift", &s.uplift},
-                                   {"erodibility", &s.erodibility}, {"area_exponent", &s.area_exponent},
-                                   {"hillslope_diffusion", &s.hillslope_diffusion}, {"basin_radius", &s.basin_radius},
-                                   {"basin_start", &s.basin_start}, {"basin_sinking", &s.basin_sinking},
-                                   {"detail_height", &s.detail_height}, {"talus_degrees", &s.talus_degrees},
-                                   {"droplets_per_square_meter", &s.droplets_per_square_meter},
-                                   {"droplet_strength", &s.droplet_strength}, {"min_lake_area", &s.min_lake_area},
-                                   {"min_lake_depth", &s.min_lake_depth}};
-    for (const FloatSetting& setting : floats) {
-        if (name == setting.name) {
-            *setting.value = std::strtof(value, nullptr);
-            return true;
-        }
-    }
-    struct IntSetting {
-        const char* name;
-        int* value;
-    };
-    const IntSetting ints[] = {{"erosion_steps", &s.erosion_steps}, {"basin_count", &s.basin_count},
-                               {"outlet_edges", &s.outlet_edges}, {"thermal_iterations", &s.thermal_iterations},
-                               {"droplet_steps", &s.droplet_steps}};
-    for (const IntSetting& setting : ints) {
-        if (name == setting.name) {
-            *setting.value = std::atoi(value);
-            return true;
-        }
-    }
-    if (name == "seed") {
-        s.seed = std::strtoull(value, nullptr, 10);
-        return true;
-    }
-    return false;
+    return equals != nullptr && poligon::SetTerrainGeneratorSetting(s, std::string(text, equals), equals + 1);
 }
 
 // A picture of one map: black (low) to a color (high), `to_unit` turning a value into 0..1.

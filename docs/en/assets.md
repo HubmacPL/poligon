@@ -1,0 +1,81 @@
+# Assets and levels
+
+How a game names, prepares and loads its textures and models, how plants are made from models, and the level file.
+
+Headers: `poligon/assets.h`, `poligon/texture_compression.h`, `poligon/plants.h`, `poligon/level.h`. Tool: `asset_cooker`. Example: `examples/assets`. Test: `tests/assets_test.cpp`.
+
+**State (decided on 2026-10-14, built on 2026-10-15):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start and things put by hand. Not yet: plant rules in the level file (the next step), animations cooked as ozz archives (clips are stored as keys and turned into ozz animations on load), the data folder split into source and cooked halves (waiting for the author's decision: cooked files now go to `build/cooked`, sources stay in `poligon-assets` as they are).
+
+## The asset list
+
+A text file in the repository, in the style of the render settings file (`tools/forest_scene/assets.txt` is the example):
+
+```
+poligon-assets 1
+
+texture ground/forest_floor_color
+source polyhaven/textures/forrest_ground_01/forrest_ground_01_diff_2k.jpg
+format bc1
+
+model trees/pine
+source generated/pine/pine.gltf
+lod lods/pine/lod1/pine.gltf
+lod lods/pine/lod2/pine.gltf
+impostor impostors/pine.impostor
+```
+
+- A line `texture NAME` or `model NAME` starts an asset; the lines after it set it. Names are made of letters, digits, `_ - . /` and cannot leave the folder; paths are relative to the source folder.
+- Texture settings: `source`, `format` (`bc1` color, `bc3` color with transparency, `bc4` one channel, `bc5` normal map, `rgba8` no compression), `color 0|1` (sRGB colors or data), `cutout` (the alpha cutoff, for coverage-preserving mipmaps), `max_size` (larger images are halved until they fit).
+- Model settings: `source` (any format Assimp reads), `lod` (simpler levels, most detailed first; their nodes are matched to the full model's by name), `impostor` (a file baked by `impostor_baker`), `max_size` (largest size of the model's textures).
+- An unknown word, a missing source, a name used twice or a setting of the wrong kind is an error that names the line (`LoadAssetList`, `ParseAssetList`).
+
+## Cooking
+
+- `CookAssets(list, list_path, source_folder, cooked_folder)` writes one file per asset, named after it (`trees/pine` becomes `trees/pine.pmodel`, `ground/forest_floor_color` becomes `ground/forest_floor_color.ptex`). An asset is cooked again only when its cooked file is missing or older than the list or any of its sources, or when the cooker itself changed (`kCookVersion` in `cook_version.txt`). A failed asset is reported and the others go on. `forest_scene` cooks on start: 31 assets in 15 s the first time, nothing after that.
+- `asset_cooker LIST SOURCE_FOLDER COOKED_FOLDER [--pack ARCHIVE]` does the same from the command line.
+- Textures (`.ptex`, `SaveCompressedImage`): block-compressed with stb_dxt (public domain / MIT) with every mipmap, computed as `Renderer::CreateTexture` computes them (coverage-preserving for cut-outs); block-compressed chains end at 4 x 4, because Direct3D 12 cannot copy smaller levels of them. Sizes must be multiples of 4.
+- Models (`.pmodel`): meshes, instances, materials, skeleton and animation clips, each material's three images compressed (color BC1, or BC3 for cut-outs; normal map BC5; occlusion-roughness-metallic BC1), the simpler levels' meshes and the impostor's two pictures (BC3). Normal maps keep x and y only; shaders rebuild z (`mesh.frag.hlsl`, `terrain.frag.hlsl`), which works for uncompressed maps too.
+- Sizes: the 31 assets of `forest_scene` take 225 MB cooked. Compressed ground layers made 2048-pixel layer textures affordable again, and the frame got faster (15.3 to 13.9 ms at the start in high), because the card reads less memory.
+- `PackAssets(cooked_folder, archive)` packs the folder into one file for a released game: `POLIPAK1`, a table of (FNV-1a 64-bit hash of the name, offset, size), then the files. Names are not stored and nothing is encrypted (the author's choice of 2026-10-14: it keeps casual hands out, as theHunter's archives do).
+
+## Loading by name
+
+```cpp
+poligon::AssetLibrary library;
+library.Open("build/cooked", error);          // a cooked folder or an archive
+const poligon::LoadedModel* pine = library.LoadModel(renderer, "trees/pine", error);
+poligon::TextureHandle floor = library.LoadTexture(renderer, "ground/forest_floor_color", error);
+const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color", error);  // e.g. for texture arrays
+```
+
+- A second load of the same name gives the same object. A missing or broken asset returns nothing and sets `error`.
+- `LoadedModel` holds the model data (vertices for physics and placement, skeleton, clips), its `RenderModel`, the simpler levels' meshes and the impostor.
+- `Renderer::CreateTexture(const CompressedImage&)` and `CreateTextureArray(const CompressedImage*, count)` take cooked images as they are; `CreateImpostor` has an overload for compressed pictures.
+
+## Plants from models
+
+`MakePlantKind(model, settings, vegetation)` (`poligon/plants.h`) turns a loaded model into a kind of plant, rock or dead wood and adds its variants to a `Vegetation`:
+
+- `split_variants`: a file that holds a row of different plants gives one variant per group of meshes whose boxes overlap seen from above (trunk and leaves of one tree stay together); each is moved so that the middle of its foot is at the origin, unless `keep_origin`.
+- Levels: the full model, each simpler level (meshes of nodes named like the variant's), then the impostor, at `level_distances`; a level the asset lacks is skipped and the one before it reaches its distance; without an impostor the last mesh level reaches `distance_without_impostor`.
+- `wind_bend` and `wind_flutter` go to the materials (flutter to cut-out ones only); `shadow_distance` and `shadow_level_bias` to the species.
+- `AddPlantCollider(physics, kind, variant, foot, turn, scale)` adds what blocks the player: `PlantCollider::Trunk` (an upright cylinder of `trunk_radius`, at most 8 m tall), `Block` (a box a little smaller than the variant) or nothing.
+
+This moved the variant grouping, the search for simpler levels and impostors by folder, and the choice of collider out of `forest_scene`; the planting loop moves with the plant rules.
+
+## The level file
+
+```
+poligon-level 1
+
+terrain.seed 1               # any TerrainGeneratorSettings by name
+terrain.relief 110
+render_settings look.txt     # optional, relative to this file
+player_start lake            # or: player_start X Z TURN (meters on the map, degrees)
+object rocks/boulder 3538 5112 40 2.2    # asset, map x, z, turn, scale
+```
+
+- `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/level.h`). Unknown words and bad values are errors that name the line; lines whose first word another reader takes (for example the plant rules) are kept in `Level::other_lines`.
+- `player_start lake` uses `FindLakeViewpoint` (`poligon/terrain_generator.h`): gentle ground 150 to 500 m from the largest lake, as high above it as possible with its middle in view.
+- `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` read and write generator settings by name; `terrain_tool generate` uses the same names.
+- `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake and three boulders put by hand.

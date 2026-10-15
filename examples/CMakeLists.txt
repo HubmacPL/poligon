@@ -22,6 +22,7 @@ poligon_add_example(animation ${CMAKE_BINARY_DIR}/test_output/example_animation.
 poligon_add_example(terrain ${CMAKE_BINARY_DIR}/test_output/example_terrain.png)
 poligon_add_example(terrain_generator ${CMAKE_BINARY_DIR}/test_output/example_terrain_generator.png)
 poligon_add_example(water ${CMAKE_BINARY_DIR}/test_output/example_water.png)
+poligon_add_example(assets ${CMAKE_BINARY_DIR}/test_output/example_assets)
 poligon_add_example(vegetation ${CMAKE_BINARY_DIR}/test_output/example_vegetation.png)
 poligon_add_example(impostor ${CMAKE_BINARY_DIR}/test_output/example_impostor.png)
 poligon_add_example(wind ${CMAKE_BINARY_DIR}/test_output/example_wind.png)

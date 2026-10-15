@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "poligon/height_map.h"
@@ -142,6 +143,27 @@ std::uint64_t HashTerrainGeneratorSettings(const TerrainGeneratorSettings& setti
 // Poligon's own file for generated land: a line of text, then every map as raw numbers.
 bool SaveTerrainMaps(const char* path, const TerrainMaps& maps);
 bool LoadTerrainMaps(const char* path, TerrainMaps& maps, std::string& error);
+
+// Sets one setting by its name in TerrainGeneratorSettings ("seed", "size",
+// "erosion_steps"...) from text. False for an unknown name or a bad number.
+bool SetTerrainGeneratorSetting(TerrainGeneratorSettings& settings, const std::string& name, const std::string& value);
+// Every setting as name and text, in a fixed order; numbers keep all their digits.
+std::vector<std::pair<std::string, std::string>> GetTerrainGeneratorSettings(const TerrainGeneratorSettings& settings);
+
+// A place to look at the largest lake from: on gentle ground 150 to 500 m from its middle,
+// as high above it as possible (up to 40 m) with the lake's middle in view from eye
+// height, at least 300 m from the map's edge.
+struct LakeViewpoint {
+    glm::vec2 position{0.0f};  // meters on the map
+    // Facing the lake, as FreeCamera::yaw_degrees (0 = looking along -z).
+    float yaw_degrees = 0.0f;
+    // From the place to the lake's middle: unit direction (map x, z) and distance.
+    glm::vec2 direction{0.0f, -1.0f};
+    float distance = 0.0f;
+    int lake = -1;  // index into TerrainMaps::lakes
+};
+// False (and the map's middle) when the land has no lake or no place fits.
+bool FindLakeViewpoint(const TerrainMaps& maps, float eye_height, LakeViewpoint& viewpoint);
 
 // Loads the land for these settings from `cache_directory` if it was generated before;
 // otherwise generates it and saves it there (the folder is created when missing).

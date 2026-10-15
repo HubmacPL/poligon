@@ -16,8 +16,9 @@ This file is the table of contents and the rule book. Details live in topic file
 - Skeletal animation: skeleton and clips from model files, skinned meshes, joint matrices: [docs/en/animation.md](docs/en/animation.md)
 - Physics: bodies, characters, rays, how it stays deterministic, the pattern for flecs: [docs/en/physics.md](docs/en/physics.md)
 - Vegetation: instancing, levels of detail and fading between them, impostors, ground cover made on the fly, cells, making simpler tree meshes, what shadows cost: [docs/en/vegetation.md](docs/en/vegetation.md)
+- Assets and levels: the asset list, the cooker and texture compression, loading by name from a folder or an archive, plants made from models, the level file: [docs/en/assets.md](docs/en/assets.md)
 - Terrain: the terrain generator (uplift, erosion, lakes, maps), ground layers chosen by the maps, height maps, real elevation data from Geoportal and its pitfalls, the terrain tool, the Batorz map: [docs/en/terrain.md](docs/en/terrain.md)
-- Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`, `model_viewer`, `forest_scene`, `image_tool`, `terrain_tool`, `impostor_baker`), `cmake/`, `docs/en/` and `docs/pl/`.
+- Layout: `engine/` (library `poligon_engine`, headers in `engine/include/poligon/`), `game/` (toy game `toy`), `examples/`, `tests/`, `tools/` (scripts, `image_compare`, `state_compare`, `model_viewer`, `forest_scene`, `image_tool`, `terrain_tool`, `impostor_baker`, `asset_cooker`), `cmake/`, `docs/en/` and `docs/pl/`.
 - After every code change run `powershell -ExecutionPolicy Bypass -File tools\check.ps1`. Only `CHECK PASSED` means it works.
 
 ## Project state

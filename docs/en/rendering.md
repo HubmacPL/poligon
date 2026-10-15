@@ -57,16 +57,16 @@ Header: `poligon/graphics_quality.h`. Example: `examples/graphics_quality`.
 | ground cover density, radius | x0.35, x0.6 | x0.65, x0.8 | x1, x1 | x1.5, x1.3 |
 | terrain detail | x0.6 | x0.8 | x1 | x1.5 |
 
-Measured in `forest_scene` on generated land with its lakes, on the GTX 980 at 1920 x 1080 (`release`, headless, 200 ticks), in milliseconds per frame, at the four views used for every measurement: the start looking at the lake `0 0`, inside the forest `-60 -40 225 6`, on the lake shore `-26 -300 5 -4`, back over the forest `0 0 185 -3`:
+Measured in `forest_scene` on generated land with its lakes and cooked (block-compressed) assets, on the GTX 980 at 1920 x 1080 (`release`, headless, 200 ticks), in milliseconds per frame, at the four views used for every measurement: the start looking at the lake `0 0`, inside the forest `-60 -40 225 6`, on the lake shore `-26 -300 5 -4`, back over the forest `0 0 185 -3`:
 
 | | start | inside | shore | back |
 |---|---|---|---|---|
-| low | 8.2 | 9.8 | 5.5 | 9.2 |
-| medium | 11.4 | 14.5 | 8.2 | 13.5 |
-| high | 15.3 | 20.1 | 10.1 | 18.1 |
-| ultra | 44.5 | 77.0 | 15.0 | 61.8 |
+| low | 7.2 | 8.0 | 4.6 | 7.4 |
+| medium | 9.6 | 12.8 | 6.8 | 11.3 |
+| high | 12.7 | 16.2 | 9.3 | 15.0 |
+| ultra | 31.7 | 50.5 | 14.0 | 42.8 |
 
-Medium holds 60 frames per second (16.7 ms) everywhere. In the forest the shadow images decide the rest: on the Batorz land high with 2048 pixels per cascade took 30 ms, without shadows 17 ms. Water costs 0.5 to 2 ms where a lake is in view.
+Medium and high hold 60 frames per second (16.7 ms) everywhere. Compressed textures took 10 to 35% off the frame (the card reads a quarter of the memory). In the forest the shadow images decide the rest: on the Batorz land high with 2048 pixels per cascade took 30 ms, without shadows 17 ms. Water costs 0.5 to 2 ms where a lake is in view.
 
 Measure: `forest_scene X Z TURN TILT --headless --ticks 200 --quality high --resolution 1920x1080 --dump-frame out.png`. Tests: the preset part of `tests/render_settings_test.cpp`, the render scale part of `tests/temporal_aa_test.cpp`, the far cascade part of `tests/effects_render_test.cpp`.
 
@@ -161,6 +161,6 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - The scene's geometry is drawn one more time for the depth pass whenever ambient occlusion, volumetric fog or TAA is on, or multisampling is off; without multisampling that pass then saves more than it costs (see Graphics quality).
 - Automatic exposure adapts per frame, not per second, so its speed depends on the frame rate.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
-- Textures are uncompressed (4 bytes per pixel plus mipmaps): enough for tests with 4 GB of card memory, not for a large world.
+- Textures made from images (`CreateTexture(const Image&)`) are uncompressed (4 bytes per pixel plus mipmaps); cooked assets are block-compressed (a quarter to an eighth of that, see [assets.md](assets.md)).
 - The alpha channel of a texture is used only for cut-out (`alpha_cutoff`), never for blending.
 - The window has a fixed size; resizing is not handled.

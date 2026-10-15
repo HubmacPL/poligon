@@ -40,7 +40,8 @@ FragmentOutput main(FragmentInput input) {
     }
     float3 normal = normalize(input.world_normal) * (input.is_front_face ? 1.0 : -1.0);
     if (material_flags.x > 0.5) {
-        float3 map = normal_texture.Sample(normal_sampler, input.uv).xyz * 2.0 - 1.0;
+        float2 map_xy = normal_texture.Sample(normal_sampler, input.uv).xy * 2.0 - 1.0;
+        float3 map = float3(map_xy, sqrt(saturate(1.0 - dot(map_xy, map_xy))));
         normal = ApplyNormalMapSample(map, normal, input.world_position, input.uv);
     }
     FragmentOutput output;

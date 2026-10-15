@@ -140,7 +140,8 @@ float4 main(FragmentInput input) : SV_Target0 {
                 float scale = tile_scales[j / 4][j % 4];
                 float3 layer_normal =
                     layer_normals.SampleGrad(layer_normal_sampler, float3(place * scale, j), place_dx * scale, place_dy * scale).xyz;
-                detail += (layer_normal * 2.0 - 1.0) * share;
+                float2 normal_xy = layer_normal.xy * 2.0 - 1.0;  // z rebuilt: two-channel maps hold none
+                detail += float3(normal_xy, sqrt(saturate(1.0 - dot(normal_xy, normal_xy)))) * share;
             }
             total += share;
         }

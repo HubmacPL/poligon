@@ -1,0 +1,17 @@
+poligon-level 1
+
+# The level of forest_scene (format: docs/en/assets.md). The land is the terrain
+# generator's default; the lines below only name the settings that matter most.
+terrain.seed 1
+terrain.size 6000
+terrain.relief 110
+terrain.basin_count 3
+
+# On a slope above the largest lake, looking at it.
+player_start lake
+
+# Things put by hand, in meters on the map: a few big boulders at the edge of the clearing
+# above the lake.
+object rocks/boulder 3538 5112 40 2.2
+object rocks/boulder 3585 5121 160 1.8
+object rocks/boulder 3572 5096 275 2.6

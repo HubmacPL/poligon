@@ -1,8 +1,11 @@
 // Showcase: 6 x 6 km of land made by the engine's terrain generator, with a piece of
 // forest above a lake, put together from the models in the poligon-assets folder, to walk
 // through and look at. It exists to judge the renderer on a whole scene and to measure how
-// long a frame takes. The land is generated on the first run (about two minutes) and then
-// loaded from build/terrain_cache.
+// long a frame takes. The land is generated on the first run (about three minutes) and then
+// loaded from build/terrain_cache. The models and textures are named in assets.txt (next to
+// this file) and cooked into build/cooked when the program starts, whenever the list or a
+// source changed (poligon/assets.h). The land's settings, the player's start and things put
+// by hand are in forest.level (poligon/level.h).
 //
 // Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
 //   X Z         where to stand, in meters from the start (default 0 0): a slope above
@@ -34,6 +37,7 @@
 #include <vector>
 
 #include "poligon/animation.h"
+#include "poligon/assets.h"
 #include "poligon/command_line.h"
 #include "poligon/crash_handler.h"
 #include "poligon/debug_ui.h"
@@ -43,8 +47,10 @@
 #include "poligon/ground_cover.h"
 #include "poligon/impostor.h"
 #include "poligon/input.h"
+#include "poligon/level.h"
 #include "poligon/model.h"
 #include "poligon/physics.h"
+#include "poligon/plants.h"
 #include "poligon/platform.h"
 #include "poligon/render_settings.h"
 #include "poligon/terrain.h"
@@ -108,43 +114,16 @@ private:
     std::uint32_t state_;
 };
 
-// One mesh of a plant with its material, placed relative to the plant's foot.
-struct Piece {
-    poligon::MeshHandle mesh;
-    poligon::Material material;
-    glm::mat4 local;
-};
-
-// One plant (or rock) that can be put into the scene many times.
-struct Variant {
-    std::vector<Piece> pieces;
-    // The variant's number in the vegetation system, and what was registered there.
-    int species = -1;
-    poligon::VegetationSpecies definition;
-    float height = 0.0f;
-    // Half of the variant's width along x and z, before scaling.
-    glm::vec2 half_width{0.0f};
-};
-
-// What stands in the way of the player and of thrown crates.
-enum class Collision {
-    None,   // plants: walked through
-    Trunk,  // trees: an upright cylinder where the trunk is; the crown does not block
-    Block,  // rocks, stumps, fallen trunks: a box around the whole thing
-};
-
-// The variants of one model file. Several downloaded models hold a row of different
-// plants; each of those becomes its own variant.
+// One kind of plant, rock or dead wood: its variants (poligon/plants.h), and whether it is
+// small (small things may stand in the view to the lake and need no long distances).
 struct Kind {
-    std::vector<Variant> variants;
+    poligon::PlantKind plants;
     bool is_small = false;
-    Collision collision = Collision::None;
-    // For Collision::Trunk: radius of the trunk before scaling.
-    float trunk_radius = 0.3f;
+    std::string asset_name;
 };
 
 struct Placement {
-    const Variant* variant;
+    const poligon::PlantVariant* variant;
     glm::mat4 transform;
     glm::vec3 position;
     bool is_small;
@@ -235,37 +214,26 @@ std::filesystem::path FindAssetsFolder(const char* program_path) {
     return {};
 }
 
-// The first .gltf file in a folder, or an empty path.
-std::filesystem::path FindGltf(const std::filesystem::path& folder) {
-    std::error_code error;
-    std::vector<std::filesystem::path> found;
-    for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error)) {
-        if (it->path().extension() == ".gltf") {
-            found.push_back(it->path());
-        }
-    }
-    std::sort(found.begin(), found.end());
-    return found.empty() ? std::filesystem::path() : found.front();
-}
-
-struct Box {
-    glm::vec3 min{1.0e30f};
-    glm::vec3 max{-1.0e30f};
-};
-
 class ForestGame : public poligon::Game {
 public:
-    ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const std::filesystem::path& terrain_cache,
-               const poligon::Input& input, const ForestActions& actions, const float view[4], bool turn_given,
-               const poligon::RenderSettings& settings, const std::string& settings_path)
-        : renderer_(renderer), assets_(assets), terrain_cache_(terrain_cache), input_(input), actions_(actions),
-          settings_(settings), settings_path_(settings_path) {
+    ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const std::filesystem::path& build_folder,
+               const std::filesystem::path& asset_list, const std::filesystem::path& level_path, const poligon::Input& input,
+               const ForestActions& actions,
+               const float view[4], bool turn_given, const poligon::RenderSettings& settings, const std::string& settings_path)
+        : renderer_(renderer), assets_(assets), terrain_cache_(build_folder / "terrain_cache"), input_(input),
+          actions_(actions), settings_(settings), settings_path_(settings_path) {
+        OpenAssets(asset_list, build_folder / "cooked");
+        std::string level_error;
+        if (!poligon::LoadLevel(level_path.string().c_str(), level_, level_error)) {
+            std::printf("forest_scene: %s; using the default land\n", level_error.c_str());
+        }
         CreateGround();
         camera_.position = {view[0], Ground(view[0], view[1]) + kEyeHeight, view[1]};
         camera_.yaw_degrees = turn_given ? view[2] : start_yaw_;
         camera_.pitch_degrees = view[3];
         camera_.vertical_fov_degrees = 65.0f;
         LoadKinds();
+        PlaceLevelObjects();
         PlantForest();
         AddAnimals();
         AddCrates();
@@ -466,90 +434,45 @@ private:
         applied_quality_valid_ = true;
     }
 
-    poligon::TextureHandle LoadTexture(const std::filesystem::path& path, bool is_color) {
-        poligon::Image image;
+    // Cooks what changed since the last run (sources in poligon-assets, cooked files in
+    // build/cooked) and opens the cooked folder.
+    void OpenAssets(const std::filesystem::path& list_path, const std::filesystem::path& cooked) {
+        poligon::AssetList list;
         std::string error;
-        if (!poligon::LoadImageFromFile(path.string().c_str(), image, error)) {
+        if (!poligon::LoadAssetList(list_path.string().c_str(), list, error)) {
             std::printf("forest_scene: %s\n", error.c_str());
-            return {};
+        } else {
+            const auto started = std::chrono::steady_clock::now();
+            const poligon::CookReport report =
+                poligon::CookAssets(list, list_path.string().c_str(), assets_.string().c_str(), cooked.string().c_str());
+            std::printf("forest_scene: assets: %d cooked, %d up to date, in %.1f s\n", report.cooked, report.up_to_date,
+                        std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+            for (const std::string& failure : report.errors) {
+                std::printf("forest_scene: %s\n", failure.c_str());
+            }
         }
-        poligon::TextureOptions options;
-        options.is_color = is_color;
-        return renderer_.CreateTexture(image, options);
+        if (!library_.Open(cooked.string().c_str(), error)) {
+            std::printf("forest_scene: %s\n", error.c_str());
+        }
     }
 
-    // An image for a terrain layer at 1024 x 1024 (texture arrays need one size; until
-    // textures are compressed, 2048 would cost too much memory). A missing file gives a
-    // plain stand-in.
-    poligon::Image LoadLayerImage(const std::filesystem::path& path, bool is_color) {
-        poligon::Image image;
-        std::string error;
-        if (!poligon::LoadImageFromFile(path.string().c_str(), image, error)) {
-            std::printf("forest_scene: %s\n", error.c_str());
-            return is_color ? poligon::MakeSolidImage(1024, 1024, 110, 100, 80) : poligon::MakeSolidImage(1024, 1024, 128, 128, 255);
-        }
-        while (image.width > 1024) {
-            image = poligon::MakeHalfSizeImage(image, is_color);
-        }
-        return image;
-    }
-
-    // Where the player starts: on gentle ground 150 to 500 m from the largest lake, as high
-    // above it as possible (up to 40 m) while the lake's middle stays in view. Sets
-    // start_yaw_ to face the lake. Positions are meters on the map.
+    // Where the player starts: as the level says, above the largest lake or at a given
+    // place. Sets start_yaw_ and what is known of the lake. Positions are meters on the map.
     glm::vec2 ChooseStart() {
-        const poligon::HeightMap& map = maps_.height;
-        glm::vec2 best(map.GetSizeX() * 0.5f, map.GetSizeZ() * 0.5f);
-        start_yaw_ = 270.0f;
-        const poligon::Lake* lake = nullptr;
-        for (const poligon::Lake& candidate : maps_.lakes) {
-            if (lake == nullptr || candidate.area > lake->area) {
-                lake = &candidate;
-            }
+        if (!level_.start_at_lake) {
+            start_yaw_ = level_.start_turn_degrees;
+            return level_.start_position;
         }
-        if (lake == nullptr) {
-            return best;
+        poligon::LakeViewpoint viewpoint;
+        if (!poligon::FindLakeViewpoint(maps_, kEyeHeight, viewpoint)) {
+            std::printf("forest_scene: no place above a lake; starting in the middle of the land\n");
+            return viewpoint.position;
         }
-        float best_score = -1.0e30f;
-        const float margin = 300.0f;
-        for (float radius = 150.0f; radius <= 500.0f; radius += 50.0f) {
-            for (int step = 0; step < 72; ++step) {
-                const float angle = static_cast<float>(step) * 0.0872665f;
-                const glm::vec2 place = lake->center + radius * glm::vec2(std::cos(angle), std::sin(angle));
-                if (place.x < margin || place.y < margin || place.x > map.GetSizeX() - margin || place.y > map.GetSizeZ() - margin) {
-                    continue;
-                }
-                if (maps_.Sample(maps_.water_distance, place.x, place.y) < 30.0f || map.GetSlopeDegrees(place.x, place.y) > 12.0f) {
-                    continue;
-                }
-                const float above = map.GetHeight(place.x, place.y) - lake->level;
-                if (above < 6.0f) {
-                    continue;
-                }
-                // The line from the eye to the lake's middle must stay above the ground.
-                const glm::vec3 eye(place.x, map.GetHeight(place.x, place.y) + kEyeHeight, place.y);
-                const glm::vec3 target(lake->center.x, lake->level, lake->center.y);
-                bool seen = true;
-                for (int sample = 1; sample < 64 && seen; ++sample) {
-                    const glm::vec3 point = glm::mix(eye, target, static_cast<float>(sample) / 64.0f);
-                    seen = map.GetHeight(point.x, point.z) < point.y - 0.3f;
-                }
-                if (!seen) {
-                    continue;
-                }
-                const float score = std::min(above, 40.0f) - radius * 0.02f;
-                if (score > best_score) {
-                    best_score = score;
-                    best = place;
-                }
-            }
-        }
-        const glm::vec2 to_lake = glm::normalize(lake->center - best);
-        start_yaw_ = glm::degrees(std::atan2(-to_lake.x, -to_lake.y));
-        start_lake_level_ = lake->level;
-        lake_direction_ = to_lake;
-        lake_distance_ = glm::length(lake->center - best);
-        return best;
+        start_yaw_ = viewpoint.yaw_degrees;
+        start_lake_level_ = maps_.lakes[static_cast<size_t>(viewpoint.lake)].level;
+        lake_direction_ = viewpoint.direction;
+        lake_distance_ = viewpoint.distance;
+        return viewpoint.position;
     }
 
     // Whether there is lake water (or its very edge) at a world position.
@@ -563,7 +486,7 @@ private:
     // loaded from the cache. Its ground textures follow the generator's maps. The world's
     // origin is put at the player's start, at the land's height there.
     void CreateGround() {
-        const poligon::TerrainGeneratorSettings generator;  // the defaults: 6 x 6 km, seed 1
+        const poligon::TerrainGeneratorSettings& generator = level_.terrain;
         std::string error;
         bool generated = false;
         const auto started = std::chrono::steady_clock::now();
@@ -580,29 +503,35 @@ private:
         config.origin = {-start.x, -map.GetHeight(start.x, start.y), -start.y};
         world_height_offset_ = config.origin.y;
 
-        // Ground layers and where each covers the land, from the generator's maps.
-        const std::filesystem::path textures = assets_ / "polyhaven" / "textures";
+        // Ground layers (cooked, block-compressed) and where each covers the land, from the
+        // generator's maps.
         struct LayerSource {
             const char* name;
             float tile_size;
         };
-        const LayerSource sources[] = {{"forrest_ground_01", 3.0f}, {"forest_leaves_04", 2.5f}, {"grass_ground", 3.0f},
-                                       {"brown_mud_02", 3.0f},      {"gravelly_sand", 2.5f},    {"river_small_rocks", 2.0f},
-                                       {"aerial_rocks_02", 6.0f}};
+        const LayerSource sources[] = {{"forest_floor", 3.0f}, {"litter", 2.5f}, {"grass", 3.0f}, {"mud", 3.0f},
+                                       {"sand", 2.5f},         {"stones", 2.0f}, {"rock", 6.0f}};
         constexpr int kLayers = 7;
-        std::vector<poligon::Image> colors;
-        std::vector<poligon::Image> normals;
+        std::vector<poligon::CompressedImage> colors;
+        std::vector<poligon::CompressedImage> normals;
         for (int i = 0; i < kLayers; ++i) {
-            const std::string name = sources[i].name;
-            colors.push_back(LoadLayerImage(textures / name / (name + "_diff_2k.jpg"), true));
-            normals.push_back(LoadLayerImage(textures / name / (name + "_nor_gl_2k.jpg"), false));
+            const std::string name = std::string("ground/") + sources[i].name;
+            const poligon::CompressedImage* color = library_.LoadImage(name + "_color", error);
+            const poligon::CompressedImage* normal = color != nullptr ? library_.LoadImage(name + "_normal", error) : nullptr;
+            if (color == nullptr || normal == nullptr) {
+                std::printf("forest_scene: %s; the ground is drawn without textures\n", error.c_str());
+                colors.clear();
+                break;
+            }
+            colors.push_back(*color);
+            normals.push_back(*normal);
             config.material.tile_sizes[i] = sources[i].tile_size;
         }
-        poligon::TextureOptions data;
-        data.is_color = false;
-        config.material.colors = renderer_.CreateTextureArray(colors.data(), kLayers);
-        config.material.normals = renderer_.CreateTextureArray(normals.data(), kLayers, data);
-        config.material.layer_count = kLayers;
+        if (!colors.empty()) {
+            config.material.colors = renderer_.CreateTextureArray(colors.data(), kLayers);
+            config.material.normals = renderer_.CreateTextureArray(normals.data(), kLayers);
+            config.material.layer_count = kLayers;
+        }
         config.material.steep_start_degrees = 90.0f;  // the rock layer covers steep ground
 
         poligon::TerrainLayerRule rules[kLayers];
@@ -681,232 +610,99 @@ private:
         first_shown_body_id_ = physics_.GetLastBodyId() + 1;
     }
 
-    // keep_origin: leave the model where its file put it sideways (a tree's trunk stands at
-    // the file's origin, while the middle of its crown may be well off to one side).
-    // lod_name: the folder below poligon-assets/lods that holds the two simpler levels of
-    // detail (made by tools/assets/make_tree.mjs or simplify_model.py); nullptr for kinds
-    // without. `levels` says how far each level is used.
-    // wind: Material::wind_bend and wind_flutter for the kind; flutter goes to the cut-out
-    // (leaf) materials only.
-    Kind LoadKind(const char* relative_folder, bool split, bool is_small, bool keep_origin = false,
-                  const char* lod_name = nullptr, const LevelDistances& levels = kTreeLevels,
-                  glm::vec2 wind = {0.0f, 0.0f}) {
+    // One kind from its cooked model and its settings as a plant (poligon/plants.h).
+    Kind LoadKind(const char* asset_name, bool is_small, const poligon::PlantSettings& settings) {
         Kind kind;
         kind.is_small = is_small;
-        const std::filesystem::path file = FindGltf(assets_ / relative_folder);
-        poligon::Model model;
         std::string error;
-        if (file.empty() || !poligon::LoadModelFromFile(file.string().c_str(), model, error)) {
-            std::printf("forest_scene: skipping %s: %s\n", relative_folder, file.empty() ? "no .gltf file" : error.c_str());
+        const poligon::LoadedModel* model = library_.LoadModel(renderer_, asset_name, error);
+        if (model == nullptr) {
+            std::printf("forest_scene: skipping %s: %s\n", asset_name, error.c_str());
             return kind;
         }
-        render_models_.push_back(poligon::UploadModel(renderer_, model));
-        poligon::RenderModel& render_model = render_models_.back();
-        for (poligon::Material& material : render_model.materials) {
-            material.wind_bend = wind.x;
-            material.wind_flutter = material.alpha_cutoff > 0.0f ? wind.y : 0.0f;
-        }
-
-        // The box around each instance.
-        const size_t count = model.instances.size();
-        std::vector<Box> boxes(count);
-        for (size_t i = 0; i < count; ++i) {
-            const poligon::ModelInstance& instance = model.instances[i];
-            for (const poligon::MeshVertex& vertex : model.meshes[static_cast<size_t>(instance.mesh_index)].vertices) {
-                const glm::vec3 position = glm::vec3(instance.transform * glm::vec4(vertex.position, 1.0f));
-                boxes[i].min = glm::min(boxes[i].min, position);
-                boxes[i].max = glm::max(boxes[i].max, position);
-            }
-        }
-
-        // Group instances whose boxes overlap when seen from above: trunk and leaves of one
-        // tree end up together, neighboring plants in a row do not.
-        std::vector<size_t> group(count);
-        std::iota(group.begin(), group.end(), size_t{0});
-        const auto find_group = [&group](size_t i) {
-            while (group[i] != i) {
-                i = group[i];
-            }
-            return i;
-        };
-        for (size_t a = 0; a < count; ++a) {
-            for (size_t b = a + 1; b < count; ++b) {
-                const bool overlap = boxes[a].min.x < boxes[b].max.x && boxes[b].min.x < boxes[a].max.x &&
-                                     boxes[a].min.z < boxes[b].max.z && boxes[b].min.z < boxes[a].max.z;
-                if (!split || overlap) {
-                    group[find_group(b)] = find_group(a);
-                }
-            }
-        }
-
-        for (size_t root = 0; root < count; ++root) {
-            if (find_group(root) != root) {
-                continue;
-            }
-            Box box;
-            for (size_t i = 0; i < count; ++i) {
-                if (find_group(i) == root) {
-                    box.min = glm::min(box.min, boxes[i].min);
-                    box.max = glm::max(box.max, boxes[i].max);
-                }
-            }
-            // Move the group so that the middle of its foot is at the origin.
-            const glm::mat4 to_foot = glm::translate(
-                glm::mat4(1.0f), {keep_origin ? 0.0f : -(box.min.x + box.max.x) * 0.5f, -box.min.y,
-                                  keep_origin ? 0.0f : -(box.min.z + box.max.z) * 0.5f});
-            Variant variant;
-            std::vector<std::string> node_names;
-            variant.height = box.max.y - box.min.y;
-            variant.half_width = {(box.max.x - box.min.x) * 0.5f, (box.max.z - box.min.z) * 0.5f};
-            for (size_t i = 0; i < count; ++i) {
-                if (find_group(i) != root) {
-                    continue;
-                }
-                const size_t mesh_index = static_cast<size_t>(model.instances[i].mesh_index);
-                Piece piece;
-                piece.mesh = render_model.meshes[mesh_index];
-                piece.material = render_model.materials[static_cast<size_t>(render_model.mesh_material_index[mesh_index])];
-                piece.local = to_foot * model.instances[i].transform;
-                variant.pieces.push_back(piece);
-                node_names.push_back(model.instances[i].node_name);
-            }
-
-            // Register the variant with the vegetation system: its meshes, and from how far each is used.
-            poligon::VegetationSpecies species;
-            poligon::VegetationLevel full;
-            for (const Piece& piece : variant.pieces) {
-                full.parts.push_back({piece.mesh, piece.material, piece.local});
-            }
-            if (lod_name != nullptr) {
-                full.max_distance = levels.full;
-                species.levels.push_back(full);
-                const float distances[2] = {levels.medium, levels.low};
-                for (int level = 1; level <= 2; ++level) {
-                    poligon::VegetationLevel simpler;
-                    simpler.parts = LoadLodParts(lod_name, level, to_foot, model, render_model, node_names);
-                    simpler.max_distance = distances[level - 1];
-                    if (simpler.parts.empty()) {
-                        // No simpler mesh: keep drawing the previous level out to this distance.
-                        species.levels.back().max_distance = simpler.max_distance;
-                    } else {
-                        species.levels.push_back(std::move(simpler));
-                    }
-                }
-                // The farthest level: one card with pictures of the tree.
-                poligon::VegetationLevel far;
-                far.impostor = LoadImpostor(lod_name, levels);
-                if (far.impostor.id != 0) {
-                    far.max_distance = levels.impostor;
-                    species.levels.push_back(far);
-                } else {
-                    species.levels.back().max_distance = levels.low_without_impostor;
-                }
-                species.shadow_distance = is_small ? 20.0f : kTreeShadowDistance;
-                species.shadow_level_bias = 1;
-            } else {
-                full.max_distance = is_small ? kSmallPlantDistance : kMediumThingDistance;
-                species.levels.push_back(full);
-                // Grass and the like are too small for their shadows to matter beyond a few steps.
-                species.shadow_distance = is_small ? 20.0f : kShadowDistance + 10.0f;
-            }
-            variant.definition = species;
-            variant.species = vegetation_.AddSpecies(species);
-            kind.variants.push_back(std::move(variant));
-        }
-        std::printf("forest_scene: %s: %zu variant(s), %lld triangles\n", relative_folder, kind.variants.size(),
-                    static_cast<long long>(model.GetTriangleCount()));
+        kind.plants = poligon::MakePlantKind(*model, settings, vegetation_);
+        std::printf("forest_scene: %s: %zu variant(s), %lld triangles\n", asset_name, kind.plants.variants.size(),
+                    static_cast<long long>(model->model.GetTriangleCount()));
         std::fflush(stdout);
         ++loaded_kind_count_;
+        kind.asset_name = asset_name;
         return kind;
     }
 
-    // The impostor baked for a kind, if `levels` asks for one and its file exists.
-    poligon::ImpostorHandle LoadImpostor(const char* lod_name, const LevelDistances& levels) {
-        if (levels.impostor <= 0.0f) {
-            return {};
-        }
-        const std::filesystem::path file = assets_ / "impostors" / (std::string(lod_name) + ".impostor");
-        poligon::Impostor impostor;
-        std::string error;
-        if (!std::filesystem::exists(file) || !poligon::LoadImpostor(file.string().c_str(), impostor, error)) {
-            std::printf("forest_scene: %s has no impostor (%s)\n", lod_name, error.empty() ? "no file" : error.c_str());
-            return {};
-        }
-        return renderer_.CreateImpostor(impostor);
-    }
-
-    // The meshes of one simpler level of a variant: those of the simpler file's nodes named
-    // like the variant's nodes in the full file (a file can hold several variants). They use
-    // the materials of the full model, matched by name, so no texture is loaded twice.
-    std::vector<poligon::VegetationPart> LoadLodParts(const char* lod_name, int level, const glm::mat4& to_foot,
-                                                      const poligon::Model& full_model,
-                                                      const poligon::RenderModel& full_render_model,
-                                                      const std::vector<std::string>& node_names) {
-        std::vector<poligon::VegetationPart> parts;
-        const std::filesystem::path file = FindGltf(assets_ / "lods" / lod_name / ("lod" + std::to_string(level)));
-        poligon::Model model;
-        std::string error;
-        if (file.empty() || !poligon::LoadModelFromFile(file.string().c_str(), model, error, false)) {
-            std::printf("forest_scene: %s has no level %d (%s)\n", lod_name, level, file.empty() ? "no file" : error.c_str());
-            return parts;
-        }
-        for (const poligon::ModelInstance& instance : model.instances) {
-            if (std::find(node_names.begin(), node_names.end(), instance.node_name) == node_names.end()) {
-                continue;
-            }
-            const poligon::ModelMesh& mesh = model.meshes[static_cast<size_t>(instance.mesh_index)];
-            const std::string& material_name = model.materials[static_cast<size_t>(mesh.material_index)].name;
-            size_t material_index = 0;
-            for (size_t i = 0; i < full_model.materials.size(); ++i) {
-                if (full_model.materials[i].name == material_name) {
-                    material_index = i;
-                    break;
+    // The things the level puts by hand, by asset name.
+    void PlaceLevelObjects() {
+        for (const poligon::LevelObject& object : level_.objects) {
+            const Kind* kind = nullptr;
+            for (const Kind* candidate : {&pine_, &spruce_, &birch_, &oak_, &young_spruce_, &young_pine_, &shrub_, &low_shrub_,
+                                          &fern_, &nettle_, &grass_, &boulder_, &rocks_, &stump_, &fallen_trunk_}) {
+                if (candidate->asset_name == object.asset) {
+                    kind = candidate;
                 }
             }
-            poligon::VegetationPart part;
-            part.mesh = renderer_.CreateMesh(mesh.vertices.data(), static_cast<int>(mesh.vertices.size()), mesh.indices.data(),
-                                             static_cast<int>(mesh.indices.size()));
-            part.material = full_render_model.materials[material_index];
-            part.local = to_foot * instance.transform;
-            parts.push_back(part);
+            if (kind == nullptr || kind->plants.variants.empty()) {
+                std::printf("forest_scene: the level places \"%s\", which is not loaded\n", object.asset.c_str());
+                continue;
+            }
+            const poligon::PlantVariant& variant = kind->plants.variants.front();
+            const float x = object.position.x - map_offset_.x;
+            const float z = object.position.y - map_offset_.y;
+            const float turn = glm::radians(object.turn_degrees);
+            const glm::vec3 foot(x, Ground(x, z) - variant.height * object.scale * 0.15f, z);
+            vegetation_.AddInstance(variant.species_id, glm::translate(glm::mat4(1.0f), foot) *
+                                                            glm::rotate(glm::mat4(1.0f), turn, {0.0f, 1.0f, 0.0f}) *
+                                                            glm::scale(glm::mat4(1.0f), glm::vec3(object.scale)));
+            poligon::AddPlantCollider(physics_, kind->plants, variant, foot, turn, object.scale);
         }
-        return parts;
+    }
+
+    // Settings of a kind as a plant: distances of its levels (with simpler levels and an
+    // impostor, or one mesh), shadows, wind response, and what blocks the player.
+    static poligon::PlantSettings MakeSettings(bool with_levels, const LevelDistances& levels, bool is_small, glm::vec2 wind,
+                                               bool split, bool keep_origin, poligon::PlantCollider collider = poligon::PlantCollider::None,
+                                               float trunk_radius = 0.3f) {
+        poligon::PlantSettings settings;
+        settings.split_variants = split;
+        settings.keep_origin = keep_origin;
+        if (with_levels) {
+            settings.level_distances = {levels.full, levels.medium, levels.low};
+            if (levels.impostor > 0.0f) {
+                settings.level_distances.push_back(levels.impostor);
+            }
+            settings.distance_without_impostor = levels.low_without_impostor;
+            settings.shadow_distance = is_small ? 20.0f : kTreeShadowDistance;
+            settings.shadow_level_bias = 1;
+        } else {
+            settings.level_distances = {is_small ? kSmallPlantDistance : kMediumThingDistance};
+            // Grass and the like are too small for their shadows to matter beyond a few steps.
+            settings.shadow_distance = is_small ? 20.0f : kShadowDistance + 10.0f;
+        }
+        settings.wind_bend = wind.x;
+        settings.wind_flutter = wind.y;
+        settings.collider = collider;
+        settings.trunk_radius = trunk_radius;
+        return settings;
     }
 
     void LoadKinds() {
-        render_models_.reserve(32);
+        using poligon::PlantCollider;
         // Trees made with tools/assets/make_tree.mjs from the recipes in tools/assets/trees.
-        // The last argument is the wind response: bend and flutter (see Material).
-        pine_ = LoadKind("generated/pine", false, false, true, "pine", kTreeLevels, {1.0f, 1.0f});
-        spruce_ = LoadKind("generated/spruce", false, false, true, "spruce", kTreeLevels, {1.0f, 1.0f});
-        birch_ = LoadKind("generated/birch", false, false, true, "birch", kTreeLevels, {1.3f, 1.3f});
-        oak_ = LoadKind("generated/oak", false, false, true, "oak", kTreeLevels, {0.8f, 1.0f});
-        young_spruce_ = LoadKind("generated/spruce_young", false, false, true, "spruce_young", kYoungTreeLevels, {1.5f, 1.0f});
-        young_pine_ = LoadKind("generated/pine_young", false, false, true, "pine_young", kYoungTreeLevels, {1.5f, 1.0f});
-        // Simpler levels of downloaded models: tools/assets/simplify_model.py.
-        shrub_ = LoadKind("polyhaven/shrub_02", true, false, false, "shrub_02", kThingLevels, {2.5f, 1.0f});
-        low_shrub_ = LoadKind("polyhaven/shrub_03", true, true, false, nullptr, kTreeLevels, {4.0f, 1.2f});
-        fern_ = LoadKind("polyhaven/fern_02", true, true, false, nullptr, kTreeLevels, {5.0f, 1.2f});
-        nettle_ = LoadKind("polyhaven/nettle_plant", true, true, false, nullptr, kTreeLevels, {4.0f, 1.0f});
-        grass_ = LoadKind("polyhaven/grass_bermuda_01", true, true, false, nullptr, kTreeLevels, {6.0f, 1.5f});
-        boulder_ = LoadKind("polyhaven/boulder_01", false, false, false, "boulder_01", kThingLevels);
-        rocks_ = LoadKind("polyhaven/rock_moss_set_01", true, false, false, "rock_moss_set_01", kThingLevels);
-        stump_ = LoadKind("polyhaven/tree_stump_01", false, false, false, "tree_stump_01", kThingLevels);
-        fallen_trunk_ = LoadKind("polyhaven/dead_tree_trunk_02", false, false, false, "dead_tree_trunk_02", kThingLevels);
-
-        // Trunk radii measured at the foot of the generated models.
-        pine_.collision = Collision::Trunk;
-        pine_.trunk_radius = 0.4f;
-        spruce_.collision = Collision::Trunk;
-        spruce_.trunk_radius = 0.25f;
-        birch_.collision = Collision::Trunk;
-        birch_.trunk_radius = 0.14f;
-        oak_.collision = Collision::Trunk;
-        oak_.trunk_radius = 0.45f;
-        boulder_.collision = Collision::Block;
-        rocks_.collision = Collision::Block;
-        stump_.collision = Collision::Block;
-        fallen_trunk_.collision = Collision::Block;
+        // Wind response: bend and flutter (see Material). Trunk radii measured at the foot.
+        pine_ = LoadKind("trees/pine", false, MakeSettings(true, kTreeLevels, false, {1.0f, 1.0f}, false, true, PlantCollider::Trunk, 0.4f));
+        spruce_ = LoadKind("trees/spruce", false, MakeSettings(true, kTreeLevels, false, {1.0f, 1.0f}, false, true, PlantCollider::Trunk, 0.25f));
+        birch_ = LoadKind("trees/birch", false, MakeSettings(true, kTreeLevels, false, {1.3f, 1.3f}, false, true, PlantCollider::Trunk, 0.14f));
+        oak_ = LoadKind("trees/oak", false, MakeSettings(true, kTreeLevels, false, {0.8f, 1.0f}, false, true, PlantCollider::Trunk, 0.45f));
+        young_spruce_ = LoadKind("trees/spruce_young", false, MakeSettings(true, kYoungTreeLevels, false, {1.5f, 1.0f}, false, true));
+        young_pine_ = LoadKind("trees/pine_young", false, MakeSettings(true, kYoungTreeLevels, false, {1.5f, 1.0f}, false, true));
+        // Downloaded models; simpler levels from tools/assets/simplify_model.py.
+        shrub_ = LoadKind("plants/shrub", false, MakeSettings(true, kThingLevels, false, {2.5f, 1.0f}, true, false));
+        low_shrub_ = LoadKind("plants/low_shrub", true, MakeSettings(false, kTreeLevels, true, {4.0f, 1.2f}, true, false));
+        fern_ = LoadKind("plants/fern", true, MakeSettings(false, kTreeLevels, true, {5.0f, 1.2f}, true, false));
+        nettle_ = LoadKind("plants/nettle", true, MakeSettings(false, kTreeLevels, true, {4.0f, 1.0f}, true, false));
+        grass_ = LoadKind("plants/grass", true, MakeSettings(false, kTreeLevels, true, {6.0f, 1.5f}, true, false));
+        boulder_ = LoadKind("rocks/boulder", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
+        rocks_ = LoadKind("rocks/mossy_rocks", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, true, false, PlantCollider::Block));
+        stump_ = LoadKind("wood/stump", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
+        fallen_trunk_ = LoadKind("wood/fallen_trunk", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
     }
 
     // A small pile of crates in the clearing, to knock over.
@@ -963,26 +759,22 @@ private:
     // but know nothing of each other. The realistic fox is used when it is there, otherwise
     // the simple sample one.
     void AddAnimals() {
-        const std::filesystem::path candidates[] = {
-            assets_ / "sketchfab" / "fox_realistic_demo" / "source" / "unpacked" / "source" / "FOX_DEMO.fbx",
-            assets_ / "khronos" / "fox" / "Fox.glb",
-        };
-        poligon::Model model;
-        std::string error = "no fox model in poligon-assets";
-        std::error_code file_error;
-        for (const std::filesystem::path& file : candidates) {
-            if (std::filesystem::exists(file, file_error) &&
-                poligon::LoadModelFromFile(file.string().c_str(), model, error) && !model.animations.empty()) {
-                std::printf("forest_scene: fox model %s\n", file.filename().string().c_str());
+        const poligon::LoadedModel* loaded = nullptr;
+        std::string error;
+        for (const char* name : {"animals/fox", "animals/fox_sample"}) {
+            loaded = library_.LoadModel(renderer_, name, error);
+            if (loaded != nullptr && !loaded->model.animations.empty()) {
+                std::printf("forest_scene: fox model %s\n", name);
                 break;
             }
-            model = poligon::Model{};
+            loaded = nullptr;
         }
-        if (model.animations.empty()) {
+        if (loaded == nullptr) {
             std::printf("forest_scene: no animals: %s\n", error.c_str());
             return;
         }
-        fox_model_ = poligon::UploadModel(renderer_, model);
+        const poligon::Model& model = loaded->model;
+        fox_model_ = loaded->render;
         fox_animations_ = std::make_unique<poligon::AnimationSet>(model.skeleton, model.animations);
         // The model is in centimeters and rather large for a fox.
         fox_scale_ = 0.45f / (model.bounds_max.y - model.bounds_min.y);
@@ -1036,12 +828,12 @@ private:
     // Puts one random variant of `kind` at (x, z), standing on the ground, turned at random.
     // `sink` pushes it into the ground by that part of its height (rocks, stumps).
     void Place(const Kind& kind, Random& random, float x, float z, float scale, float sink = 0.0f) {
-        if (kind.variants.empty()) {
+        const std::vector<poligon::PlantVariant>& variants = kind.plants.variants;
+        if (variants.empty()) {
             return;
         }
-        const size_t index = std::min(static_cast<size_t>(random.Next() * static_cast<float>(kind.variants.size())),
-                                      kind.variants.size() - 1);
-        const Variant& variant = kind.variants[index];
+        const size_t index = std::min(static_cast<size_t>(random.Next() * static_cast<float>(variants.size())), variants.size() - 1);
+        const poligon::PlantVariant& variant = variants[index];
         // Nothing grows or lies on slopes this steep (the walls of gullies), or in a lake.
         if (terrain_->GetSlopeDegrees(x, z) > 33.0f || IsWater(x, z)) {
             return;
@@ -1065,24 +857,11 @@ private:
                               glm::scale(glm::mat4(1.0f), glm::vec3(scale));
 
         // What blocks the way gets a body in the physics world, where the player can walk.
-        const bool in_play_area = std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize;
-        poligon::BodySettings body;
-        body.rotation = glm::angleAxis(turn, glm::vec3(0.0f, 1.0f, 0.0f));
-        if (!in_play_area) {
-            // nothing to collide with out there
-        } else if (kind.collision == Collision::Trunk) {
-            const float half_height = std::min(variant.height * scale * 0.5f, 4.0f);
-            body.position = placement.position + glm::vec3(0.0f, half_height - 0.5f, 0.0f);
-            physics_.AddCylinder(half_height, kind.trunk_radius * scale, body);
-        } else if (kind.collision == Collision::Block) {
-            // Somewhat smaller than the box around the model, whose corners are mostly air.
-            const glm::vec3 half_size{variant.half_width.x * scale * 0.8f, variant.height * scale * 0.45f,
-                                      variant.half_width.y * scale * 0.8f};
-            body.position = placement.position + glm::vec3(0.0f, variant.height * scale * 0.5f, 0.0f);
-            physics_.AddBox(half_size, body);
+        if (std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize) {
+            poligon::AddPlantCollider(physics_, kind.plants, variant, placement.position, turn, scale);
         }
         placement.is_small = kind.is_small;
-        vegetation_.AddInstance(variant.species, placement.transform);
+        vegetation_.AddInstance(variant.species_id, placement.transform);
         ++placed_count_;
     }
 
@@ -1152,9 +931,10 @@ private:
         // matter only at the player's feet.
         const auto add = [this](const Kind& kind, float density, float scale_low, float scale_high, float patch_threshold,
                                 float max_slope, bool align, float sink, int seed, size_t every_nth, float shadow_limit) {
-            for (size_t i = 0; i < kind.variants.size(); i += every_nth) {
+            const std::vector<poligon::PlantVariant>& variants = kind.plants.variants;
+            for (size_t i = 0; i < variants.size(); i += every_nth) {
                 poligon::GroundCoverLayer layer;
-                layer.species = kind.variants[i].definition;
+                layer.species = variants[i].species;
                 layer.species.shadow_distance = std::min(layer.species.shadow_distance, shadow_limit);
                 std::vector<poligon::VegetationLevel>& levels = layer.species.levels;
                 const float limit = kGroundCoverRadius * 0.9f;
@@ -1165,7 +945,7 @@ private:
                         break;
                     }
                 }
-                layer.density = density / static_cast<float>((kind.variants.size() + every_nth - 1) / every_nth);
+                layer.density = density / static_cast<float>((variants.size() + every_nth - 1) / every_nth);
                 layer.scale_min = scale_low;
                 layer.scale_max = scale_high;
                 layer.patch_threshold = patch_threshold;
@@ -1193,6 +973,9 @@ private:
     ForestActions actions_;
 
     std::filesystem::path terrain_cache_;
+    // Cooked models and textures, loaded by name, and the level.
+    poligon::AssetLibrary library_;
+    poligon::Level level_;
     // The generated land and its maps; map position = world position + map_offset_.
     poligon::TerrainMaps maps_;
     glm::vec2 map_offset_{0.0f};
@@ -1373,11 +1156,14 @@ int main(int argc, char** argv) {
     }
 
     const auto load_start = std::chrono::steady_clock::now();
-    // Generated land is kept in build/terrain_cache (the program runs from build/PRESET/bin).
+    // Generated land and cooked assets are kept in the build folder (the program runs from
+    // build/PRESET/bin); the asset list is in the project's tools/forest_scene.
     std::error_code path_error;
-    const std::filesystem::path terrain_cache =
-        std::filesystem::absolute(argv[0], path_error).parent_path().parent_path().parent_path() / "terrain_cache";
-    ForestGame game(renderer, assets, terrain_cache, input, actions, view, options.positional.size() >= 3, settings, settings_path);
+    const std::filesystem::path build_folder =
+        std::filesystem::absolute(argv[0], path_error).parent_path().parent_path().parent_path();
+    const std::filesystem::path scene_folder = build_folder.parent_path() / "tools" / "forest_scene";
+    ForestGame game(renderer, assets, build_folder, scene_folder / "assets.txt", scene_folder / "forest.level", input, actions, view,
+                    options.positional.size() >= 3, settings, settings_path);
     game.ShowCollision(options.positional.size() == 5);
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s; quality %s, %d x %d\n", load_seconds,

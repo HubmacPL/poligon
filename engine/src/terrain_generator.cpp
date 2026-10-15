@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -986,6 +987,154 @@ std::uint64_t HashTerrainGeneratorSettings(const TerrainGeneratorSettings& s) {
     const int ints[] = {s.erosion_steps, s.basin_count, s.outlet_edges, s.thermal_iterations, s.droplet_steps};
     HashBytes(hash, ints, sizeof(ints) / sizeof(ints[0]));
     return hash;
+}
+
+namespace {
+
+struct SettingField {
+    const char* name;
+    float* real = nullptr;
+    int* whole = nullptr;
+};
+
+std::vector<SettingField> SettingFields(TerrainGeneratorSettings& s) {
+    return {{"size", &s.size},
+            {"spacing", &s.spacing},
+            {"coarse_spacing", &s.coarse_spacing},
+            {"map_spacing", &s.map_spacing},
+            {"relief", &s.relief},
+            {"initial_relief", &s.initial_relief},
+            {"initial_hill_size", &s.initial_hill_size},
+            {"erosion_steps", nullptr, &s.erosion_steps},
+            {"years_per_step", &s.years_per_step},
+            {"uplift", &s.uplift},
+            {"erodibility", &s.erodibility},
+            {"area_exponent", &s.area_exponent},
+            {"hillslope_diffusion", &s.hillslope_diffusion},
+            {"basin_count", nullptr, &s.basin_count},
+            {"basin_radius", &s.basin_radius},
+            {"basin_start", &s.basin_start},
+            {"basin_sinking", &s.basin_sinking},
+            {"outlet_edges", nullptr, &s.outlet_edges},
+            {"detail_height", &s.detail_height},
+            {"talus_degrees", &s.talus_degrees},
+            {"thermal_iterations", nullptr, &s.thermal_iterations},
+            {"droplets_per_square_meter", &s.droplets_per_square_meter},
+            {"droplet_strength", &s.droplet_strength},
+            {"droplet_steps", nullptr, &s.droplet_steps},
+            {"min_lake_area", &s.min_lake_area},
+            {"min_lake_depth", &s.min_lake_depth}};
+}
+
+} // namespace
+
+bool SetTerrainGeneratorSetting(TerrainGeneratorSettings& settings, const std::string& name, const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    if (name == "seed") {
+        const unsigned long long seed = std::strtoull(value.c_str(), &end, 10);
+        if (*end != '\0' || value[0] == '-') {
+            return false;
+        }
+        settings.seed = seed;
+        return true;
+    }
+    for (const SettingField& field : SettingFields(settings)) {
+        if (name != field.name) {
+            continue;
+        }
+        if (field.real != nullptr) {
+            const float number = std::strtof(value.c_str(), &end);
+            if (*end != '\0' || !std::isfinite(number)) {
+                return false;
+            }
+            *field.real = number;
+        } else {
+            const long number = std::strtol(value.c_str(), &end, 10);
+            if (*end != '\0') {
+                return false;
+            }
+            *field.whole = static_cast<int>(number);
+        }
+        return true;
+    }
+    return false;
+}
+
+std::vector<std::pair<std::string, std::string>> GetTerrainGeneratorSettings(const TerrainGeneratorSettings& settings) {
+    TerrainGeneratorSettings copy = settings;
+    std::vector<std::pair<std::string, std::string>> result;
+    result.emplace_back("seed", std::to_string(copy.seed));
+    for (const SettingField& field : SettingFields(copy)) {
+        char text[64];
+        if (field.real != nullptr) {
+            std::snprintf(text, sizeof(text), "%.9g", static_cast<double>(*field.real));
+        } else {
+            std::snprintf(text, sizeof(text), "%d", *field.whole);
+        }
+        result.emplace_back(field.name, text);
+    }
+    return result;
+}
+
+bool FindLakeViewpoint(const TerrainMaps& maps, float eye_height, LakeViewpoint& viewpoint) {
+    const HeightMap& map = maps.height;
+    viewpoint = LakeViewpoint{};
+    viewpoint.position = glm::vec2(map.GetSizeX() * 0.5f, map.GetSizeZ() * 0.5f);
+    for (size_t i = 0; i < maps.lakes.size(); ++i) {
+        if (viewpoint.lake < 0 || maps.lakes[i].area > maps.lakes[static_cast<size_t>(viewpoint.lake)].area) {
+            viewpoint.lake = static_cast<int>(i);
+        }
+    }
+    if (viewpoint.lake < 0) {
+        return false;
+    }
+    const Lake& lake = maps.lakes[static_cast<size_t>(viewpoint.lake)];
+    float best_score = -1.0e30f;
+    bool found = false;
+    const float margin = 300.0f;
+    for (float radius = 150.0f; radius <= 500.0f; radius += 50.0f) {
+        for (int step = 0; step < 72; ++step) {
+            const float angle = static_cast<float>(step) * 0.0872665f;
+            const glm::vec2 place = lake.center + radius * glm::vec2(std::cos(angle), std::sin(angle));
+            if (place.x < margin || place.y < margin || place.x > map.GetSizeX() - margin || place.y > map.GetSizeZ() - margin) {
+                continue;
+            }
+            if (maps.Sample(maps.water_distance, place.x, place.y) < 30.0f || map.GetSlopeDegrees(place.x, place.y) > 12.0f) {
+                continue;
+            }
+            const float above = map.GetHeight(place.x, place.y) - lake.level;
+            if (above < 6.0f) {
+                continue;
+            }
+            // The line from the eye to the lake's middle must stay above the ground.
+            const glm::vec3 eye(place.x, map.GetHeight(place.x, place.y) + eye_height, place.y);
+            const glm::vec3 target(lake.center.x, lake.level, lake.center.y);
+            bool seen = true;
+            for (int sample = 1; sample < 64 && seen; ++sample) {
+                const glm::vec3 point = glm::mix(eye, target, static_cast<float>(sample) / 64.0f);
+                seen = map.GetHeight(point.x, point.z) < point.y - 0.3f;
+            }
+            if (!seen) {
+                continue;
+            }
+            const float score = std::min(above, 40.0f) - radius * 0.02f;
+            if (score > best_score) {
+                best_score = score;
+                viewpoint.position = place;
+                found = true;
+            }
+        }
+    }
+    if (!found) {
+        return false;
+    }
+    viewpoint.direction = glm::normalize(lake.center - viewpoint.position);
+    viewpoint.distance = glm::length(lake.center - viewpoint.position);
+    viewpoint.yaw_degrees = glm::degrees(std::atan2(-viewpoint.direction.x, -viewpoint.direction.y));
+    return true;
 }
 
 bool SaveTerrainMaps(const char* path, const TerrainMaps& maps) {

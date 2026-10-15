@@ -15,6 +15,7 @@
 #include <imgui_impl_sdlgpu3.h>
 
 #include "poligon/fatal_error.h"
+#include "poligon/texture_compression.h"
 #include "poligon_shaders/ao_blur_frag_dxil.h"
 #include "poligon_shaders/ao_blur_frag_spirv.h"
 #include "poligon_shaders/ao_frag_dxil.h"
@@ -2148,6 +2149,121 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
     return handle;
 }
 
+namespace {
+
+SDL_GPUTextureFormat ToGpuFormat(const CompressedImage& image) {
+    switch (image.format) {
+    case TextureFormat::Bc1:
+        return image.is_color ? SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM;
+    case TextureFormat::Bc3:
+        return image.is_color ? SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM;
+    case TextureFormat::Bc4:
+        return SDL_GPU_TEXTUREFORMAT_BC4_R_UNORM;
+    case TextureFormat::Bc5:
+        return SDL_GPU_TEXTUREFORMAT_BC5_RG_UNORM;
+    case TextureFormat::Rgba8:
+        return image.is_color ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    }
+    return SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+}
+
+void CheckCompressedImage(const CompressedImage& image, const char* what) {
+    bool valid = image.width > 0 && image.height > 0 && !image.levels.empty() && image.levels.size() <= 16;
+    if (valid && image.format != TextureFormat::Rgba8) {
+        valid = image.width % 4 == 0 && image.height % 4 == 0;
+    }
+    int width = image.width;
+    int height = image.height;
+    for (size_t level = 0; valid && level < image.levels.size(); ++level) {
+        valid = image.levels[level].size() == GetCompressedLevelSize(image.format, width, height);
+        width = glm::max(width / 2, 1);
+        height = glm::max(height / 2, 1);
+    }
+    if (!valid) {
+        const std::string message = std::string(what) + ": the compressed image is empty, not a multiple of 4 wide and high, or its levels have the wrong size";
+        FatalError(message.c_str());
+    }
+}
+
+} // namespace
+
+TextureHandle Renderer::CreateTexture(const CompressedImage& image) {
+    return CreateTextureArray(&image, 1, true);
+}
+
+TextureHandle Renderer::CreateTextureArray(const CompressedImage* images, int count) {
+    return CreateTextureArray(images, count, false);
+}
+
+TextureHandle Renderer::CreateTextureArray(const CompressedImage* images, int count, bool plain) {
+    if (images == nullptr || count < 1 || count > 256) {
+        FatalError("Renderer::CreateTextureArray: needs between 1 and 256 images");
+    }
+    for (int i = 0; i < count; ++i) {
+        CheckCompressedImage(images[i], "Renderer::CreateTexture");
+        if (images[i].width != images[0].width || images[i].height != images[0].height || images[i].format != images[0].format ||
+            images[i].is_color != images[0].is_color || images[i].levels.size() != images[0].levels.size()) {
+            FatalError("Renderer::CreateTextureArray: the images must share size, format and number of levels");
+        }
+    }
+    if (impl_->in_frame) {
+        FatalError("Renderer::CreateTexture: do not create textures between BeginFrame and EndFrame");
+    }
+    SDL_GPUTextureCreateInfo info{};
+    info.type = plain ? SDL_GPU_TEXTURETYPE_2D : SDL_GPU_TEXTURETYPE_2D_ARRAY;
+    info.format = ToGpuFormat(images[0]);
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = static_cast<Uint32>(images[0].width);
+    info.height = static_cast<Uint32>(images[0].height);
+    info.layer_count_or_depth = static_cast<Uint32>(count);
+    info.num_levels = static_cast<Uint32>(images[0].levels.size());
+    info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    SDL_GPUTexture* texture = SDL_CreateGPUTexture(impl_->device, &info);
+    if (texture == nullptr) {
+        FatalSdlError("cannot create compressed texture");
+    }
+    for (int layer = 0; layer < count; ++layer) {
+        SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(impl_->device);
+        if (commands == nullptr) {
+            FatalSdlError("cannot acquire command buffer");
+        }
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        std::vector<SDL_GPUTransferBuffer*> transfers;
+        int width = images[layer].width;
+        int height = images[layer].height;
+        for (size_t level = 0; level < images[layer].levels.size(); ++level) {
+            const std::vector<std::uint8_t>& bytes = images[layer].levels[level];
+            SDL_GPUTransferBuffer* transfer = impl_->CreateFilledTransferBuffer(bytes.data(), static_cast<Uint32>(bytes.size()));
+            transfers.push_back(transfer);
+            SDL_GPUTextureTransferInfo source{};
+            source.transfer_buffer = transfer;
+            SDL_GPUTextureRegion destination{};
+            destination.texture = texture;
+            destination.mip_level = static_cast<Uint32>(level);
+            destination.layer = static_cast<Uint32>(layer);
+            destination.w = static_cast<Uint32>(width);
+            destination.h = static_cast<Uint32>(height);
+            destination.d = 1;
+            SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
+            width = glm::max(width / 2, 1);
+            height = glm::max(height / 2, 1);
+        }
+        SDL_EndGPUCopyPass(copy_pass);
+        if (!SDL_SubmitGPUCommandBuffer(commands)) {
+            FatalSdlError("cannot submit compressed texture upload");
+        }
+        for (SDL_GPUTransferBuffer* transfer : transfers) {
+            SDL_ReleaseGPUTransferBuffer(impl_->device, transfer);
+        }
+    }
+    impl_->textures.push_back(texture);
+    impl_->texture_layers.push_back(plain ? 0 : count);
+    impl_->texture_sizes.emplace_back(static_cast<float>(images[0].width), static_cast<float>(images[0].height));
+    TextureHandle handle;
+    handle.id = static_cast<std::uint32_t>(impl_->textures.size());
+    return handle;
+}
+
 TextureHandle Renderer::CreateTextureArray(const Image* images, int count, const TextureOptions& options) {
     if (images == nullptr || count < 1 || count > 256) {
         FatalError("Renderer::CreateTextureArray: needs between 1 and 256 images");
@@ -2586,6 +2702,32 @@ ImpostorHandle Renderer::CreateImpostor(const Impostor& impostor) {
     data.center = impostor.center;
     data.radius = impostor.radius;
     data.frames_per_side = impostor.frames_per_side;
+    impl_->impostors.push_back(data);
+    ImpostorHandle handle;
+    handle.id = static_cast<std::uint32_t>(impl_->impostors.size());
+    return handle;
+}
+
+ImpostorHandle Renderer::CreateImpostor(const CompressedImage& color, const CompressedImage& normal, int frames_per_side,
+                                        const glm::vec3& center, float radius) {
+    if (frames_per_side < 2 || radius <= 0.0f || color.width < 4 || color.width != color.height || normal.width != color.width ||
+        normal.height != color.height) {
+        FatalError("Renderer::CreateImpostor: needs square color and normal pictures of one size, 2 or more frames and a radius");
+    }
+    if (impl_->impostor_card.id == 0) {
+        const MeshVertex corners[4] = {{{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+                                       {{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+                                       {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+                                       {{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}};
+        const std::uint32_t indices[6] = {0, 1, 2, 0, 2, 3};
+        impl_->impostor_card = CreateMesh(corners, 4, indices, 6);
+    }
+    ImpostorData data;
+    data.color = CreateTexture(color);
+    data.normal = CreateTexture(normal);
+    data.center = center;
+    data.radius = radius;
+    data.frames_per_side = frames_per_side;
     impl_->impostors.push_back(data);
     ImpostorHandle handle;
     handle.id = static_cast<std::uint32_t>(impl_->impostors.size());

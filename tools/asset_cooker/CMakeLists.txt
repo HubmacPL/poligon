@@ -1,0 +1,2 @@
+add_executable(asset_cooker main.cpp)
+target_link_libraries(asset_cooker PRIVATE poligon_engine poligon_build_options)

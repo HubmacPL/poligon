@@ -33,6 +33,11 @@ add_library(poligon_engine STATIC
   src/terrain.cpp
   src/terrain_generator.cpp
   src/water.cpp
+  src/texture_compression.cpp
+  src/stb_dxt_impl.cpp
+  src/assets.cpp
+  src/plants.cpp
+  src/level.cpp
   src/physics.cpp
   src/platform.cpp
   src/render_settings.cpp
