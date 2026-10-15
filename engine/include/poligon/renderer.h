@@ -180,6 +180,10 @@ struct Environment {
     // occlusion: more is smoother and costs more (set by GraphicsQuality).
     int fog_steps = 32;
     int ambient_occlusion_samples = 20;
+    // Water mirrors what is on screen by walking each reflected ray this many steps through
+    // the depth image, up to water_reflection_distance meters; 0 mirrors only the sky.
+    int water_reflection_steps = 24;
+    float water_reflection_distance = 400.0f;
 
     // Wind: the direction it blows towards (world x and z), its strength (1 = a moderate
     // breeze; 0 turns the wind off) and how long it has been blowing, in seconds. Give the
@@ -275,6 +279,27 @@ struct TerrainMaterial {
     float steep_start_degrees = 30.0f;
     float steep_end_degrees = 42.0f;
     float roughness = 0.95f;
+};
+
+// How a water surface looks (Renderer::DrawWater). The defaults are clear lake water.
+struct WaterMaterial {
+    // Share of light lost per meter it travels through the water, per color: red goes
+    // first, so deep water turns blue-green and the bottom fades out.
+    glm::vec3 absorption{0.45f, 0.12f, 0.08f};
+    // How fast, per meter, the water's own color takes over from what lies under it.
+    float scattering = 0.35f;
+    // Color of the light the water scatters back, lit by the sky and the sun.
+    Color color{0.03f, 0.07f, 0.06f, 1.0f};
+    // 0 = mirror, larger = blurrier highlight of the sun.
+    float roughness = 0.05f;
+    // Size of the small waves in meters, and how strongly they tilt the surface. They drift
+    // with Environment::wind_direction, faster in a stronger wind.
+    float wave_size = 2.0f;
+    float wave_strength = 0.1f;
+    // How far waves bend the view of what lies under the water (share of the picture).
+    float refraction = 0.03f;
+    // Water depth in meters over which the surface fades in at the shore.
+    float shore_fade = 0.15f;
 };
 
 // A square piece of a terrain to draw: (x, z) is its corner with the smallest
@@ -441,6 +466,10 @@ public:
     // small one fine. All patches of a call cost one draw call per pass, and each is culled
     // on its own. Patch corners should lie on height map points.
     void DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count);
+    // Draws a water surface: usually a flat mesh at the water's level (poligon/water.h makes
+    // them for lakes). It is drawn after everything else in the scene and reads what was
+    // drawn under it: see WaterMaterial and Environment::water_reflection_steps.
+    void DrawWater(MeshHandle mesh, const glm::mat4& transform, const WaterMaterial& material);
 
     // Copies the image to the graphics card. Textures repeat outside the 0..1 coordinate range.
     TextureHandle CreateTexture(const Image& image, const TextureOptions& options = TextureOptions{});

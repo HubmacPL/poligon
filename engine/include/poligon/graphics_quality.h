@@ -45,6 +45,8 @@ struct GraphicsQuality {
     // Samples per pixel of ambient occlusion, steps per pixel of volumetric fog.
     int ambient_occlusion_samples = 20;
     int fog_steps = 32;
+    // Steps of each ray water reflects through the picture; 0 = water mirrors only the sky.
+    int water_reflection_steps = 24;
 
     // --- For the game's systems ---
     // Multiply how far plants keep each level of detail, and how far they cast shadows.

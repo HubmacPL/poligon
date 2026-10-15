@@ -50,6 +50,7 @@
 #include "poligon/terrain.h"
 #include "poligon/vegetation.h"
 #include "poligon/renderer.h"
+#include "poligon/water.h"
 
 namespace {
 
@@ -378,6 +379,9 @@ public:
             poligon::ShowFrameStatsWindow(renderer_);
         }
         terrain_->Draw(camera);
+        for (const poligon::WaterSurface& lake : lakes_) {
+            renderer_.DrawWater(lake.mesh, lake.transform, water_material_);
+        }
         for (const poligon::BodyHandle crate : crates_) {
             renderer_.DrawMesh(cube_mesh_, physics_.GetTransform(crate) * glm::scale(glm::mat4(1.0f), glm::vec3(kCrateSize)),
                                crate_material_);
@@ -650,6 +654,7 @@ private:
                     static_cast<double>(map.GetHeight(start.x, start.y) - start_lake_level_), static_cast<double>(lake_distance_),
                     static_cast<double>(start_yaw_));
         terrain_ = std::make_unique<poligon::Terrain>(renderer_, map, config);
+        lakes_ = poligon::CreateLakeSurfaces(renderer_, maps_, config.origin);
         std::printf("forest_scene: land %.0f x %.0f m, a point every %.0f m\n", static_cast<double>(map.GetSizeX()),
                     static_cast<double>(map.GetSizeZ()), static_cast<double>(map.spacing));
 
@@ -1199,6 +1204,9 @@ private:
     glm::vec2 lake_direction_{0.0f};
     float lake_distance_ = 0.0f;
     std::unique_ptr<poligon::Terrain> terrain_;
+    // The lakes' water surfaces and how they look (the defaults: clear lake water).
+    std::vector<poligon::WaterSurface> lakes_;
+    poligon::WaterMaterial water_material_;
     std::vector<poligon::RenderModel> render_models_;
     Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
         rocks_, stump_, fallen_trunk_;

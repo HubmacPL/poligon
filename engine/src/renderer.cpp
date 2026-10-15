@@ -63,6 +63,10 @@
 #include "poligon_shaders/terrain_vert_spirv.h"
 #include "poligon_shaders/tonemap_frag_dxil.h"
 #include "poligon_shaders/tonemap_frag_spirv.h"
+#include "poligon_shaders/water_frag_dxil.h"
+#include "poligon_shaders/water_frag_spirv.h"
+#include "poligon_shaders/depth_copy_frag_dxil.h"
+#include "poligon_shaders/depth_copy_frag_spirv.h"
 
 namespace poligon {
 
@@ -130,6 +134,23 @@ struct SkyUniforms {
 struct TerrainVertexUniforms {
     glm::vec4 map;
     glm::vec4 map_heights;
+};
+
+struct WaterUniforms {
+    glm::mat4 view_projection;
+    glm::mat4 inverse_view_projection;
+    glm::vec4 absorption;
+    glm::vec4 water_color;
+    glm::vec4 waves;
+    glm::vec4 wind;
+    glm::vec4 screen;
+};
+
+// One water surface to draw (Renderer::DrawWater).
+struct WaterCommand {
+    std::uint32_t mesh_id = 0;
+    glm::mat4 transform{1.0f};
+    WaterMaterial material;
 };
 
 struct TerrainMaterialUniforms {
@@ -526,6 +547,12 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* bloom_up_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* luminance_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* taa_pipeline = nullptr;
+    // Water: drawn after the scene from copies of the scene's color and depth.
+    SDL_GPUGraphicsPipeline* water_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* depth_copy_pipeline = nullptr;
+    SDL_GPUTexture* water_scene_copy = nullptr;
+    SDL_GPUTexture* water_depth_copy = nullptr;
+    std::vector<WaterCommand> water_commands;
 
     // Temporal anti-aliasing: two images written in turn, each frame reading the other as
     // its history, the previous frame's camera (without its shift), and the frame count
@@ -731,6 +758,10 @@ struct Renderer::Impl {
             target = CreateTarget(kSceneFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                   "temporal anti-aliasing image");
         }
+        water_scene_copy = CreateTarget(kSceneFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                        "copy of the scene for water");
+        water_depth_copy = CreateTarget(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1,
+                                        nullptr, "copy of the depth for water");
 
         // Bloom chain: each image half the size of the one before, down to a few pixels.
         int level_width = config.width;
@@ -1167,12 +1198,29 @@ struct Renderer::Impl {
              sizeof(kLuminanceFragSpirv), kLuminanceFormat, FullscreenBlend::Replace},
             {&taa_pipeline, 3, kTaaFragDxil, sizeof(kTaaFragDxil), kTaaFragSpirv, sizeof(kTaaFragSpirv), kSceneFormat,
              FullscreenBlend::Replace},
+            {&depth_copy_pipeline, 1, kDepthCopyFragDxil, sizeof(kDepthCopyFragDxil), kDepthCopyFragSpirv,
+             sizeof(kDepthCopyFragSpirv), SDL_GPU_TEXTUREFORMAT_R32_FLOAT, FullscreenBlend::Replace},
         };
         for (const FullscreenPass& pass : passes) {
             SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, pass.sampler_count, 1, pass.dxil,
                                                    pass.dxil_size, pass.spirv, pass.spirv_size);
             *pass.pipeline = CreateFullscreenPipeline(fullscreen_vertex, fragment, pass.format, pass.blend);
             SDL_ReleaseGPUShader(device, fragment);
+        }
+
+        // --- Water: a mesh drawn over the single-sample scene, testing and writing depth. ---
+        {
+            SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kWaterFragDxil,
+                                                         sizeof(kWaterFragDxil), kWaterFragSpirv, sizeof(kWaterFragSpirv));
+            SDL_GPUGraphicsPipelineCreateInfo water_info = mesh_info;
+            water_info.fragment_shader = water_fragment;
+            water_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+            water_info.multisample_state.enable_alpha_to_coverage = false;
+            water_pipeline = SDL_CreateGPUGraphicsPipeline(device, &water_info);
+            SDL_ReleaseGPUShader(device, water_fragment);
+            if (water_pipeline == nullptr) {
+                FatalSdlError("cannot create water pipeline");
+            }
         }
 
         // Pipelines keep what they need; the shader objects can go.
@@ -1859,12 +1907,12 @@ Renderer::~Renderer() {
         for (SDL_GPUGraphicsPipeline* pipeline :
              {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
-              impl_->luminance_pipeline, impl_->taa_pipeline}) {
+              impl_->luminance_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
         }
         for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
                                         impl_->luminance_targets[0], impl_->luminance_targets[1], impl_->taa_targets[0],
-                                        impl_->taa_targets[1]}) {
+                                        impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy}) {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
         for (const BloomLevel& level : impl_->bloom_levels) {
@@ -2210,6 +2258,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->light = light;
     impl_->environment = environment;
     impl_->draw_commands.clear();
+    impl_->water_commands.clear();
     impl_->joint_palette.clear();
     impl_->instance_sources.clear();
     impl_->instance_batches.clear();
@@ -2800,6 +2849,21 @@ void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transfor
     impl_->draw_commands.push_back(command);
 }
 
+void Renderer::DrawWater(MeshHandle mesh, const glm::mat4& transform, const WaterMaterial& material) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawWater: call BeginFrame first");
+    }
+    if (mesh.id == 0 || mesh.id > impl_->meshes.size() || impl_->meshes[mesh.id - 1].vertex_buffer == nullptr ||
+        impl_->meshes[mesh.id - 1].skin_buffer != nullptr) {
+        FatalError("Renderer::DrawWater: invalid, destroyed or skinned mesh handle");
+    }
+    WaterCommand command;
+    command.mesh_id = mesh.id;
+    command.transform = transform;
+    command.material = material;
+    impl_->water_commands.push_back(command);
+}
+
 void Renderer::DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color) {
     Material material;
     material.color = color;
@@ -2965,7 +3029,8 @@ void Renderer::EndFrame() {
     // and without multisampling also for the scene pass itself: it then tests this depth
     // before shading, so each pixel is lit once instead of once per leaf behind it. ---
     const bool scene_after_depth = impl.msaa_samples == 1;
-    if (ao_on || fog_on || taa_on || scene_after_depth) {
+    const bool water_on = !impl.water_commands.empty();
+    if (ao_on || fog_on || taa_on || scene_after_depth || water_on) {
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.prepass_depth;
         depth_info.clear_depth = 0.0f;  // reversed depth
@@ -3028,6 +3093,7 @@ void Renderer::EndFrame() {
     }
 
     // --- Pass 4: the scene, in linear wide-range colors. ---
+    FragmentFrameUniforms frame_uniforms{};
     {
         SDL_GPUColorTargetInfo color_info{};
         color_info.texture = impl.scene_color;
@@ -3080,7 +3146,6 @@ void Renderer::EndFrame() {
         vertex_frame_uniforms.wind = impl.WindUniform();
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
 
-        FragmentFrameUniforms frame_uniforms{};
         for (int i = 0; i < kCascadeCount; ++i) {
             frame_uniforms.shadow_matrices[i] = cascades.shadow_matrix[i];
         }
@@ -3147,6 +3212,89 @@ void Renderer::EndFrame() {
     // The finished scene with one sample per pixel; the remaining passes work on it.
     SDL_GPUTexture* scene_image = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;  // replaced by TAA's result
     SDL_GPUTexture* white = impl.textures[impl.white_texture.id - 1];
+
+    // --- Pass 4b: water. It reads the scene and its depth as they are without it (copies),
+    // and writes its own depth, so that fog and anti-aliasing treat it as a surface. ---
+    if (water_on) {
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        SDL_GPUTextureLocation source{};
+        source.texture = scene_image;
+        SDL_GPUTextureLocation destination{};
+        destination.texture = impl.water_scene_copy;
+        SDL_CopyGPUTextureToTexture(copy_pass, &source, &destination, static_cast<Uint32>(impl.render_width),
+                                    static_cast<Uint32>(impl.render_height), 1, false);
+        SDL_EndGPUCopyPass(copy_pass);
+        SDL_GPUTextureSamplerBinding depth_binding{};
+        depth_binding.texture = impl.prepass_depth;
+        depth_binding.sampler = impl.clamp_sampler;
+        const glm::vec4 no_uniforms(0.0f);
+        impl.DrawFullscreenPass(commands, impl.water_depth_copy, false, impl.depth_copy_pipeline, &depth_binding, 1,
+                                &no_uniforms, sizeof(no_uniforms));
+
+        SDL_GPUColorTargetInfo color_info{};
+        color_info.texture = scene_image;
+        color_info.load_op = SDL_GPU_LOADOP_LOAD;
+        color_info.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPUDepthStencilTargetInfo depth_info{};
+        depth_info.texture = impl.prepass_depth;
+        depth_info.load_op = SDL_GPU_LOADOP_LOAD;
+        depth_info.store_op = SDL_GPU_STOREOP_STORE;
+        depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, &depth_info);
+        if (pass == nullptr) {
+            FatalSdlError("cannot begin water pass");
+        }
+        SDL_BindGPUGraphicsPipeline(pass, impl.water_pipeline);
+        VertexFrameUniforms vertex_frame_uniforms;
+        vertex_frame_uniforms.view_projection = view_projection;
+        vertex_frame_uniforms.wind = impl.WindUniform();
+        SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
+        SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
+        SDL_GPUTextureSamplerBinding bindings[4]{};
+        bindings[0].texture = impl.water_scene_copy;
+        bindings[0].sampler = impl.linear_clamp_sampler;
+        bindings[1].texture = impl.water_depth_copy;
+        bindings[1].sampler = impl.clamp_sampler;
+        bindings[2].texture = impl.shadow_atlas;
+        bindings[2].sampler = impl.shadow_sampler;
+        bindings[3].texture = white;
+        bindings[3].sampler = impl.clamp_sampler;
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 4);
+        const glm::mat4 inverse_view_projection = glm::inverse(view_projection);
+        for (const WaterCommand& command : impl.water_commands) {
+            const Mesh& mesh = impl.meshes[command.mesh_id - 1];
+            if (IsBoxOutside(view_projection * command.transform, mesh.bounds_min, mesh.bounds_max, true)) {
+                continue;
+            }
+            ObjectUniforms object_uniforms;
+            object_uniforms.model = command.transform;
+            object_uniforms.color = glm::vec4(1.0f);
+            object_uniforms.uv_scale = glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+            SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+            const WaterMaterial& look = command.material;
+            WaterUniforms water_uniforms;
+            water_uniforms.view_projection = view_projection;
+            water_uniforms.inverse_view_projection = inverse_view_projection;
+            water_uniforms.absorption = glm::vec4(look.absorption, look.scattering);
+            water_uniforms.water_color = glm::vec4(look.color.r, look.color.g, look.color.b, look.roughness);
+            water_uniforms.waves = glm::vec4(look.wave_size, look.wave_strength, environment.wind_time, look.refraction);
+            const glm::vec2 wind = glm::length(environment.wind_direction) > 0.0f ? glm::normalize(environment.wind_direction)
+                                                                                 : glm::vec2(1.0f, 0.0f);
+            water_uniforms.wind = glm::vec4(wind, environment.wind_strength, look.shore_fade);
+            water_uniforms.screen = glm::vec4(width, height, static_cast<float>(glm::clamp(environment.water_reflection_steps, 0, 128)),
+                                              environment.water_reflection_distance);
+            SDL_PushGPUFragmentUniformData(commands, 1, &water_uniforms, sizeof(water_uniforms));
+            SDL_GPUBufferBinding vertex_binding{};
+            vertex_binding.buffer = mesh.vertex_buffer;
+            SDL_BindGPUVertexBuffers(pass, 0, &vertex_binding, 1);
+            SDL_GPUBufferBinding index_binding{};
+            index_binding.buffer = mesh.index_buffer;
+            SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            SDL_DrawGPUIndexedPrimitives(pass, mesh.index_count, 1, 0, 0, 0);
+        }
+        SDL_EndGPURenderPass(pass);
+    }
 
     // --- Pass 5: volumetric fog at half resolution, then laid over the scene. ---
     if (fog_on) {

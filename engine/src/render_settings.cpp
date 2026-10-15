@@ -85,6 +85,9 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("quality.shadow_map_size", shadow_map_size, 512.0f, 4096.0f);
     quality.shadow_map_size = static_cast<int>(shadow_map_size);
     visitor.Float("quality.far_shadow_scale", quality.far_shadow_scale, 0.25f, 1.0f);
+    float water_steps = static_cast<float>(quality.water_reflection_steps);
+    visitor.Float("quality.water_reflection_steps", water_steps, 0.0f, 128.0f);
+    quality.water_reflection_steps = static_cast<int>(water_steps);
     float msaa_samples = static_cast<float>(quality.msaa_samples);
     visitor.Float("quality.msaa_samples", msaa_samples, 1.0f, 8.0f);
     quality.msaa_samples = static_cast<int>(msaa_samples);

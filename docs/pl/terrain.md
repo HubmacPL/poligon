@@ -4,7 +4,7 @@ Kształt terenu jako mapa wysokości, skąd się bierze i jak prawdziwe dane wys
 
 Nagłówki: `poligon/height_map.h`, `poligon/terrain.h`, `poligon/terrain_generator.h`. Narzędzie: `terrain_tool`. Przykłady: `examples/terrain`, `examples/terrain_generator`. Testy: `tests/height_map_test.cpp`, `tests/terrain_render_test.cpp`, `tests/terrain_generator_test.cpp`.
 
-**Stan:** teren jest generowany przez symulację wypiętrzania, erozji rzecznej i zboczowej, kropli deszczu i jezior, razem z mapami wody, przepływu, wilgotności, osadów i skały; jest rysowany po horyzont z poziomami szczegółowości, z maksymalnie ośmioma warstwami podłoża wybieranymi według tych map, oświetlany i cieniowany jak wszystko inne, a fizyka się z nim zderza. Jeszcze nie: powierzchnie wody (następny krok), wygładzanie zmiany między rozmiarami kafli, rośliny rozmieszczane regułami.
+**Stan:** teren jest generowany przez symulację wypiętrzania, erozji rzecznej i zboczowej, kropli deszczu i jezior, razem z mapami wody, przepływu, wilgotności, osadów i skały; jest rysowany po horyzont z poziomami szczegółowości, z maksymalnie ośmioma warstwami podłoża wybieranymi według tych map, oświetlany i cieniowany jak wszystko inne, a fizyka się z nim zderza. Jeziora są powierzchniami wody (`poligon/water.h`). Jeszcze nie: strumienie jako woda, wygładzanie zmiany między rozmiarami kafli, rośliny rozmieszczane regułami.
 
 ## Rysowanie
 
@@ -36,7 +36,7 @@ terrain.Draw(camera);
 
 ## W forest_scene
 
-`forest_scene` generuje domyślny teren przy pierwszym uruchomieniu, a potem wczytuje go z `build/terrain_cache`. Gracz startuje na łagodnym terenie 150 do 500 m od największego jeziora, jak najwyżej nad nim (do 40 m) tak, by środek jeziora był widoczny, patrząc na nie; tam jest początek układu świata. Siedem warstw podłoża idzie za mapami: omszała ściółka leśna wszędzie, sucha ściółka w plamach na suchszym terenie, trawa na polanach, błoto tam, gdzie zbiera się woda, i wzdłuż brzegu, piasek i żwir na linii brzegu i w płytkiej wodzie, drobne kamienie na dnie jeziora, skała na stromych miejscach. Podszyt i kamienie stoją w promieniu 250 m od startu, a duże drzewa ciągną się do 1200 m, żadne na zboczu powyżej 33 stopni ani w jeziorze, z polaną od startu w dół do jeziora. Drzewa rzucają cienie do 65 m. (Wybór startu, polana i reguły warstw to własne decyzje sceny; reguły sadzenia czytające mapy to następne kroki.)
+`forest_scene` generuje domyślny teren przy pierwszym uruchomieniu, a potem wczytuje go z `build/terrain_cache`. Gracz startuje na łagodnym terenie 150 do 500 m od największego jeziora, jak najwyżej nad nim (do 40 m) tak, by środek jeziora był widoczny, patrząc na nie; tam jest początek układu świata. Siedem warstw podłoża idzie za mapami: omszała ściółka leśna wszędzie, sucha ściółka w plamach na suchszym terenie, trawa na polanach, błoto tam, gdzie zbiera się woda, i wzdłuż brzegu, piasek i żwir na linii brzegu i w płytkiej wodzie, drobne kamienie na dnie jeziora, skała na stromych miejscach. Podszyt i kamienie stoją w promieniu 250 m od startu, a duże drzewa ciągną się do 1200 m, żadne na zboczu powyżej 33 stopni ani w jeziorze, z polaną od startu w dół do jeziora. Jeziora są powierzchniami wody (`CreateLakeSurfaces`, patrz etap wody w [rendering.md](rendering.md)). Drzewa rzucają cienie do 65 m. (Wybór startu, polana i reguły warstw to własne decyzje sceny; reguły sadzenia czytające mapy to następne kroki.)
 
 ## Teren generowany
 

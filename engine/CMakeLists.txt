@@ -32,6 +32,7 @@ add_library(poligon_engine STATIC
   src/stb_image_impl.cpp
   src/terrain.cpp
   src/terrain_generator.cpp
+  src/water.cpp
   src/physics.cpp
   src/platform.cpp
   src/render_settings.cpp
@@ -109,6 +110,8 @@ poligon_embed_shader(shaders/mesh_skinned.vert.hlsl vertex kMeshSkinnedVert mesh
 poligon_embed_shader(shaders/mesh_instanced.vert.hlsl vertex kMeshInstancedVert mesh_instanced_vert)
 poligon_embed_shader(shaders/terrain.vert.hlsl vertex kTerrainVert terrain_vert)
 poligon_embed_shader(shaders/terrain.frag.hlsl fragment kTerrainFrag terrain_frag)
+poligon_embed_shader(shaders/water.frag.hlsl fragment kWaterFrag water_frag)
+poligon_embed_shader(shaders/depth_copy.frag.hlsl fragment kDepthCopyFrag depth_copy_frag)
 poligon_embed_shader(shaders/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
 poligon_embed_shader(shaders/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
 poligon_embed_shader(shaders/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)

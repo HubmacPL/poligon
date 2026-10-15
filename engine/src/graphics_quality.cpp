@@ -18,6 +18,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.shadow_distance_scale = 0.6f;
         quality.ambient_occlusion_samples = 8;
         quality.fog_steps = 16;
+        quality.water_reflection_steps = 0;
         quality.vegetation_detail = 0.6f;
         quality.vegetation_shadow = 0.5f;
         quality.ground_cover_density = 0.35f;
@@ -32,6 +33,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.shadow_distance_scale = 0.8f;
         quality.ambient_occlusion_samples = 12;
         quality.fog_steps = 20;
+        quality.water_reflection_steps = 12;
         quality.vegetation_detail = 0.8f;
         quality.vegetation_shadow = 0.75f;
         quality.ground_cover_density = 0.65f;
@@ -46,6 +48,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.shadow_distance_scale = 1.5f;
         quality.ambient_occlusion_samples = 32;
         quality.fog_steps = 48;
+        quality.water_reflection_steps = 48;
         quality.vegetation_detail = 1.5f;
         quality.vegetation_shadow = 1.5f;
         quality.ground_cover_density = 1.5f;
@@ -88,6 +91,7 @@ void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environme
     environment.shadow_distance *= quality.shadow_distance_scale;
     environment.ambient_occlusion_samples = quality.ambient_occlusion_samples;
     environment.fog_steps = quality.fog_steps;
+    environment.water_reflection_steps = quality.water_reflection_steps;
     post.bloom = post.bloom && quality.bloom;
     post.temporal_aa = post.temporal_aa && quality.temporal_aa;
 }
