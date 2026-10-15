@@ -37,6 +37,7 @@
 #include "poligon/debug_ui.h"
 #include "poligon/free_camera.h"
 #include "poligon/game_loop.h"
+#include "poligon/ground_cover.h"
 #include "poligon/impostor.h"
 #include "poligon/input.h"
 #include "poligon/model.h"
@@ -80,6 +81,8 @@ constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f, 0.0f, 150.0f};
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
+// Grass, ferns, nettles, low shrubs and stones exist within this distance of the player.
+constexpr float kGroundCoverRadius = 90.0f;
 // Trees up to this far away still cast shadows into the shadow range: a 24 m pine with the
 // sun 29 degrees up throws a 44 m shadow.
 constexpr float kTreeShadowDistance = kShadowDistance + 45.0f;
@@ -113,8 +116,9 @@ struct Piece {
 // One plant (or rock) that can be put into the scene many times.
 struct Variant {
     std::vector<Piece> pieces;
-    // The variant's number in the vegetation system.
+    // The variant's number in the vegetation system, and what was registered there.
     int species = -1;
+    poligon::VegetationSpecies definition;
     float height = 0.0f;
     // Half of the variant's width along x and z, before scaling.
     glm::vec2 half_width{0.0f};
@@ -382,6 +386,8 @@ public:
             poligon::DrawModel(renderer_, fox_model_, animal.transform, animal.player->GetJointMatrices());
         }
         vegetation_.Draw(renderer_, camera);
+        ground_cover_->Update(camera.position);
+        ground_cover_->Draw(renderer_, camera);
         if (show_windows_ && renderer_.IsDebugUiActive()) {
             const poligon::VegetationStats& stats = vegetation_.GetStats();
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 140.0f), ImGuiCond_FirstUseEver,
@@ -391,6 +397,8 @@ public:
                 ImGui::Text("drawn: %d full, %d medium, %d low detail", stats.instances_per_level[0],
                             stats.instances_per_level[1], stats.instances_per_level[2]);
                 ImGui::Text("cells: %d of %d skipped whole", stats.cells_skipped, stats.cells_total);
+                const poligon::GroundCoverStats& cover = ground_cover_->GetStats();
+                ImGui::Text("ground cover: %d cells, %d plants and stones", cover.cells_alive, cover.instances_alive);
                 const poligon::FrameStats frame = renderer_.GetFrameStats();
                 ImGui::Text("last frame: %d draw calls for %d + %d instances", frame.instance_draw_calls, frame.instances_drawn,
                             frame.shadow_instances);
@@ -597,6 +605,7 @@ private:
                 // Grass and the like are too small for their shadows to matter beyond a few steps.
                 species.shadow_distance = is_small ? 20.0f : kShadowDistance + 10.0f;
             }
+            variant.definition = species;
             variant.species = vegetation_.AddSpecies(species);
             kind.variants.push_back(std::move(variant));
         }
@@ -890,7 +899,6 @@ private:
                 const float scale = random.Between(0.8f, 1.2f);
                 const bool in_clearing = x * x + z * z < 14.0f * 14.0f;
                 const bool in_view_wedge = x > 5.0f && x < 400.0f && std::fabs(z) < x * 0.75f;
-                const bool near_start = std::fabs(x) < kForestHalfSize && std::fabs(z) < kForestHalfSize;
                 if (in_clearing || in_view_wedge || choice < 0.22f) {
                     continue;
                 }
@@ -904,11 +912,6 @@ private:
                 } else {
                     Place(oak_, random, x, z, scale);
                 }
-                // Something at the foot of some trees, near the start.
-                if (random.Next() < 0.35f && near_start) {
-                    Place(fern_, random, x + random.Between(-1.2f, 1.2f), z + random.Between(-1.2f, 1.2f),
-                          random.Between(1.0f, 1.6f));
-                }
             }
         }
 
@@ -917,19 +920,54 @@ private:
         Scatter(young_spruce_, random, 350, kForestHalfSize, 0.5f, 1.3f);
         Scatter(young_pine_, random, 350, kForestHalfSize, 0.5f, 1.3f);
         Scatter(shrub_, random, 500, kForestHalfSize, 0.7f, 1.2f);
-        Scatter(low_shrub_, random, 150, 50.0f, 1.2f, 2.0f);
-        Scatter(low_shrub_, random, 1200, kForestHalfSize, 1.2f, 2.0f);
-        Scatter(fern_, random, 350, 55.0f, 0.9f, 1.7f);
-        Scatter(fern_, random, 3500, kForestHalfSize, 0.9f, 1.7f);
-        Scatter(nettle_, random, 160, 45.0f, 2.5f, 4.0f);
-        Scatter(nettle_, random, 1200, kForestHalfSize, 2.5f, 4.0f);
-        Scatter(grass_, random, 1800, 35.0f, 2.0f, 3.5f);
-        Scatter(grass_, random, 9000, kForestHalfSize, 2.0f, 3.5f);
         Scatter(boulder_, random, 120, kForestHalfSize, 0.6f, 2.2f, 0.25f);
-        Scatter(rocks_, random, 200, kForestHalfSize, 0.6f, 1.4f, 0.15f);
         Scatter(stump_, random, 110, kForestHalfSize, 0.8f, 1.2f, 0.05f);
         Scatter(fallen_trunk_, random, 80, kForestHalfSize, 0.9f, 1.4f, 0.1f);
         std::printf("forest_scene: %d things placed\n", placed_count_);
+        GrowGroundCover();
+    }
+
+    // Grass, ferns, nettles, low shrubs and stones are not planted: they grow on the fly
+    // around the player (poligon/ground_cover.h) from rules and the land, over the whole map.
+    void GrowGroundCover() {
+        ground_cover_ = std::make_unique<poligon::GroundCover>(*terrain_, kGroundCoverRadius);
+        // One layer per variant of a kind, sharing the kind's density between them. A
+        // kind's levels are cut at the radius, so that plants fade out before their cell goes.
+        // every_nth: use only every n-th variant of the kind (each variant is a draw call per
+        // pass). shadow_limit: shadows of the layer stop here at the latest; grass shadows
+        // matter only at the player's feet.
+        const auto add = [this](const Kind& kind, float density, float scale_low, float scale_high, float patch_threshold,
+                                float max_slope, bool align, float sink, int seed, size_t every_nth, float shadow_limit) {
+            for (size_t i = 0; i < kind.variants.size(); i += every_nth) {
+                poligon::GroundCoverLayer layer;
+                layer.species = kind.variants[i].definition;
+                layer.species.shadow_distance = std::min(layer.species.shadow_distance, shadow_limit);
+                std::vector<poligon::VegetationLevel>& levels = layer.species.levels;
+                const float limit = kGroundCoverRadius * 0.9f;
+                for (size_t level = 0; level < levels.size(); ++level) {
+                    if (levels[level].max_distance >= limit || level + 1 == levels.size()) {
+                        levels[level].max_distance = std::min(levels[level].max_distance, limit);
+                        levels.resize(level + 1);
+                        break;
+                    }
+                }
+                layer.density = density / static_cast<float>((kind.variants.size() + every_nth - 1) / every_nth);
+                layer.scale_min = scale_low;
+                layer.scale_max = scale_high;
+                layer.patch_threshold = patch_threshold;
+                layer.patch_softness = 0.25f;
+                layer.max_slope_degrees = max_slope;
+                layer.align_to_ground = align;
+                layer.sink_meters = sink;
+                layer.seed = seed * 100 + static_cast<int>(i);
+                ground_cover_->AddLayer(layer);
+            }
+        };
+        add(grass_, 3.0f, 2.5f, 4.0f, 0.2f, 40.0f, true, 0.0f, 1, 3, 8.0f);
+        add(fern_, 0.06f, 0.9f, 1.7f, 0.5f, 33.0f, false, 0.0f, 2, 1, 20.0f);
+        add(nettle_, 0.03f, 2.5f, 4.0f, 0.55f, 33.0f, false, 0.0f, 3, 1, 20.0f);
+        add(low_shrub_, 0.02f, 1.2f, 2.0f, 0.4f, 33.0f, false, 0.0f, 4, 1, 20.0f);
+        add(rocks_, 0.002f, 0.35f, 0.8f, 0.0f, 50.0f, true, 0.08f, 5, 1, 20.0f);
     }
 
     poligon::Renderer& renderer_;
@@ -944,6 +982,7 @@ private:
     int loaded_kind_count_ = 0;
     // All plants, rocks and stumps: placed once, drawn by distance.
     poligon::Vegetation vegetation_;
+    std::unique_ptr<poligon::GroundCover> ground_cover_;
     int placed_count_ = 0;
     float detail_scale_ = 1.0f;
     float shadow_scale_ = 1.0f;

@@ -49,6 +49,30 @@ vegetation.Draw(renderer, camera);
 - A level with `impostor` set is drawn as that impostor instead of its parts (`DrawImpostorInstances`). Impostors cast no shadows; if the shadow level would be an impostor, the last mesh level casts the shadow.
 - A plant's shadow does not stop at `shadow_distance` in one step either: over the last `fade_width` of that distance it dissolves by the same pattern. Casters should reach further than the shadows are shown (`forest_scene`: 110 m for trees against a shadow range of 65 m), because a tree beyond the shadow range still throws its shadow into it; otherwise shadows appear only when their tree comes within range.
 
+## Ground cover
+
+Grass, ferns, nettles, litter, small plants and pebbles: too many to store for a map, so they are made on the fly around the camera (`poligon/ground_cover.h`). Example: `examples/ground_cover`; test: `tests/ground_cover_test.cpp`.
+
+```cpp
+poligon::GroundCoverLayer grass;
+grass.species = grass_species;          // parts per level, as for Vegetation; keep its last distance below the radius
+grass.density = 1.2f;                   // per square meter where allowed in full
+grass.max_slope_degrees = 40.0f;
+grass.patch_threshold = 0.3f;           // grows in soft patches; 0 = evenly everywhere
+grass.align_to_ground = true;           // tilts with the slope
+poligon::GroundCover cover(terrain, 90.0f);   // plants exist within 90 m of the camera, in cells of 16 m
+cover.AddLayer(grass);
+// every frame:
+cover.Update(camera.position);          // builds cells that came into reach, drops those that left
+cover.Draw(renderer, camera);           // between BeginFrame and EndFrame
+```
+
+- A cell's plants come from rules (slope, height range, patch noise) and a hash of the cell's position and the layer's seed, so the same cell always holds the same plants, in whatever order cells are built. Every random number of a plant is drawn before any rule, so a plant rejected by a rule does not shift the ones after it.
+- `Update` does nothing while the camera stays within one cell; crossing into a new one builds the cells that came into reach (a few, each in a fraction of a millisecond) and hands every living plant to a `Vegetation` inside, which then draws them with levels, fades, wind and shadows like anything else.
+- `sink_meters` buries pebbles a little; `scale_min`/`scale_max` vary size; `CollectInstances` lists what exists (tests, tools).
+- In `forest_scene`: grass (3 per m², in patches, every third of the 21 tuft variants, shadows only within 8 m), ferns, nettles, low shrubs and small moss rocks grow within 90 m of the player over the whole 6 x 6 km, with one layer per model variant; nothing of them is planted any more. Trees, big shrubs, boulders, stumps and trunks stay planted (`Vegetation`), because they have collisions and shadows from afar. Measured (release, headless, 200 frames, the same run with the radius cut to 1 m as the baseline): 1.1 to 1.6 ms per frame for about 16000 extra instances in reach, of which 4000 to 4500 in view. Each layer costs a draw call per pass, so a kind with many variants should use a few of them, or its variants should be merged into clumps.
+- Not yet: a painted ground map saying where which layer grows (today only slope, height and noise), a trample map for paths through grass, and a fade-in when a cell appears nearer than the layer's farthest distance.
+
 ## Impostors
 
 ```cpp

@@ -22,6 +22,7 @@ add_library(poligon_engine STATIC
   src/fixed_step_clock.cpp
   src/free_camera.cpp
   src/game_loop.cpp
+  src/ground_cover.cpp
   src/height_map.cpp
   src/image.cpp
   src/impostor.cpp

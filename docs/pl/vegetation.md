@@ -49,6 +49,30 @@ vegetation.Draw(renderer, camera);
 - Poziom z ustawionym `impostor` jest rysowany jako ten impostor zamiast swoich części (`DrawImpostorInstances`). Impostory nie rzucają cieni; jeśli poziomem cienia byłby impostor, cień rzuca ostatni poziom z siatkami.
 - Cień rośliny też nie urywa się na `shadow_distance` w jednym kroku: na ostatniej części `fade_width` tej odległości rozpływa się tym samym wzorem. Rzucające cień powinny sięgać dalej niż pokazywane cienie (`forest_scene`: 110 m dla drzew przy zasięgu cieni 65 m), bo drzewo za zasięgiem cieni nadal rzuca cień do środka; inaczej cienie pojawiają się dopiero, gdy ich drzewo wejdzie w zasięg.
 
+## Pokrywa ziemi
+
+Trawa, paprocie, pokrzywy, ściółka, drobne rośliny i kamyki: za dużo, żeby je przechowywać dla mapy, więc powstają w locie wokół kamery (`poligon/ground_cover.h`). Przykład: `examples/ground_cover`; test: `tests/ground_cover_test.cpp`.
+
+```cpp
+poligon::GroundCoverLayer grass;
+grass.species = grass_species;          // części na poziom, jak w Vegetation; ostatnia odległość poniżej promienia
+grass.density = 1.2f;                   // na metr kwadratowy tam, gdzie wolno w pełni
+grass.max_slope_degrees = 40.0f;
+grass.patch_threshold = 0.3f;           // rośnie miękkimi plamami; 0 = równo wszędzie
+grass.align_to_ground = true;           // pochyla się ze zboczem
+poligon::GroundCover cover(terrain, 90.0f);   // rośliny istnieją w promieniu 90 m od kamery, w komórkach 16 m
+cover.AddLayer(grass);
+// co klatkę:
+cover.Update(camera.position);          // buduje komórki, które weszły w zasięg, porzuca te, które wyszły
+cover.Draw(renderer, camera);           // między BeginFrame a EndFrame
+```
+
+- Rośliny komórki wynikają z reguł (nachylenie, zakres wysokości, szum plam) i skrótu położenia komórki oraz ziarna warstwy, więc ta sama komórka zawsze ma te same rośliny, niezależnie od kolejności budowania. Wszystkie liczby losowe rośliny są losowane przed regułami, więc roślina odrzucona przez regułę nie przesuwa następnych.
+- `Update` nic nie robi, dopóki kamera zostaje w jednej komórce; przejście do nowej buduje komórki, które weszły w zasięg (kilka, każda w ułamku milisekundy), i przekazuje wszystkie żywe rośliny do `Vegetation` w środku, które rysuje je z poziomami, przenikaniem, wiatrem i cieniami jak wszystko inne.
+- `sink_meters` zakopuje kamyki odrobinę; `scale_min`/`scale_max` różnicują wielkość; `CollectInstances` wylicza, co istnieje (testy, narzędzia).
+- W `forest_scene`: trawa (3 na m², plamami, co trzeci z 21 wariantów kępek, cienie tylko do 8 m), paprocie, pokrzywy, niskie krzewy i małe omszałe kamienie rosną w promieniu 90 m od gracza na całych 6 × 6 km, po jednej warstwie na wariant modelu; nic z tego nie jest już sadzone. Drzewa, duże krzewy, głazy, pniaki i pnie zostają posadzone (`Vegetation`), bo mają kolizje i cienie z daleka. Zmierzone (release, bez okna, 200 klatek, ten sam bieg z promieniem skróconym do 1 m jako odniesienie): 1,1 do 1,6 ms na klatkę za około 16000 dodatkowych instancji w zasięgu, z czego 4000 do 4500 w kadrze. Każda warstwa kosztuje jedno polecenie rysowania na przebieg, więc rodzaj z wieloma wariantami powinien używać kilku z nich albo mieć warianty połączone w kępy.
+- Jeszcze nie: malowana mapa podłoża mówiąca, gdzie która warstwa rośnie (dziś tylko nachylenie, wysokość i szum), mapa wygniatania dla ścieżek w trawie, i płynne pojawianie się komórki, gdy wchodzi bliżej niż najdalsza odległość warstwy.
+
 ## Impostory
 
 ```cpp

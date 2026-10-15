@@ -49,8 +49,8 @@ bool KeptByFade(float fade, float2 pixel) {
 // bends, y = how much its leaves flutter. `foot` is the plant's base (the model's origin),
 // `local` the vertex in the model's own coordinates. Returns the moved world position.
 float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, float2 response) {
-    if (wind.z <= 0.0) {
-        return world_position;
+    if (wind.z <= 0.0 || (response.x <= 0.0 && response.y <= 0.0)) {
+        return world_position;  // no wind, or a material that does not move (rock, bark of a stump)
     }
     float2 direction = wind.xy;
     float height = max(world_position.y - foot.y, 0.0);
@@ -65,10 +65,13 @@ float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, 
     float3 moved = world_position + float3(direction.x, 0.0, direction.y) * bend;
     // A bent stem does not get longer: the top comes down a little.
     moved.y -= 0.5 * bend * bend / max(height, 0.5);
-    // Flutter: leaves and blades shiver each on their own, more towards the tips.
-    float seed = dot(local, float3(7.13, 3.71, 5.29));
-    float amplitude = response.y * wind.z * (0.3 + 0.7 * gust) * 0.04 * saturate(height * 2.0);
-    moved += float3(sin(wind.w * 9.0 + seed), 0.5 * sin(wind.w * 7.3 + seed * 1.7), cos(wind.w * 8.1 + seed * 2.3)) * amplitude;
+    // Flutter: leaves and blades shiver each on their own, more towards the tips. Bark and
+    // trunks (flutter 0) skip the three extra sines.
+    if (response.y > 0.0) {
+        float seed = dot(local, float3(7.13, 3.71, 5.29));
+        float amplitude = response.y * wind.z * (0.3 + 0.7 * gust) * 0.04 * saturate(height * 2.0);
+        moved += float3(sin(wind.w * 9.0 + seed), 0.5 * sin(wind.w * 7.3 + seed * 1.7), cos(wind.w * 8.1 + seed * 2.3)) * amplitude;
+    }
     return moved;
 }
 
