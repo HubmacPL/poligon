@@ -31,6 +31,7 @@ cbuffer TonemapUniforms : register(b0, space3) {
     float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier, w: debug view (0 = off, 1 = show red as gray, 2 = show color)
     float4 white_balance;  // rgb: multipliers from temperature and tint (1 = neutral)
     float4 grading;        // x: saturation, y: contrast, z: vignette strength, w: sharpening
+    float4 input;          // x: 1 = the scene image has the output's size, 0 = smaller, stretched
 };
 
 struct FragmentInput {
@@ -49,12 +50,13 @@ float Luminance(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
-float4 main(FragmentInput input) : SV_Target0 {
-    int2 pixel = int2(input.clip_position.xy);
-    float3 color = scene_texture.Load(int3(pixel, 0)).rgb;
+float4 main(FragmentInput input_pixel) : SV_Target0 {
+    int2 pixel = int2(input_pixel.clip_position.xy);
+    bool same_size = input.x > 0.5;
+    float3 color = same_size ? scene_texture.Load(int3(pixel, 0)).rgb : scene_texture.SampleLevel(scene_sampler, input_pixel.uv, 0.0).rgb;
     // Sharpening: the pixel minus a share of its four neighbors' difference from it,
     // limited so that bright edges do not ring.
-    if (grading.w > 0.0) {
+    if (grading.w > 0.0 && same_size) {
         float3 north = scene_texture.Load(int3(pixel + int2(0, -1), 0)).rgb;
         float3 south = scene_texture.Load(int3(pixel + int2(0, 1), 0)).rgb;
         float3 west = scene_texture.Load(int3(pixel + int2(-1, 0), 0)).rgb;
@@ -65,14 +67,14 @@ float4 main(FragmentInput input) : SV_Target0 {
         color = clamp(color + (color - neighbors) * grading.w, lowest, highest);
     }
     if (auto_exposure.w > 0.5) {
-        float4 debug = debug_texture.SampleLevel(debug_sampler, input.uv, 0.0);
+        float4 debug = debug_texture.SampleLevel(debug_sampler, input_pixel.uv, 0.0);
         if (auto_exposure.w < 1.5) {
             return float4(debug.rrr, 1.0);
         }
         color = debug.rgb;
     }
     if (parameters.z > 0.0) {
-        float3 bloom = bloom_texture.SampleLevel(bloom_sampler, input.uv, 0.0).rgb;
+        float3 bloom = bloom_texture.SampleLevel(bloom_sampler, input_pixel.uv, 0.0).rgb;
         color = lerp(color, bloom, parameters.z);
     }
 
@@ -98,7 +100,7 @@ float4 main(FragmentInput input) : SV_Target0 {
     color = perceptual * perceptual;
     // Vignette: corners darken gently, as through a camera lens.
     if (grading.z > 0.0) {
-        float2 from_center = input.uv * 2.0 - 1.0;
+        float2 from_center = input_pixel.uv * 2.0 - 1.0;
         color *= 1.0 - grading.z * saturate(dot(from_center, from_center) * 0.5);
     }
     // The target has an sRGB format: the GPU encodes this linear value when storing it.

@@ -101,9 +101,14 @@ bool ShowRenderSettingsWindow(const Renderer& renderer, RenderSettings& settings
             }
         }
         ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.55f);
+        const GraphicsPreset preset_before = settings.quality.preset;
         SettingsWidgets widgets;
         VisitRenderSettings(settings, widgets);
         changed |= widgets.Finish();
+        if (settings.quality.preset != preset_before) {
+            // Picking a preset sets all its values at once.
+            settings.quality = GetGraphicsPreset(settings.quality.preset);
+        }
         ImGui::PopItemWidth();
     }
     ImGui::End();

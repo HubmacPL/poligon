@@ -27,6 +27,7 @@ cbuffer FogUniforms : register(b0, space3) {
     float4 fog;              // rgb: color of sunlit fog, a: density per meter at the base height
     float4 fog_shape;        // x: thinning per meter of height, y: base height, z: sun glow strength, w: brightness of shadowed fog
     float4 options;          // x: shadows on, y: farthest distance walked, zw: size of the depth image in pixels
+    float4 quality;          // x: steps along each line of sight
 };
 
 struct FragmentInput {
@@ -35,7 +36,6 @@ struct FragmentInput {
     float2 ndc : TEXCOORD1;
 };
 
-static const int kStepCount = 32;
 
 float SunVisibility(float3 world_position) {
     if (options.x < 0.5) {
@@ -78,12 +78,13 @@ float4 main(FragmentInput input) : SV_Target0 {
     // The start of each step is shifted by a per-pixel amount; the resulting noise is
     // removed when the fog is put over the scene.
     float jitter = InterleavedGradientNoise(input.clip_position.xy + float2(camera_forward.w, 0.0));
+    int step_count = (int)quality.x;
     float3 added_light = float3(0.0, 0.0, 0.0);
     float let_through = 1.0;
-    for (int i = 0; i < kStepCount; ++i) {
+    for (int i = 0; i < step_count; ++i) {
         // Steps grow with distance: short and precise nearby, long far away.
-        float start_fraction = float(i) / kStepCount;
-        float end_fraction = float(i + 1) / kStepCount;
+        float start_fraction = float(i) / step_count;
+        float end_fraction = float(i + 1) / step_count;
         float start = walk_distance * start_fraction * start_fraction;
         float end = walk_distance * end_fraction * end_fraction;
         float3 position = camera_position.xyz + direction * lerp(start, end, jitter);

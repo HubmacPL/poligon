@@ -37,6 +37,7 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 fog;                   // rgb: color, a: density per meter
     float4 options;               // x: shadows on, y: alpha to coverage on, z: sky reflections on, w: shadow texel size
     float4 screen;                // x: screen-space ambient occlusion on, y: tint by shadow cascade (debug)
+    float4 cascade_scale;         // share of its tile's width and height each cascade uses
 };
 
 static const float kPi = 3.14159265;
@@ -103,7 +104,7 @@ float CascadeVisibility(int cascade, float3 world_position, float3 normal) {
     TentWeights(offset.x, weights_x, positions_x);
     TentWeights(offset.y, weights_y, positions_y);
     float2 tile_min = float2(cascade & 1, cascade >> 1) * 0.5 + texel * 0.5;
-    float2 tile_max = tile_min + 0.5 - texel;
+    float2 tile_max = tile_min + 0.5 * cascade_scale[cascade] - texel;
     float depth = shadow_position.z - 0.0002;
     float lit = 0.0;
     [unroll] for (int y = 0; y < 3; ++y) {

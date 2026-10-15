@@ -73,6 +73,8 @@ public:
 
     void SetRadius(float radius);
     float GetRadius() const;
+    // Multiplies every layer's density (graphics quality); all cells are rebuilt.
+    void SetDensityScale(float scale);
     // Appends the transforms of all living plants of a layer (for tests and tools).
     void CollectInstances(int layer, std::vector<glm::mat4>& out) const;
     const GroundCoverStats& GetStats() const;

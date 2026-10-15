@@ -1,15 +1,20 @@
-// Temporal anti-aliasing (TAA): every frame the camera is shifted by a different fraction of
-// a pixel, and this pass blends the new frame into the result of the previous ones. Over a
-// few frames every pixel collects samples from many places inside it: edges, thin twigs,
-// shimmering highlights and dithered fades all smooth out.
+// Temporal anti-aliasing (TAA), optionally with upscaling: every frame the scene is drawn
+// with the camera shifted by a different fraction of a pixel, possibly at a lower
+// resolution than the output, and this pass blends it into the result of the previous
+// frames, which is kept at the output resolution. Over a few frames every output pixel
+// collects samples from many places inside it: edges, thin twigs, shimmering highlights and
+// dithered fades smooth out, and a lower drawing resolution is filled back in.
 //
-// For each pixel: where was this point of the scene in the previous frame? The depth image
-// gives the point's position; the previous frame's camera gives where it was on screen.
-// The previous result is read there. Anything that moved by other means (wind, animals)
-// is caught by clamping: the history may only hold colors that the new frame's 3 x 3
-// neighborhood could produce, which removes ghosts of things that are no longer there.
-// Colors are compared in YCoCg (brightness and two color differences), weighted so that
-// a few very bright pixels cannot dominate.
+// For each output pixel:
+// 1. The new frame's estimate: the drawn pixels around this point, each weighted by how
+//    close its (shifted) sample position lies to the output pixel's center.
+// 2. Where was this point of the scene in the previous frame? The depth image gives the
+//    point's position; the cameras of both frames, without their shifts, give its motion.
+//    The previous result is read there.
+// 3. Anything that moved by other means (wind, animals) is caught by clipping the history
+//    into the colors the new frame's neighborhood holds, which removes ghosts. Colors are
+//    compared in YCoCg (brightness and two color differences), squeezed by brightness so
+//    that a few very bright pixels cannot dominate.
 //
 // Output: the new result, which the next frame reads as its history.
 #include "common.hlsli"
@@ -31,8 +36,10 @@ SamplerState depth_sampler : register(s2, space2);
 
 cbuffer TaaUniforms : register(b0, space3) {
     float4x4 inverse_view_projection;   // this frame, with its sub-pixel shift
+    float4x4 current_view_projection;   // this frame, without its shift
     float4x4 previous_view_projection;  // the previous frame, without its shift
-    float4 parameters;                  // x: share of the new frame, y: 1 = history is valid, zw: image size in pixels
+    float4 parameters;                  // x: share of the new frame, y: 1 = history is valid, zw: output size in pixels
+    float4 input;                       // xy: size of the drawn image in pixels, zw: the frame's shift in drawn pixels
 };
 
 struct FragmentInput {
@@ -93,28 +100,47 @@ float3 ClipToBox(float3 history, float3 box_min, float3 box_max) {
     return largest > 1.0 ? center + offset / largest : history;
 }
 
-float4 main(FragmentInput input) : SV_Target0 {
-    int2 pixel = int2(input.clip_position.xy);
-    int2 last = int2(parameters.zw) - 1;
-    float3 current = Squeeze(max(current_texture.Load(int3(pixel, 0)).rgb, 0.0));
+float2 ToUv(float4 clip) {
+    return float2(clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
+}
 
-    // The 3 x 3 neighborhood: its mean and spread in YCoCg, and the nearest surface in it.
-    // The nearest surface decides how the pixel moved, so that the edges of a near object
-    // move with it instead of with the background behind them.
+float4 main(FragmentInput input_pixel) : SV_Target0 {
+    float2 output_size = parameters.zw;
+    float2 input_size = input.xy;
+    float2 uv = input_pixel.uv;
+    // Where this output pixel's center lies in the drawn image, which is shifted by the
+    // frame's sub-pixel offset.
+    float2 drawn_position = uv * input_size + input.zw;
+    int2 nearest_drawn = int2(floor(drawn_position));
+    int2 last = int2(input_size) - 1;
+    float2 output_per_drawn = output_size / input_size;
+
+    // The 3 x 3 drawn pixels around it: a weighted estimate of the new color, the spread of
+    // the neighborhood in YCoCg, and the nearest surface (which decides the motion, so that
+    // edges of near objects move with them instead of with the background behind them).
     float3 sum = 0.0;
     float3 sum_squares = 0.0;
     float3 lowest = 1.0e9;
     float3 highest = -1.0e9;
+    float3 estimate = 0.0;
+    float estimate_weight = 0.0;
     float nearest_depth = 0.0;
-    int2 nearest_pixel = pixel;
+    int2 nearest_pixel = clamp(nearest_drawn, int2(0, 0), last);
     [unroll] for (int y = -1; y <= 1; ++y) {
         [unroll] for (int x = -1; x <= 1; ++x) {
-            int2 tap = clamp(pixel + int2(x, y), int2(0, 0), last);
-            float3 color = ToYCoCg(Squeeze(max(current_texture.Load(int3(tap, 0)).rgb, 0.0)));
-            sum += color;
-            sum_squares += color * color;
-            lowest = min(lowest, color);
-            highest = max(highest, color);
+            int2 tap = clamp(nearest_drawn + int2(x, y), int2(0, 0), last);
+            float3 color = Squeeze(max(current_texture.Load(int3(tap, 0)).rgb, 0.0));
+            // Distance from the tap's sample position to the output pixel's center, in output
+            // pixels; a Gaussian close to the Blackman-Harris window weights it.
+            float2 offset = (float2(tap) + 0.5 - drawn_position) * output_per_drawn;
+            float weight = exp(-2.29 * dot(offset, offset));
+            estimate += color * weight;
+            estimate_weight += weight;
+            float3 ycocg = ToYCoCg(color);
+            sum += ycocg;
+            sum_squares += ycocg * ycocg;
+            lowest = min(lowest, ycocg);
+            highest = max(highest, ycocg);
             float depth = depth_texture.Load(int3(tap, 0));
             if (depth > nearest_depth) {  // depth runs from 1 near to 0 far
                 nearest_depth = depth;
@@ -122,17 +148,20 @@ float4 main(FragmentInput input) : SV_Target0 {
             }
         }
     }
+    float3 current = estimate / max(estimate_weight, 0.0001);
     if (parameters.y < 0.5) {
-        return float4(Unsqueeze(current), 1.0);
+        // No history yet: the drawn pixel under this point, as a frame without TAA shows it.
+        return float4(max(current_texture.Load(int3(clamp(nearest_drawn, int2(0, 0), last), 0)).rgb, 0.0), 1.0);
     }
 
-    // Where the nearest surface was in the previous frame.
-    float2 nearest_uv = (float2(nearest_pixel) + 0.5) / parameters.zw;
+    // The nearest surface's position, and where it is and was without the shifts.
+    float2 nearest_uv = (float2(nearest_pixel) + 0.5) / input_size;
     float4 world = mul(inverse_view_projection, float4(nearest_uv.x * 2.0 - 1.0, 1.0 - nearest_uv.y * 2.0, nearest_depth, 1.0));
     world /= world.w;
     float4 previous = mul(previous_view_projection, float4(world.xyz, 1.0));
-    float2 previous_uv = float2(previous.x / previous.w * 0.5 + 0.5, 0.5 - previous.y / previous.w * 0.5);
-    float2 history_uv = input.uv + (previous_uv - nearest_uv);
+    float4 now = mul(current_view_projection, float4(world.xyz, 1.0));
+    float2 motion = ToUv(previous) - ToUv(now);
+    float2 history_uv = uv + motion;
     if (any(history_uv < 0.0) || any(history_uv > 1.0) || previous.w <= 0.0) {
         return float4(Unsqueeze(current), 1.0);  // off screen in the previous frame
     }
@@ -143,13 +172,16 @@ float4 main(FragmentInput input) : SV_Target0 {
     float3 deviation = sqrt(max(sum_squares / 9.0 - mean * mean, 0.0));
     float3 box_min = max(mean - 1.25 * deviation, lowest);
     float3 box_max = min(mean + 1.25 * deviation, highest);
-    float3 history = ToYCoCg(Squeeze(SampleHistory(history_uv, parameters.zw)));
+    float3 history = ToYCoCg(Squeeze(SampleHistory(history_uv, output_size)));
     history = ClipToBox(history, box_min, box_max);
 
     // The faster the pixel moves, the more of the new frame it takes: moving history has
-    // been resampled more often and is blurrier.
-    float speed = length((previous_uv - nearest_uv) * parameters.zw);
+    // been resampled more often and is blurrier. When upscaling, a frame whose samples fall
+    // far from this pixel's center counts for less.
+    float speed = length(motion * output_size);
     float share = lerp(parameters.x, 0.25, saturate(speed / 16.0));
+    float closeness = saturate(estimate_weight);
+    share *= lerp(0.5, 1.0, closeness);
     float3 result = lerp(FromYCoCg(history), current, share);
     return float4(Unsqueeze(max(result, 0.0)), 1.0);
 }

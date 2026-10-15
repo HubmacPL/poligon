@@ -29,6 +29,9 @@ struct FragmentInput {
     float3 blend_fade : TEXCOORD8;
 };
 
+#ifdef EARLY_DEPTH_TEST
+[earlydepthstencil]
+#endif
 float4 main(FragmentInput input) : SV_Target0 {
     if (!KeptByFade(input.blend_fade.z, input.clip_position.xy + float2(impostor_material.z, 0.0))) {
         discard;

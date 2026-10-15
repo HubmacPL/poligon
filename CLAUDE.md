@@ -7,7 +7,7 @@ This file is the table of contents and the rule book. Details live in topic file
 
 - Building, presets, dependencies, adding tests and examples: [docs/en/building.md](docs/en/building.md)
 - Game loop, tick and frame, headless mode, command line: [docs/en/game_loop.md](docs/en/game_loop.md)
-- Renderer, math conventions, textures and materials, HLSL shaders, backends, frame dumps and image comparison: [docs/en/rendering.md](docs/en/rendering.md)
+- Renderer, graphics quality presets (low to ultra), math conventions, textures and materials, HLSL shaders, backends, frame dumps and image comparison: [docs/en/rendering.md](docs/en/rendering.md)
 - ECS (flecs): rules, changes during a system, JSON state dump, state hash, repeatability test: [docs/en/ecs.md](docs/en/ecs.md)
 - Input as actions, bindings, recording and replay, recording file format: [docs/en/input.md](docs/en/input.md)
 - Determinism: what is guaranteed, how to compare two runs and find the tick where they diverge, what breaks it: [docs/en/determinism.md](docs/en/determinism.md)

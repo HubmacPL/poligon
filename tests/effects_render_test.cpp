@@ -213,6 +213,42 @@ int main(int argc, char** argv) {
         }
     }
 
+    // --- Far cascades at a smaller share of their image ---
+    // A slab 3 m above the floor 20 m in front of the camera, with the sun straight
+    // overhead, falls in the last cascade. With far_shadow_scale 0.5 that cascade uses a
+    // quarter of its image; its shadow must still land right under the slab.
+    {
+        poligon::RendererConfig config = MakeConfig(backend);
+        config.far_shadow_scale = 0.5f;
+        poligon::Renderer far_renderer(config);
+        const poligon::MeshHandle far_plane = far_renderer.CreatePlaneMesh();
+        const poligon::MeshHandle far_cube = far_renderer.CreateCubeMesh();
+        poligon::Camera camera;
+        camera.position = {0.0f, 3.0f, 5.0f};
+        camera.target = {0.0f, 0.3f, 0.0f};
+        poligon::Environment environment;
+        environment.shadow_distance = 40.0f;
+        poligon::DirectionalLight sun;
+        sun.direction = {0.0f, -1.0f, 0.0f};
+        sun.color = {0.6f, 0.6f, 0.6f, 1.0f};
+        sun.ambient = {0.2f, 0.2f, 0.2f, 1.0f};
+        far_renderer.BeginFrame(camera, sun, environment);
+        far_renderer.DrawMesh(far_plane, glm::scale(identity, {80.0f, 1.0f, 80.0f}), white);
+        far_renderer.DrawMesh(far_cube,
+                              glm::translate(identity, {0.0f, 3.0f, -20.0f}) * glm::scale(identity, {4.0f, 0.2f, 4.0f}),
+                              white);
+        far_renderer.EndFrame();
+        far_renderer.CaptureFrame(frame);
+        const glm::ivec2 shadowed = ToPixel(camera, {0.0f, 0.0f, -20.0f});
+        const glm::ivec2 lit = ToPixel(camera, {6.0f, 0.0f, -20.0f});
+        const int dark = RedAt(frame, shadowed.x, shadowed.y);
+        const int bright = RedAt(frame, lit.x, lit.y);
+        if (dark + 60 > bright) {
+            std::printf("  floor under the far slab has red %d, open floor beside it %d\n", dark, bright);
+        }
+        Expect(dark + 60 <= bright, "a far cascade at half resolution puts the shadow under its caster");
+    }
+
     // --- Bloom ---
     // A small, very bright square on black. Without bloom the black next to it stays black;
     // with bloom the square's light spills over, less so far away.

@@ -21,6 +21,9 @@ namespace poligon {
 //   --render-settings PATH  load sun, environment and post-processing settings from PATH
 //                         (a file saved from the render settings window, see render_settings.h)
 //   --hash-interval N     ticks between hash log entries (default 60, N >= 1)
+//   --quality NAME        graphics preset: low, medium, high or ultra (see graphics_quality.h);
+//                         applied after --render-settings
+//   --resolution WxH      size of the picture in pixels, for example 1920x1080
 struct CommandLineOptions {
     bool headless = false;
     std::int64_t ticks = 0;  // 0 = not given, run until the game quits
@@ -33,6 +36,9 @@ struct CommandLineOptions {
     std::string hash_log_path;    // empty = not given
     std::string render_settings_path;  // empty = not given
     std::int64_t hash_interval = 60;
+    std::string quality;  // empty = not given; otherwise a preset name, already checked
+    int width = 0;        // 0 = not given
+    int height = 0;
     // Arguments that are not options (do not start with "--"), in order. What they mean is up
     // to the program, for example a file to open. A program that takes none should reject them.
     std::vector<std::string> positional;

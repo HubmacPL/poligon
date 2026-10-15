@@ -22,6 +22,7 @@ add_library(poligon_engine STATIC
   src/fixed_step_clock.cpp
   src/free_camera.cpp
   src/game_loop.cpp
+  src/graphics_quality.cpp
   src/ground_cover.cpp
   src/height_map.cpp
   src/image.cpp
@@ -94,7 +95,8 @@ function(poligon_embed_shader source stage symbol header)
     COMMAND ${CMAKE_COMMAND} -DINPUT=${spirv} -DOUTPUT=${output_dir}/${header}_spirv.h -DSYMBOL=${symbol}Spirv -P ${embed}
     # Every shader may include the shared .hlsli files, so a change there rebuilds all of them.
     DEPENDS ${input} ${embed} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting.hlsli
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.hlsli
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh.frag.hlsl
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.frag.hlsl
     COMMENT "Compiling shader ${source}"
     VERBATIM)
   target_sources(poligon_engine PRIVATE ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h)
@@ -123,3 +125,5 @@ poligon_embed_shader(shaders/impostor.frag.hlsl fragment kImpostorFrag impostor_
 poligon_embed_shader(shaders/impostor_depth.frag.hlsl fragment kImpostorDepthFrag impostor_depth_frag)
 poligon_embed_shader(shaders/impostor_bake.frag.hlsl fragment kImpostorBakeFrag impostor_bake_frag)
 poligon_embed_shader(shaders/taa.frag.hlsl fragment kTaaFrag taa_frag)
+poligon_embed_shader(shaders/mesh_after_depth.frag.hlsl fragment kMeshAfterDepthFrag mesh_after_depth_frag)
+poligon_embed_shader(shaders/impostor_after_depth.frag.hlsl fragment kImpostorAfterDepthFrag impostor_after_depth_frag)

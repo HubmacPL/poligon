@@ -75,6 +75,38 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("post.contrast", post.contrast, 0.5f, 1.5f);
     visitor.Float("post.vignette", post.vignette, 0.0f, 1.0f);
 
+    visitor.Section("quality");
+    static const char* const kPresets[] = {"low", "medium", "high", "ultra"};
+    GraphicsQuality& quality = settings.quality;
+    int preset = static_cast<int>(quality.preset);
+    visitor.Choice("quality.preset", preset, kPresets, 4);
+    quality.preset = static_cast<GraphicsPreset>(preset);
+    float shadow_map_size = static_cast<float>(quality.shadow_map_size);
+    visitor.Float("quality.shadow_map_size", shadow_map_size, 512.0f, 4096.0f);
+    quality.shadow_map_size = static_cast<int>(shadow_map_size);
+    visitor.Float("quality.far_shadow_scale", quality.far_shadow_scale, 0.25f, 1.0f);
+    float msaa_samples = static_cast<float>(quality.msaa_samples);
+    visitor.Float("quality.msaa_samples", msaa_samples, 1.0f, 8.0f);
+    quality.msaa_samples = static_cast<int>(msaa_samples);
+    visitor.Float("quality.render_scale", quality.render_scale, 0.5f, 1.0f);
+    visitor.Bool("quality.shadows", quality.shadows);
+    visitor.Bool("quality.ambient_occlusion", quality.ambient_occlusion);
+    visitor.Bool("quality.volumetric_fog", quality.volumetric_fog);
+    visitor.Bool("quality.bloom", quality.bloom);
+    visitor.Bool("quality.temporal_aa", quality.temporal_aa);
+    visitor.Float("quality.shadow_distance_scale", quality.shadow_distance_scale, 0.2f, 3.0f);
+    float ao_samples = static_cast<float>(quality.ambient_occlusion_samples);
+    visitor.Float("quality.ambient_occlusion_samples", ao_samples, 4.0f, 64.0f);
+    quality.ambient_occlusion_samples = static_cast<int>(ao_samples);
+    float fog_steps = static_cast<float>(quality.fog_steps);
+    visitor.Float("quality.fog_steps", fog_steps, 4.0f, 128.0f);
+    quality.fog_steps = static_cast<int>(fog_steps);
+    visitor.Float("quality.vegetation_detail", quality.vegetation_detail, 0.2f, 3.0f);
+    visitor.Float("quality.vegetation_shadow", quality.vegetation_shadow, 0.0f, 3.0f);
+    visitor.Float("quality.ground_cover_density", quality.ground_cover_density, 0.0f, 3.0f);
+    visitor.Float("quality.ground_cover_radius", quality.ground_cover_radius, 0.2f, 2.0f);
+    visitor.Float("quality.terrain_detail", quality.terrain_detail, 0.2f, 3.0f);
+
     visitor.Section("debug view");
     static const char* const kDebugViews[] = {"none", "ambient_occlusion", "fog", "bloom"};
     int debug_view = static_cast<int>(post.debug_view);
@@ -226,6 +258,14 @@ bool LoadRenderSettings(const char* path, RenderSettings& settings, std::string&
 
     Reader reader(lines);
     RenderSettings loaded = settings;
+    // A preset sets every quality value; single quality lines then override it.
+    const auto preset_line = lines.find("quality.preset");
+    if (preset_line != lines.end() && preset_line->second.size() == 1) {
+        GraphicsPreset preset = GraphicsPreset::High;
+        if (ParseGraphicsPreset(preset_line->second[0].c_str(), preset)) {
+            loaded.quality = GetGraphicsPreset(preset);
+        }
+    }
     VisitRenderSettings(loaded, reader);
     // Whatever no setting asked for is a misspelled or outdated name.
     for (const auto& [name, values] : lines) {

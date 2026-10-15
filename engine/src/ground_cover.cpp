@@ -72,6 +72,7 @@ struct GroundCover::Impl {
     const Terrain* terrain = nullptr;
     float radius = 80.0f;
     float cell_size = 16.0f;
+    float density_scale = 1.0f;
     std::vector<GroundCoverLayer> layers;
     std::vector<int> species_ids;
     Vegetation vegetation{32.0f};
@@ -88,7 +89,7 @@ struct GroundCover::Impl {
             const GroundCoverLayer& layer = layers[layer_index];
             Random random(Hash(column, row, static_cast<int>(layer_index) * 977 + layer.seed));
             // The expected count, rounded at random so that fractions average out.
-            const float expected = layer.density * cell_size * cell_size;
+            const float expected = layer.density * density_scale * cell_size * cell_size;
             int count = static_cast<int>(expected);
             if (random.Next() < expected - static_cast<float>(count)) {
                 ++count;
@@ -226,6 +227,15 @@ void GroundCover::SetRadius(float radius) {
     }
     impl_->radius = radius;
     impl_->has_camera = false;  // the next Update rebuilds the set of cells
+}
+
+void GroundCover::SetDensityScale(float scale) {
+    if (scale < 0.0f) {
+        FatalError("GroundCover::SetDensityScale: the scale must not be negative");
+    }
+    impl_->density_scale = scale;
+    impl_->cells.clear();
+    impl_->has_camera = false;  // the next Update builds every cell again
 }
 
 float GroundCover::GetRadius() const {

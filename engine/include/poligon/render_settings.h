@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "poligon/graphics_quality.h"
 #include "poligon/renderer.h"
 
 namespace poligon {
@@ -16,6 +17,10 @@ struct RenderSettings {
     DirectionalLight sun;
     Environment environment;
     PostSettings post;
+    // How much the picture may cost (see poligon/graphics_quality.h). In a file the line
+    // "quality.preset NAME" sets all quality values to the preset first; quality lines after
+    // it change single values.
+    GraphicsQuality quality;
 };
 
 // One call per setting, in a fixed order. The same list drives the file format and the

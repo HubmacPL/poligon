@@ -218,6 +218,37 @@ int main(int argc, char** argv) {
         Expect(warm[0] > warm[2] + 20, "a warm temperature makes gray orange");
     }
 
+    // Drawing at half size, brought back to full size by TAA: the picture keeps the output's
+    // size and, after a few frames, nearly matches the one drawn at full size.
+    {
+        poligon::RendererConfig config = MakeConfig(backend);
+        config.render_scale = 0.5f;
+        poligon::Renderer renderer(config);
+        Expect(renderer.GetRenderWidth() == kSize / 2 && renderer.GetRenderHeight() == kSize / 2,
+               "the scene is drawn at half size");
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        poligon::PostSettings post = renderer.GetPostSettings();
+        post.temporal_aa = true;
+        renderer.SetPostSettings(post);
+        poligon::Image upscaled;
+        for (int i = 0; i < 24; ++i) {
+            render(renderer, plane, camera, upscaled);
+        }
+        Expect(upscaled.width == kSize && upscaled.height == kSize, "the picture has the output's size");
+        int differing = 0;
+        for (int y = 0; y < kSize; ++y) {
+            for (int x = 0; x < kSize; ++x) {
+                differing += std::abs(RedAt(upscaled, x, y) - RedAt(smoothed, x, y)) > 60 ? 1 : 0;
+            }
+        }
+        if (differing > 120) {
+            std::printf("  %d pixels differ from the picture drawn at full size\n", differing);
+        }
+        Expect(differing <= 120, "upscaled by TAA the picture matches the one drawn at full size apart from its edges");
+        Expect(RedAt(upscaled, kSize / 2, kSize / 2) >= 250 && RedAt(upscaled, 2, 2) <= 5,
+               "upscaling keeps the inside white and the outside black");
+    }
+
     std::printf("temporal_aa_test finished\n");
     return test::ExitCode();
 }

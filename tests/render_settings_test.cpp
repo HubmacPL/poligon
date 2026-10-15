@@ -6,6 +6,7 @@
 #include <string>
 
 #include "poligon/free_camera.h"
+#include "poligon/graphics_quality.h"
 #include "poligon/render_settings.h"
 #include "test_support.h"
 
@@ -109,6 +110,61 @@ int main(int argc, char** argv) {
         Expect(!poligon::LoadRenderSettings(path.c_str(), settings, error), "a word in place of a number is an error");
         WriteText(path.c_str(), "poligon-render-settings 1\npost.tone_mapping filmic\n");
         Expect(!poligon::LoadRenderSettings(path.c_str(), settings, error), "an unknown choice is an error");
+    }
+
+    // --- Graphics presets ---
+    {
+        // A file names a preset, then changes one of its values: the preset is applied first.
+        const std::string path = directory + "/render_settings_quality.txt";
+        WriteText(path.c_str(), "poligon-render-settings 1\nquality.fog_steps 40\nquality.preset low\n");
+        poligon::RenderSettings settings;
+        Expect(poligon::LoadRenderSettings(path.c_str(), settings, error), "a file with a preset loads");
+        const poligon::GraphicsQuality low = poligon::GetGraphicsPreset(poligon::GraphicsPreset::Low);
+        Expect(settings.quality.preset == poligon::GraphicsPreset::Low &&
+                   settings.quality.shadow_map_size == low.shadow_map_size &&
+                   settings.quality.render_scale == low.render_scale && !settings.quality.ambient_occlusion,
+               "the preset's values are set");
+        Expect(settings.quality.fog_steps == 40, "a value the file names wins over the preset, wherever it stands");
+
+        // Saved and loaded again, the changed preset comes back as it was.
+        const std::string saved_path = directory + "/render_settings_quality_saved.txt";
+        Expect(poligon::SaveRenderSettings(saved_path.c_str(), settings), "settings with a preset are saved");
+        poligon::RenderSettings loaded;
+        Expect(poligon::LoadRenderSettings(saved_path.c_str(), loaded, error) &&
+                   loaded.quality.preset == poligon::GraphicsPreset::Low && loaded.quality.fog_steps == 40 &&
+                   loaded.quality.far_shadow_scale == low.far_shadow_scale,
+               "a saved preset with a change loads back the same");
+
+        WriteText(path.c_str(), "poligon-render-settings 1\nquality.preset extreme\n");
+        Expect(!poligon::LoadRenderSettings(path.c_str(), settings, error), "an unknown preset is an error");
+
+        // The presets get cheaper from ultra down, and apply to a frame and a renderer.
+        const poligon::GraphicsQuality medium = poligon::GetGraphicsPreset(poligon::GraphicsPreset::Medium);
+        const poligon::GraphicsQuality high = poligon::GetGraphicsPreset(poligon::GraphicsPreset::High);
+        const poligon::GraphicsQuality ultra = poligon::GetGraphicsPreset(poligon::GraphicsPreset::Ultra);
+        Expect(low.shadow_map_size <= medium.shadow_map_size && medium.shadow_map_size <= high.shadow_map_size &&
+                   high.shadow_map_size <= ultra.shadow_map_size && low.render_scale <= medium.render_scale &&
+                   medium.render_scale <= high.render_scale && high.render_scale <= ultra.render_scale,
+               "presets grow from low to ultra");
+        poligon::Environment environment;
+        environment.ambient_occlusion = true;
+        environment.shadow_distance = 100.0f;
+        poligon::PostSettings post;
+        post.temporal_aa = true;
+        poligon::ApplyGraphicsQuality(low, environment, post);
+        Expect(!environment.ambient_occlusion && Near(environment.shadow_distance, 100.0f * low.shadow_distance_scale) &&
+                   environment.fog_steps == low.fog_steps && post.temporal_aa,
+               "a preset limits a frame's effects and scales its shadow range");
+        poligon::RendererConfig config;
+        poligon::ApplyGraphicsQuality(high, config);
+        Expect(config.shadow_map_size == high.shadow_map_size && config.msaa_samples == 1 &&
+                   config.render_scale == high.render_scale && config.far_shadow_scale == high.far_shadow_scale,
+               "with TAA a preset draws without multisampling, at its render scale");
+        poligon::GraphicsQuality no_taa = high;
+        no_taa.temporal_aa = false;
+        poligon::ApplyGraphicsQuality(no_taa, config);
+        Expect(config.msaa_samples == high.msaa_samples && config.render_scale == 1.0f,
+               "without TAA a preset uses multisampling at full size");
     }
 
     // --- Free camera ---

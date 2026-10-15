@@ -1,7 +1,7 @@
 # Renderowanie
 
-Nagłówki: `poligon/renderer.h`, `poligon/math.h`, `poligon/platform.h`.
-Przykłady: `examples/renderer`, `examples/texture`, `examples/environment`, `examples/model`. Shadery: `engine/shaders/*.hlsl`.
+Nagłówki: `poligon/renderer.h`, `poligon/graphics_quality.h`, `poligon/math.h`, `poligon/platform.h`.
+Przykłady: `examples/renderer`, `examples/texture`, `examples/environment`, `examples/model`, `examples/temporal_aa`, `examples/graphics_quality`. Shadery: `engine/shaders/*.hlsl`.
 
 Dodatkowo `poligon/image.h` (obrazy w pamięci, PNG i JPEG) i przykład `examples/texture`.
 
@@ -33,6 +33,42 @@ Klatkę nagrywają wywołania `DrawMesh`, a wykonuje ją `EndFrame`, w tych prze
 Przed przebiegami siatki są **odrzucane** (culling): siatka, której pudełko otaczające leży w całości poza widokiem kamery, nie jest rysowana, a każda kaskada cieni pomija siatki, które nie mogą rzucić w nią cienia (siatka poza widokiem nadal może). `Renderer::GetFrameStats()` zwraca, ile siatek zgłoszono i narysowano w ostatniej klatce.
 
 Wiele kopii jednej siatki rysuje `DrawMeshInstances` (jedno polecenie rysowania na przebieg, każda kopia odrzucana osobno); lasy idą przez zbudowany na tym system roślinności. Patrz [vegetation.md](vegetation.md).
+
+## Jakość grafiki
+
+Nagłówek: `poligon/graphics_quality.h`. Przykład: `examples/graphics_quality`.
+
+- Scena decyduje, jak obraz wygląda (kolor mgły, zasięg cieni, jak daleko rysowane są rośliny); `GraphicsQuality` decyduje, ile może kosztować. Cztery gotowe zestawy: `low`, `medium`, `high`, `ultra`. `GetGraphicsPreset(preset)` daje wartości zestawu; każdą z nich można potem zmienić osobno.
+- Zestaw wybiera się na trzy sposoby, z tym samym skutkiem: `quality.preset medium` w pliku ustawień obrazu (stosowany najpierw, gdziekolwiek stoi; wartości, które plik wymienia przed nim albo po nim, wygrywają), `--quality medium` w wierszu poleceń (gra przekazuje `CommandLineOptions::quality` do `ParseGraphicsPreset`) albo w oknie ustawień, gdzie wybór zestawu ustawia wszystkie jego wartości.
+- Wartości, które wymagają nowego renderera (rozmiar obrazu cieni, multisampling, rozdzielczość rysowania), trafiają do `RendererConfig` przez `ApplyGraphicsQuality(quality, config)`. Przełączniki i liczby kroków ograniczają każdą klatkę przez `ApplyGraphicsQuality(quality, environment, post)`: przełącznik tylko wyłącza efekt, o który prosiła scena, zasięg cieni jest mnożony. Skale dla roślin, pokrywy ziemi i terenu gra przekazuje swoim systemom (`forest_scene` robi to w `ApplyQualityToSystems`).
+- **Skala rysowania** (`render_scale`, tylko z TAA): scena, głębia, przyciemnianie zagłębień i mgła są rysowane w takiej części szerokości i wysokości obrazu wyjściowego; TAA, które działa w rozmiarze wyjściowym, odtwarza szczegóły z przesunięć podpikselowych kolejnych klatek (każdy piksel wyjściowy waży narysowane próbki ich odległością od swojego środka). Poświata i mapowanie tonów działają w rozmiarze wyjściowym. Bez TAA rysuje się zawsze w rozmiarze wyjściowym.
+- **Dalekie kaskady** (`far_shadow_scale`, `RendererConfig::far_shadow_scale`): dwie dalekie kaskady cieni używają tylko takiej części szerokości i wysokości swojego kafelka (lewej górnej). Pokrywają duże obszary, gdzie drobny szczegół cienia i tak ginie, a w lesie koszt obrazu cieni rośnie z liczbą jego pikseli, bo korony drzew widziane ze słońca nakładają się wielokrotnie.
+- Dwie rzeczy w rendererze tanieją wszystkie zestawy. Bez multisamplingu przebieg głębi działa zawsze, a przebieg sceny sprawdza tę głębię przed cieniowaniem („równa albo bliższa”, bez zapisu głębi, `[earlydepthstencil]` w `mesh_after_depth.frag.hlsl` i `impostor_after_depth.frag.hlsl`), więc każdy piksel jest oświetlany raz zamiast raz na każdy liść za nim. A instancje są rysowane od najbliższej: od kamery w widoku, od słońca w każdej kaskadzie, więc test głębi odrzuca większość zasłoniętych liści przed cieniowaniem ich pikseli (przy remisie zostaje kolejność instancji, więc wynik jest taki sam przy każdym uruchomieniu).
+
+| | low | medium | high | ultra |
+|---|---|---|---|---|
+| skala rysowania (z TAA) | 0,67 | 0,8 | 0,9 | 1 |
+| obraz cieni na kaskadę | 1024 | 1024 | 1536 | 4096 |
+| część dla dalekich kaskad | 0,5 | 1 | 0,5 | 0,5 |
+| zasięg cieni | x0,6 | x0,8 | x1 | x1,5 |
+| przyciemnianie zagłębień, próbki | wył. | 12 | 20 | 32 |
+| mgła objętościowa, kroki | wył. | 20 | 32 | 48 |
+| szczegół roślin, zasięg ich cieni | x0,6, x0,5 | x0,8, x0,75 | x1, x1 | x1,5, x1,5 |
+| gęstość i promień pokrywy ziemi | x0,35, x0,6 | x0,65, x0,8 | x1, x1 | x1,5, x1,3 |
+| szczegół terenu | x0,6 | x0,8 | x1 | x1,5 |
+
+Zmierzone w `forest_scene` na GTX 980 w 1920 x 1080 (`release`, bez okna, 200 ticków), w milisekundach na klatkę, w czterech widokach używanych przy każdym pomiarze: start `0 0 90 0`, w lesie `-60 -40 225 6`, krawędź wzgórza `260 0 270 -8`, dolina `120 30 300 -3`:
+
+| | start | w lesie | krawędź | dolina |
+|---|---|---|---|---|
+| low | 11,1 | 10,2 | 5,3 | 4,9 |
+| medium | 13,6 | 14,9 | 7,6 | 7,3 |
+| high | 20,2 | 20,5 | 10,4 | 9,3 |
+| ultra | 70,5 | 78,7 | 16,1 | 15,5 |
+
+Medium trzyma 60 klatek na sekundę (16,7 ms) wszędzie. W lesie resztę rozstrzygają obrazy cieni: high z 2048 pikselami na kaskadę zajmowało 30 ms, bez cieni 17 ms.
+
+Pomiar: `forest_scene X Z OBRÓT POCHYLENIE --headless --ticks 200 --quality high --resolution 1920x1080 --dump-frame out.png`. Testy: część o zestawach w `tests/render_settings_test.cpp`, część o skali rysowania w `tests/temporal_aa_test.cpp`, część o dalekich kaskadach w `tests/effects_render_test.cpp`.
 
 ## Materiały i światło
 
@@ -83,7 +119,7 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Impostory (dalekie karty z wypalonymi zdjęciami modelu) i kropkowane przenikanie między poziomami szczegółowości są opisane w [vegetation.md](vegetation.md).
 - Drzewa generowane: `tools/assets/make_tree.mjs` uruchamia bibliotekę EZ-Tree (MIT) w Node.js i zapisuje pliki glTF z poziomami szczegółowości: `node tools/assets/make_tree.mjs NODE_MODULES FOLDER_ASSETÓW PRZEPIS.json`. Przepis (nasze są w `tools/assets/trees/`) podaje preset EZ-Tree ze zmianami, wysokość, tekstury kory i gałązek (kolor, mapa normalnych, zacienienie-szorstkość-metaliczność), prostokąty atlasu gałązek (tekstura z kilkoma gałązkami; każda karta pokazuje jedną, w jej własnych proporcjach) i poziomy. Pełne drzewo trafia do `generated/NAZWA/`, prostsze poziomy do `lods/NAZWA/lodN/`, czyli tam, skąd czyta `forest_scene`. Prostsze poziomy powstają z tego samego drzewa: mniej boków każdej rury, bez cienkich gałęzi, mniej, ale większych kart; skrypt kończy się błędem, jeśli poziom zmieniłby kształt drzewa. Format jest opisany na początku skryptu. EZ-Tree i three.js są zainstalowane poza repozytorium (`poligon-assets/tools/eztree`).
 - `model_viewer PLIK OBRÓT POCHYLENIE ODLEGŁOŚĆ` ustawia widok początkowy, do obrazków z bliska.
-- `forest_scene` (w `tools/`) buduje kawałek lasu z modeli i tekstury podłoża z `poligon-assets` i pozwala po nim chodzić (W/S/A/D, Shift to bieg, przeciąganie myszą to rozglądanie). To scena pokazowa renderera i miejsce pomiaru czasu klatki: `forest_scene X Z OBRÓT POCHYLENIE --headless --ticks 60 --dump-frame out.png` wypisuje milisekundy na klatkę i liczbę narysowanych siatek. Zmierzone na GTX 980 w 1280 x 720 ze wszystkimi efektami: około 34 ms na klatkę w budowie `release`. Las jest taki sam przy każdym uruchomieniu (stałe ziarno losowania). Brakujące modele są pomijane.
+- `forest_scene` (w `tools/`) buduje kawałek lasu z modeli i tekstury podłoża z `poligon-assets` i pozwala po nim chodzić (W/S/A/D, Shift to bieg, przeciąganie myszą to rozglądanie). To scena pokazowa renderera i miejsce pomiaru czasu klatki: `forest_scene X Z OBRÓT POCHYLENIE --headless --ticks 60 --dump-frame out.png` wypisuje milisekundy na klatkę i liczbę narysowanych siatek. `--quality NAZWA` wybiera zestaw ustawień grafiki, a `--resolution SxW` rozmiar obrazu; czasy dla zestawów są w części Jakość grafiki. Las jest taki sam przy każdym uruchomieniu (stałe ziarno losowania). Brakujące modele są pomijane.
 - Pobrane i odchudzone zasoby leżą w `poligon-assets/` obok projektu (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), nigdy w repozytorium.
 - Liście z jednolitym tłem dookoła: część paczek (glTF z Poly Haven) ma kolor liści w JPG bez przezroczystości, a maskę w osobnym pliku. Loader ostrzega wtedy, że tekstura materiału wycinanego nie ma przezroczystych pikseli. Naprawa: `image_tool merge-alpha KOLOR ALFA WYJŚCIE.png` łączy oba pliki w jeden PNG (i rozlewa kolory liści na przezroczyste piksele, żeby krawędzie nie miały ciemnej obwódki), potem `node tools/assets/set_gltf_cutout.mjs MODEL.gltf STARY_URI NOWY_URI` podpina go w modelu i oznacza materiał jako wycinany i dwustronny. Nietknięty plik zostaje jako `MODEL.gltf.original`. `image_tool pack-orm ZACIENIENIE SZORSTKOŚĆ WYJŚCIE.png` łączy osobne obrazy zacienienia i szorstkości w jedną teksturę danych, jakiej oczekuje glTF (czerwony zacienienie, zielony szorstkość, niebieski metaliczność = 0).
 - Formaty, które nie potrafią oznaczyć materiału jako wycinanego (FBX, OBJ): jeśli co najmniej 1% tekstury materiału jest przezroczysty, materiał jest traktowany jako dwustronny wycinany (sierść, wąsy, liście). Pliki glTF mówią to same i wierzymy im na słowo.
@@ -122,7 +158,7 @@ Nagłówek: `poligon/model.h`. Przykład: `examples/model`. Narzędzie: `model_v
 - Jedno światło (słońce) plus światło nieba; bez świateł punktowych i reflektorów. Bez prawdziwej przezroczystości (tylko wycinanie). Bez odbić sceny.
 - Przyciemnianie zagłębień i mgła widzą tylko to, co jest na ekranie, i tylko najbliższą powierzchnię każdego piksela. Słońce oświetla mgłę tylko w zasięgu `shadow_distance` (dalej liczy się jako oświetlona), a linia wzroku jest przechodzona najwyżej na 1000 m.
 - Odrzucanie działa na całe siatki i tylko według widoku: siatka zasłonięta przez inną nadal jest rysowana.
-- Przy włączonym przyciemnianiu zagłębień albo mgle objętościowej geometria sceny jest rysowana jeszcze raz (przebieg głębi).
+- Geometria sceny jest rysowana jeszcze raz dla przebiegu głębi, gdy włączone jest przyciemnianie zagłębień, mgła objętościowa albo TAA, albo gdy multisampling jest wyłączony; bez multisamplingu ten przebieg oszczędza więcej, niż kosztuje (patrz Jakość grafiki).
 - Automatyczna ekspozycja dostosowuje się na klatkę, nie na sekundę, więc jej tempo zależy od liczby klatek na sekundę.
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
 - Tekstury są nieskompresowane (4 bajty na piksel plus mipmapy), co przy 4 GB pamięci karty wystarczy na testy, nie na duży świat.

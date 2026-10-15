@@ -1,7 +1,7 @@
 # Rendering
 
-Headers: `poligon/renderer.h`, `poligon/math.h`, `poligon/image.h`, `poligon/platform.h`.
-Examples: `examples/renderer`, `examples/texture`, `examples/environment`, `examples/model`. Shaders: `engine/shaders/*.hlsl`.
+Headers: `poligon/renderer.h`, `poligon/graphics_quality.h`, `poligon/math.h`, `poligon/image.h`, `poligon/platform.h`.
+Examples: `examples/renderer`, `examples/texture`, `examples/environment`, `examples/model`, `examples/temporal_aa`, `examples/graphics_quality`. Shaders: `engine/shaders/*.hlsl`.
 
 ## How it works
 
@@ -31,6 +31,42 @@ A frame is recorded by `DrawMesh` calls and carried out in `EndFrame`, in these 
 Before the passes, meshes are **culled**: a mesh whose bounding box lies entirely outside the camera's view is not drawn, and each shadow cascade skips meshes that cannot cast a shadow into it (a mesh outside the view still can). `Renderer::GetFrameStats()` returns how many meshes were submitted and drawn in the last frame.
 
 Many copies of one mesh are drawn with `DrawMeshInstances` (one draw call per pass, each copy culled on its own); forests go through the vegetation system built on it. See [vegetation.md](vegetation.md).
+
+## Graphics quality
+
+Header: `poligon/graphics_quality.h`. Example: `examples/graphics_quality`.
+
+- The scene decides how the picture looks (fog color, shadow range, how far plants are drawn); `GraphicsQuality` decides how much it may cost. Four ready presets: `low`, `medium`, `high`, `ultra`. `GetGraphicsPreset(preset)` gives a preset's values; any single value can then be changed.
+- A preset is picked in three ways, all with the same result: `quality.preset medium` in the render settings file (applied first, wherever it stands; values the file names after or before it then win), `--quality medium` on the command line (a game passes `CommandLineOptions::quality` to `ParseGraphicsPreset`), or in the settings window, where picking a preset sets all its values.
+- Values that need a new renderer (shadow image size, multisampling, drawing resolution) go into the `RendererConfig` through `ApplyGraphicsQuality(quality, config)`. Switches and step counts limit every frame through `ApplyGraphicsQuality(quality, environment, post)`: a switch only turns an effect off that the scene asked for, the shadow range is multiplied. The scales for plants, ground cover and terrain are for the game to pass to its systems (`forest_scene` does it in `ApplyQualityToSystems`).
+- **Render scale** (`render_scale`, only with TAA): the scene, depth, ambient occlusion and fog are drawn at that share of the output's width and height; TAA, which runs at the output size, fills the detail back in from the frames' sub-pixel shifts (each output pixel weighs the drawn samples by their distance from its center). Bloom and tone mapping run at the output size. With TAA off the drawing size is always the output size.
+- **Far cascades** (`far_shadow_scale`, `RendererConfig::far_shadow_scale`): the two far shadow cascades use only that share of their tile's width and height (the top-left part). They cover large areas where fine shadow detail is lost anyway, and in a forest the cost of a shadow image grows with its pixel count, because tree crowns overlap many times as seen from the sun.
+- Two things in the renderer make all presets cheaper. Without multisampling the depth pass always runs and the scene pass then tests that depth before shading ("equal or nearer", no depth writes, `[earlydepthstencil]` in `mesh_after_depth.frag.hlsl` and `impostor_after_depth.frag.hlsl`), so each pixel is lit once instead of once for every leaf behind it. And instances are drawn nearest first: from the camera in the view, from the sun in each cascade, so the depth test rejects most hidden leaves before their pixels are shaded (ties keep the instances' order, so the result is the same on every run).
+
+| | low | medium | high | ultra |
+|---|---|---|---|---|
+| render scale (with TAA) | 0.67 | 0.8 | 0.9 | 1 |
+| shadow image per cascade | 1024 | 1024 | 1536 | 4096 |
+| far cascades share | 0.5 | 1 | 0.5 | 0.5 |
+| shadow range | x0.6 | x0.8 | x1 | x1.5 |
+| ambient occlusion, samples | off | 12 | 20 | 32 |
+| volumetric fog, steps | off | 20 | 32 | 48 |
+| plants' detail, shadow distance | x0.6, x0.5 | x0.8, x0.75 | x1, x1 | x1.5, x1.5 |
+| ground cover density, radius | x0.35, x0.6 | x0.65, x0.8 | x1, x1 | x1.5, x1.3 |
+| terrain detail | x0.6 | x0.8 | x1 | x1.5 |
+
+Measured in `forest_scene` on the GTX 980 at 1920 x 1080 (`release`, headless, 200 ticks), in milliseconds per frame, at the four views used for every measurement: start `0 0 90 0`, inside the forest `-60 -40 225 6`, the hill's brow `260 0 270 -8`, the valley `120 30 300 -3`:
+
+| | start | inside | brow | valley |
+|---|---|---|---|---|
+| low | 11.1 | 10.2 | 5.3 | 4.9 |
+| medium | 13.6 | 14.9 | 7.6 | 7.3 |
+| high | 20.2 | 20.5 | 10.4 | 9.3 |
+| ultra | 70.5 | 78.7 | 16.1 | 15.5 |
+
+Medium holds 60 frames per second (16.7 ms) everywhere. In the forest the shadow images decide the rest: high with 2048 pixels per cascade took 30 ms, without shadows 17 ms.
+
+Measure: `forest_scene X Z TURN TILT --headless --ticks 200 --quality high --resolution 1920x1080 --dump-frame out.png`. Tests: the preset part of `tests/render_settings_test.cpp`, the render scale part of `tests/temporal_aa_test.cpp`, the far cascade part of `tests/effects_render_test.cpp`.
 
 ## Materials and light
 
@@ -81,7 +117,7 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - Impostors (far-away cards with baked pictures of a model) and the dithered fade between levels of detail are described in [vegetation.md](vegetation.md).
 - Generated trees: `tools/assets/make_tree.mjs` runs the EZ-Tree library (MIT) under Node.js and writes glTF files with levels of detail: `node tools/assets/make_tree.mjs NODE_MODULES ASSETS_FOLDER RECIPE.json`. A recipe (ours are in `tools/assets/trees/`) gives an EZ-Tree preset with changes, the height, bark and twig textures (color, normal map, occlusion-roughness-metallic), the rectangles of a twig atlas (a texture holding several twigs; each card shows one, at its own proportions) and the levels. The full tree goes to `generated/NAME/`, the simpler levels to `lods/NAME/lodN/`, the layout `forest_scene` reads. Simpler levels come from the same tree: fewer sides on each tube, thin branches left out, fewer but larger cards; the script stops with an error if a level would change the tree's shape. The format is described at the top of the script. EZ-Tree and three.js are installed outside the repository (`poligon-assets/tools/eztree`).
 - `model_viewer FILE TURN TILT DISTANCE` sets the starting view, for close-up pictures.
-- `forest_scene` (in `tools/`) builds a piece of forest from the models and ground texture in `poligon-assets` and lets you walk through it (W/S/A/D, Shift to run, drag the mouse to look). It is the showcase for the renderer and the place to measure frame time: `forest_scene X Z TURN TILT --headless --ticks 60 --dump-frame out.png` prints milliseconds per frame and how many meshes were drawn. Measured on a GTX 980 at 1280 x 720 with every effect on: about 34 ms per frame in the `release` build. The forest is the same on every run (fixed random seed). Models that are missing are skipped.
+- `forest_scene` (in `tools/`) builds a piece of forest from the models and ground texture in `poligon-assets` and lets you walk through it (W/S/A/D, Shift to run, drag the mouse to look). It is the showcase for the renderer and the place to measure frame time: `forest_scene X Z TURN TILT --headless --ticks 60 --dump-frame out.png` prints milliseconds per frame and how many meshes were drawn. `--quality NAME` picks a graphics preset and `--resolution WxH` the picture size; times per preset are in the Graphics quality section. The forest is the same on every run (fixed random seed). Models that are missing are skipped.
 - Downloaded and simplified assets live in `poligon-assets/` next to the project (`polyhaven/`, `simplified/`, `previews/`, `thumbnails/`), never in the repository.
 - Leaves with a solid background around them: some packages (Poly Haven glTF) ship the leaf color as a JPG with no transparency and the mask as a separate file. The loader then warns that a cut-out material's texture has no transparent pixels. Repair: `image_tool merge-alpha COLOR ALPHA OUT.png` joins the two into one PNG (and spreads leaf colors into the transparent pixels, so edges get no dark rim), then `node tools/assets/set_gltf_cutout.mjs MODEL.gltf OLD_IMAGE_URI NEW_IMAGE_URI` points the model at it and marks the material as cut-out and double-sided. The untouched file stays as `MODEL.gltf.original`. `image_tool pack-orm OCCLUSION ROUGHNESS OUT.png` joins separate occlusion and roughness images into the one data texture glTF expects (red occlusion, green roughness, blue metallic = 0).
 - Formats that cannot mark a material as a cut-out (FBX, OBJ): if at least 1% of a material's texture is transparent, the material is treated as a double-sided cut-out (fur, whiskers, leaves). glTF files say it themselves and are taken at their word.
@@ -120,7 +156,7 @@ Header: `poligon/model.h`. Example: `examples/model`. Tool: `model_viewer`.
 - One light (the sun) plus sky light; no point or spot lights. No true transparency (only cut-out). No reflections of the scene.
 - Ambient occlusion and fog see only what is on screen and only the nearest surface of each pixel. Fog is lit by the sun only within `shadow_distance` (beyond it, it counts as lit) and is walked at most 1000 m.
 - Culling is per mesh and by view only: a mesh hidden behind another is still drawn.
-- With ambient occlusion or volumetric fog on, the scene's geometry is drawn one more time (the depth pass).
+- The scene's geometry is drawn one more time for the depth pass whenever ambient occlusion, volumetric fog or TAA is on, or multisampling is off; without multisampling that pass then saves more than it costs (see Graphics quality).
 - Automatic exposure adapts per frame, not per second, so its speed depends on the frame rate.
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
 - Textures are uncompressed (4 bytes per pixel plus mipmaps): enough for tests with 4 GB of card memory, not for a large world.

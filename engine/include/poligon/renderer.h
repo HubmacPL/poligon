@@ -104,6 +104,15 @@ struct RendererConfig {
     int msaa_samples = 4;
     // Width and height in pixels of each of the four shadow images (cascades).
     int shadow_map_size = 2048;
+    // The two far cascades use only this share of their image's width and height: they
+    // cover large areas where fine shadow detail is lost anyway, and in a forest their cost
+    // grows with every pixel (crowns overlap many times as seen from the sun).
+    float far_shadow_scale = 1.0f;
+    // The scene is drawn at this share of the width and height and brought back to full
+    // size by temporal anti-aliasing, which fills in the detail over several frames ("TAA
+    // upscaling"). 1 = full resolution. Used only when multisampling is off; while TAA is
+    // off the smaller picture is simply stretched.
+    float render_scale = 1.0f;
     // Tone mapping, exposure and bloom; see PostSettings.
     PostSettings post;
     // Debug windows drawn over the picture with Dear ImGui (see poligon/debug_ui.h).
@@ -167,6 +176,10 @@ struct Environment {
     float fog_shadow_brightness = 0.35f;
     // Strength of the glow around the sun. 0 turns it off.
     float fog_sun_glow = 1.0f;
+    // Steps along each line of sight of volumetric fog, and samples per pixel of ambient
+    // occlusion: more is smoother and costs more (set by GraphicsQuality).
+    int fog_steps = 32;
+    int ambient_occlusion_samples = 20;
 
     // Wind: the direction it blows towards (world x and z), its strength (1 = a moderate
     // breeze; 0 turns the wind off) and how long it has been blowing, in seconds. Give the
@@ -494,6 +507,9 @@ public:
     int GetHeight() const;
     // The multisample count actually in use (see RendererConfig::msaa_samples).
     int GetMsaaSamples() const;
+    // Size of the image the scene is drawn into (smaller than the output with render_scale).
+    int GetRenderWidth() const;
+    int GetRenderHeight() const;
     // Changes the text in the window's title bar. Does nothing in headless mode.
     void SetWindowTitle(const char* title);
 

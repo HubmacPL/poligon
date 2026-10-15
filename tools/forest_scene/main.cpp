@@ -37,6 +37,7 @@
 #include "poligon/debug_ui.h"
 #include "poligon/free_camera.h"
 #include "poligon/game_loop.h"
+#include "poligon/graphics_quality.h"
 #include "poligon/ground_cover.h"
 #include "poligon/impostor.h"
 #include "poligon/input.h"
@@ -81,6 +82,8 @@ constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f, 0.0f, 150.0f};
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
+// TerrainConfig::detail at quality 1 (high).
+constexpr float kTerrainDetail = 2.0f;
 // Grass, ferns, nettles, low shrubs and stones exist within this distance of the player.
 constexpr float kGroundCoverRadius = 90.0f;
 // Trees up to this far away still cast shadows into the shadow range: a 24 m pine with the
@@ -363,9 +366,13 @@ public:
         clip_planes.far_plane = 12000.0f;
         const poligon::Camera camera = camera_.ToCamera(clip_planes);
 
-        renderer_.SetPostSettings(settings_.post);
-        // The wind runs on game time, so a replay moves the plants exactly as the recording did.
+        ApplyQualityToSystems();
+        // The scene's look, limited by the graphics quality.
         poligon::Environment environment = settings_.environment;
+        poligon::PostSettings post = settings_.post;
+        poligon::ApplyGraphicsQuality(settings_.quality, environment, post);
+        renderer_.SetPostSettings(post);
+        // The wind runs on game time, so a replay moves the plants exactly as the recording did.
         environment.wind_time = time_seconds_;
         renderer_.BeginFrame(camera, settings_.sun, environment);
         if (show_windows_) {
@@ -424,7 +431,7 @@ public:
                 changed |= ImGui::SliderFloat("shadow distance", &shadow_scale_, 0.0f, 2.0f, "x %.2f");
                 ImGui::PopItemWidth();
                 if (changed) {
-                    vegetation_.SetDistanceScale(detail_scale_, shadow_scale_);
+                    applied_quality_valid_ = false;  // ApplyQualityToSystems combines these with the quality
                 }
             }
             ImGui::End();
@@ -433,6 +440,30 @@ public:
     }
 
 private:
+    // The graphics quality's scales for the scene's own systems; done again whenever they
+    // change (the settings window or Load).
+    void ApplyQualityToSystems() {
+        const poligon::GraphicsQuality& quality = settings_.quality;
+        if (applied_quality_valid_ && quality.vegetation_detail == applied_quality_.vegetation_detail &&
+            quality.vegetation_shadow == applied_quality_.vegetation_shadow &&
+            quality.ground_cover_density == applied_quality_.ground_cover_density &&
+            quality.ground_cover_radius == applied_quality_.ground_cover_radius &&
+            quality.terrain_detail == applied_quality_.terrain_detail) {
+            return;
+        }
+        vegetation_.SetDistanceScale(detail_scale_ * quality.vegetation_detail, shadow_scale_ * quality.vegetation_shadow);
+        // Ground cover: its plants' distances shrink with its radius, so that they still fade
+        // out before their cells are dropped.
+        ground_cover_->SetRadius(kGroundCoverRadius * quality.ground_cover_radius);
+        ground_cover_->GetVegetation().SetDistanceScale(quality.ground_cover_radius, quality.vegetation_shadow);
+        if (!applied_quality_valid_ || quality.ground_cover_density != applied_quality_.ground_cover_density) {
+            ground_cover_->SetDensityScale(quality.ground_cover_density);
+        }
+        terrain_->SetDetail(kTerrainDetail * quality.terrain_detail);
+        applied_quality_ = quality;
+        applied_quality_valid_ = true;
+    }
+
     poligon::TextureHandle LoadTexture(const std::filesystem::path& path, bool is_color) {
         poligon::Image image;
         std::string error;
@@ -458,6 +489,7 @@ private:
             start = {1024.0f, 1024.0f};
         }
         poligon::TerrainConfig config;
+        config.detail = kTerrainDetail;
         config.origin = {-start.x, -map.GetHeight(start.x, start.y), -start.y};
         const std::filesystem::path textures = assets_ / "polyhaven" / "textures";
         // Mossy forest floor and dry pine litter, mixed in patches.
@@ -1003,6 +1035,8 @@ private:
     int placed_count_ = 0;
     float detail_scale_ = 1.0f;
     float shadow_scale_ = 1.0f;
+    poligon::GraphicsQuality applied_quality_;
+    bool applied_quality_valid_ = false;
 
     poligon::RenderModel fox_model_;
     float fox_scale_ = 1.0f;
@@ -1101,7 +1135,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "forest_scene: %s\n"
                      "usage: forest_scene [X Z TURN TILT [collision]] [--headless --ticks N] [--backend d3d12|vulkan]\n"
-                     "                    [--gpu-validation] [--dump-frame PATH.png]\n",
+                     "                    [--gpu-validation] [--dump-frame PATH.png] [--render-settings FILE]\n"
+                     "                    [--quality low|medium|high|ultra] [--resolution WxH]\n",
                      error.c_str());
         return 2;
     }
@@ -1134,14 +1169,19 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+    if (!options.quality.empty()) {
+        poligon::GraphicsPreset preset = poligon::GraphicsPreset::High;
+        poligon::ParseGraphicsPreset(options.quality.c_str(), preset);
+        settings.quality = poligon::GetGraphicsPreset(preset);
+    }
+    if (options.width > 0) {
+        renderer_config.width = options.width;
+        renderer_config.height = options.height;
+    }
     renderer_config.post = settings.post;
     renderer_config.debug_ui = true;
-    // Shadows are the costliest part of this scene: every leaf is drawn into four shadow
-    // images. At 1024 instead of the default 2048 pixels they cost less than half, which
-    // brings the frame under 17 ms on a GTX 980; the price is softer shadow edges.
-    renderer_config.shadow_map_size = 1024;
-    // Edges are smoothed by temporal anti-aliasing; multisampling would cost 3 ms on top.
-    renderer_config.msaa_samples = settings.post.temporal_aa ? 1 : 4;
+    // Shadow image size and multisampling come from the graphics quality.
+    poligon::ApplyGraphicsQuality(settings.quality, renderer_config);
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;
@@ -1154,7 +1194,8 @@ int main(int argc, char** argv) {
     ForestGame game(renderer, assets, input, actions, view, settings, settings_path);
     game.ShowCollision(options.positional.size() == 5);
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
-    std::printf("forest_scene: loaded in %.1f s\n", load_seconds);
+    std::printf("forest_scene: loaded in %.1f s; quality %s, %d x %d\n", load_seconds,
+                poligon::GetGraphicsPresetName(settings.quality.preset), renderer.GetWidth(), renderer.GetHeight());
     if (game.GetLoadedKindCount() == 0) {
         const char* message = "None of the forest models could be loaded from poligon-assets.";
         std::fprintf(stderr, "forest_scene: %s\n", message);

@@ -29,6 +29,8 @@
 #include "poligon_shaders/fog_frag_spirv.h"
 #include "poligon_shaders/fullscreen_vert_dxil.h"
 #include "poligon_shaders/fullscreen_vert_spirv.h"
+#include "poligon_shaders/impostor_after_depth_frag_dxil.h"
+#include "poligon_shaders/impostor_after_depth_frag_spirv.h"
 #include "poligon_shaders/impostor_bake_frag_dxil.h"
 #include "poligon_shaders/impostor_bake_frag_spirv.h"
 #include "poligon_shaders/impostor_depth_frag_dxil.h"
@@ -39,6 +41,8 @@
 #include "poligon_shaders/impostor_vert_spirv.h"
 #include "poligon_shaders/luminance_frag_dxil.h"
 #include "poligon_shaders/luminance_frag_spirv.h"
+#include "poligon_shaders/mesh_after_depth_frag_dxil.h"
+#include "poligon_shaders/mesh_after_depth_frag_spirv.h"
 #include "poligon_shaders/mesh_frag_dxil.h"
 #include "poligon_shaders/mesh_frag_spirv.h"
 #include "poligon_shaders/mesh_instanced_vert_dxil.h"
@@ -95,6 +99,7 @@ struct FragmentFrameUniforms {
     glm::vec4 fog;
     glm::vec4 options;
     glm::vec4 screen;
+    glm::vec4 cascade_scale;
 };
 
 struct MaterialUniforms {
@@ -139,12 +144,15 @@ struct TonemapUniforms {
     glm::vec4 auto_exposure;
     glm::vec4 white_balance;
     glm::vec4 grading;
+    glm::vec4 input;
 };
 
 struct TaaUniforms {
     glm::mat4 inverse_view_projection;
+    glm::mat4 current_view_projection;
     glm::mat4 previous_view_projection;
     glm::vec4 parameters;
+    glm::vec4 input;
 };
 
 // Sub-pixel camera shifts for temporal anti-aliasing: the first 8 points of the Halton
@@ -185,6 +193,7 @@ struct FogUniforms {
     glm::vec4 fog;
     glm::vec4 fog_shape;
     glm::vec4 options;
+    glm::vec4 quality;
 };
 
 struct FogCompositeUniforms {
@@ -274,7 +283,13 @@ struct DrawCommand {
 };
 
 // The three passes that draw meshes.
-enum MeshPass { kScenePass, kShadowPass, kDepthPass, kMeshPassCount };
+// kSceneAfterDepthPass: the scene pass when the depth pass has already drawn the final
+// depth; it tests against that depth before shading and writes none (see EndFrame).
+enum MeshPass { kScenePass, kShadowPass, kDepthPass, kSceneAfterDepthPass, kMeshPassCount };
+
+bool IsScenePass(MeshPass pass) {
+    return pass == kScenePass || pass == kSceneAfterDepthPass;
+}
 // How a mesh's vertices are placed: by one transform, by a skeleton, or once per instance.
 enum MeshKind { kRigid, kSkinned, kInstanced, kMeshKindCount };
 
@@ -490,6 +505,9 @@ struct Renderer::Impl {
     SDL_GPUTexture* fog_target = nullptr;
     int fog_width = 0;
     int fog_height = 0;
+    // Size the scene is drawn at (RendererConfig::render_scale); the output may be larger.
+    int render_width = 0;
+    int render_height = 0;
     std::vector<BloomLevel> bloom_levels;
     // Two one-pixel images, written in turn: each frame reads the previous frame's value.
     SDL_GPUTexture* luminance_targets[2] = {nullptr, nullptr};
@@ -657,23 +675,28 @@ struct Renderer::Impl {
             msaa_samples /= 2;
         }
         const SDL_GPUSampleCount samples = ToSampleCount(msaa_samples);
+        const float scale = msaa_samples == 1 ? glm::clamp(config.render_scale, 0.25f, 1.0f) : 1.0f;
+        render_width = glm::max(16, static_cast<int>(std::lround(static_cast<float>(config.width) * scale)));
+        render_height = glm::max(16, static_cast<int>(std::lround(static_cast<float>(config.height) * scale)));
+        // Everything drawn from the scene is at the drawing size; from temporal
+        // anti-aliasing on (bloom, tone mapping, the output) at the output size.
+        const int width = render_width;
+        const int height = render_height;
 
         if (msaa_samples > 1) {
-            scene_color = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, config.width, config.height,
-                                       samples, &linear_clear_color, "multisampled scene target");
+            scene_color = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, width, height, samples,
+                                       &linear_clear_color, "multisampled scene target");
             scene_resolved = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                                          config.width, config.height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color,
-                                          "resolved scene target");
+                                          width, height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color, "resolved scene target");
         } else {
-            scene_color = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                                       config.width, config.height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color,
-                                       "scene target");
+            scene_color = CreateTarget(kSceneFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, width,
+                                       height, SDL_GPU_SAMPLECOUNT_1, &linear_clear_color, "scene target");
         }
         // The camera's depth runs from 1 at the near plane to 0 far away ("reversed depth"):
         // a floating-point depth image then keeps millimeters of precision kilometers away,
         // where the usual direction has meters and distant land and trees fight over pixels.
-        scene_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, config.width, config.height,
-                                   samples, nullptr, "scene depth target", 0.0f);
+        scene_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, width, height, samples, nullptr,
+                                   "scene depth target", 0.0f);
         // SAMPLER is needed because the image is copied (blitted) to the window.
         output_target = CreateTarget(kOutputFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
                                      config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "output target");
@@ -684,13 +707,13 @@ struct Renderer::Impl {
 
         const SDL_GPUTextureUsageFlags drawn_and_read = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
         prepass_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                                     config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "depth image", 0.0f);
-        ao_target = CreateTarget(kAoFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                     width, height, SDL_GPU_SAMPLECOUNT_1, nullptr, "depth image", 0.0f);
+        ao_target = CreateTarget(kAoFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                  "ambient occlusion image");
-        ao_scratch = CreateTarget(kAoFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+        ao_scratch = CreateTarget(kAoFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                   "ambient occlusion image");
-        fog_width = (config.width + 1) / 2;
-        fog_height = (config.height + 1) / 2;
+        fog_width = (width + 1) / 2;
+        fog_height = (height + 1) / 2;
         fog_target = CreateTarget(kSceneFormat, drawn_and_read, fog_width, fog_height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                   "fog image");
         for (SDL_GPUTexture*& target : taa_targets) {
@@ -910,6 +933,7 @@ struct Renderer::Impl {
         shadow_pipeline = SDL_CreateGPUGraphicsPipeline(device, &shadow_info);
 
         // --- Meshes in the depth pass: depth only, seen from the camera, one sample per pixel ---
+        SDL_GPUGraphicsPipelineCreateInfo after_depth_info{};  // filled after the skinned pipelines
         SDL_GPUGraphicsPipelineCreateInfo prepass_info = mesh_info;
         prepass_info.fragment_shader = shadow_fragment;
         prepass_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
@@ -969,7 +993,27 @@ struct Renderer::Impl {
         mesh_pipelines[kDepthPass][0][1] = prepass_pipeline_double_sided;
         mesh_pipelines[kDepthPass][1][0] = create_skinned(prepass_info, SDL_GPU_CULLMODE_BACK);
         mesh_pipelines[kDepthPass][1][1] = create_skinned(prepass_info, SDL_GPU_CULLMODE_NONE);
+        // The scene pass after the depth pass: the same, but testing the finished depth
+        // ("greater or equal" with reversed depth: the surface the depth pass kept) before
+        // the shader runs, writing no depth.
+        SDL_GPUShader* after_depth_fragment =
+            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
+                         kMeshAfterDepthFragSpirv, sizeof(kMeshAfterDepthFragSpirv));
+        after_depth_info = mesh_info;
+        after_depth_info.fragment_shader = after_depth_fragment;
+        after_depth_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
+        after_depth_info.depth_stencil_state.enable_depth_write = false;
+        after_depth_info.multisample_state.enable_alpha_to_coverage = false;
+        after_depth_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+        mesh_pipelines[kSceneAfterDepthPass][0][0] = SDL_CreateGPUGraphicsPipeline(device, &after_depth_info);
+        after_depth_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        mesh_pipelines[kSceneAfterDepthPass][0][1] = SDL_CreateGPUGraphicsPipeline(device, &after_depth_info);
+        mesh_pipelines[kSceneAfterDepthPass][1][0] = create_skinned(after_depth_info, SDL_GPU_CULLMODE_BACK);
+        mesh_pipelines[kSceneAfterDepthPass][1][1] = create_skinned(after_depth_info, SDL_GPU_CULLMODE_NONE);
         SDL_ReleaseGPUShader(device, skinned_vertex);
+        if (mesh_pipelines[kSceneAfterDepthPass][0][0] == nullptr || mesh_pipelines[kSceneAfterDepthPass][0][1] == nullptr) {
+            FatalSdlError("cannot create scene pipeline after the depth pass");
+        }
 
         // --- And for instanced meshes: the usual vertex buffer, another vertex shader ---
         SDL_GPUShader* instanced_vertex =
@@ -990,6 +1034,9 @@ struct Renderer::Impl {
         mesh_pipelines[kShadowPass][kInstanced][1] = mesh_pipelines[kShadowPass][kInstanced][0];
         mesh_pipelines[kDepthPass][kInstanced][0] = create_instanced(prepass_info, SDL_GPU_CULLMODE_BACK);
         mesh_pipelines[kDepthPass][kInstanced][1] = create_instanced(prepass_info, SDL_GPU_CULLMODE_NONE);
+        mesh_pipelines[kSceneAfterDepthPass][kInstanced][0] = create_instanced(after_depth_info, SDL_GPU_CULLMODE_BACK);
+        mesh_pipelines[kSceneAfterDepthPass][kInstanced][1] = create_instanced(after_depth_info, SDL_GPU_CULLMODE_NONE);
+        SDL_ReleaseGPUShader(device, after_depth_fragment);
         SDL_ReleaseGPUShader(device, instanced_vertex);
 
         // --- Terrain: its own vertex shader in all three passes, its own fragment shader in the scene pass ---
@@ -1012,6 +1059,8 @@ struct Renderer::Impl {
         terrain_pipelines[kScenePass] = create_terrain(mesh_info, terrain_fragment, SDL_GPU_CULLMODE_BACK);
         terrain_pipelines[kShadowPass] = create_terrain(shadow_info, shadow_fragment, SDL_GPU_CULLMODE_NONE);
         terrain_pipelines[kDepthPass] = create_terrain(prepass_info, shadow_fragment, SDL_GPU_CULLMODE_BACK);
+        // The terrain shader discards nothing, so the depth test runs before it anyway.
+        terrain_pipelines[kSceneAfterDepthPass] = create_terrain(after_depth_info, terrain_fragment, SDL_GPU_CULLMODE_BACK);
         SDL_ReleaseGPUShader(device, terrain_vertex);
         SDL_ReleaseGPUShader(device, terrain_fragment);
 
@@ -1038,6 +1087,11 @@ struct Renderer::Impl {
         };
         impostor_pipelines[kScenePass] = create_impostor(mesh_info, impostor_fragment);
         impostor_pipelines[kDepthPass] = create_impostor(prepass_info, impostor_depth_fragment);
+        SDL_GPUShader* impostor_after_depth_fragment =
+            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
+                         kImpostorAfterDepthFragSpirv, sizeof(kImpostorAfterDepthFragSpirv));
+        impostor_pipelines[kSceneAfterDepthPass] = create_impostor(after_depth_info, impostor_after_depth_fragment);
+        SDL_ReleaseGPUShader(device, impostor_after_depth_fragment);
         SDL_ReleaseGPUShader(device, impostor_vertex);
         SDL_ReleaseGPUShader(device, impostor_fragment);
         SDL_ReleaseGPUShader(device, impostor_depth_fragment);
@@ -1183,7 +1237,13 @@ struct Renderer::Impl {
         glm::vec4 far_distance;
         // Size in meters of one shadow image pixel.
         glm::vec4 texel_size;
+        // Share of its tile's width and height each cascade uses (see far_shadow_scale).
+        glm::vec4 tile_scale{1.0f};
     };
+
+    float CascadeTileScale(int cascade) const {
+        return cascade >= 2 ? glm::clamp(config.far_shadow_scale, 0.125f, 1.0f) : 1.0f;
+    }
 
     Cascades ComputeCascades() const {
         Cascades cascades;
@@ -1230,7 +1290,9 @@ struct Renderer::Impl {
             radius = std::ceil(radius * 8.0f) / 8.0f;
 
             // Move the center in whole shadow texels only; otherwise shadows shimmer as the camera moves.
-            const float texel_size = radius * 2.0f / static_cast<float>(config.shadow_map_size);
+            const float tile_scale = CascadeTileScale(i);
+            cascades.tile_scale[i] = tile_scale;
+            const float texel_size = radius * 2.0f / (static_cast<float>(config.shadow_map_size) * tile_scale);
             cascades.texel_size[i] = texel_size;
             glm::vec3 center_in_light = glm::vec3(light_rotation * glm::vec4(sphere_center, 1.0f));
             center_in_light.x = std::floor(center_in_light.x / texel_size) * texel_size;
@@ -1247,11 +1309,12 @@ struct Renderer::Impl {
             // (0..1, y down).
             const float tile_x = static_cast<float>(i % 2);
             const float tile_y = static_cast<float>(i / 2);
+            // A cascade with a smaller share uses the top-left part of its tile.
             glm::mat4 to_tile(1.0f);
-            to_tile[0][0] = 0.25f;
-            to_tile[1][1] = -0.25f;
-            to_tile[3][0] = 0.25f + tile_x * 0.5f;
-            to_tile[3][1] = 0.25f + tile_y * 0.5f;
+            to_tile[0][0] = 0.25f * tile_scale;
+            to_tile[1][1] = -0.25f * tile_scale;
+            to_tile[3][0] = 0.25f * tile_scale + tile_x * 0.5f;
+            to_tile[3][1] = 0.25f * tile_scale + tile_y * 0.5f;
             cascades.shadow_matrix[i] = to_tile * cascades.light_view_projection[i];
 
             range_start = range_end;
@@ -1350,7 +1413,7 @@ struct Renderer::Impl {
                 SDL_GPUTextureSamplerBinding bindings[5]{};
                 bindings[0].texture = GetTexture(material.texture, white_texture);
                 bindings[0].sampler = texture_sampler;
-                if (mesh_pass == kScenePass) {
+                if (IsScenePass(mesh_pass)) {
                     SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
                     bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
                     bindings[1].sampler = texture_sampler;
@@ -1407,7 +1470,7 @@ struct Renderer::Impl {
                                                 static_cast<float>(terrain.depth - 1));
         SDL_PushGPUVertexUniformData(commands, 2, &vertex_uniforms, sizeof(vertex_uniforms));
 
-        if (mesh_pass == kScenePass) {
+        if (IsScenePass(mesh_pass)) {
             const TerrainMaterial& look = batch.terrain_material;
             TerrainMaterialUniforms material_uniforms;
             material_uniforms.map = vertex_uniforms.map;
@@ -1477,7 +1540,7 @@ struct Renderer::Impl {
         SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = textures[impostor.color.id - 1];
         bindings[0].sampler = texture_sampler;
-        if (mesh_pass == kScenePass) {
+        if (IsScenePass(mesh_pass)) {
             SDL_PushGPUFragmentUniformData(commands, 1, &material, sizeof(material));
             bindings[1].texture = textures[impostor.normal.id - 1];
             bindings[1].sampler = texture_sampler;
@@ -1504,6 +1567,9 @@ struct Renderer::Impl {
 
     // Decides, for every instance of every batch, which lists it is in (the camera's view,
     // each shadow cascade), and writes the transforms of each list one after another.
+    // Instances that passed culling in one list, with their sort key (see CullInstances).
+    std::vector<std::pair<float, std::uint32_t>> sorted_instances;
+
     void CullInstances(const glm::mat4& view_projection, const Cascades* cascades) {
         instance_data.clear();
         ViewVolume volumes[kInstanceListCount];
@@ -1547,13 +1613,29 @@ struct Renderer::Impl {
                     continue;
                 }
                 const ViewVolume& volume = volumes[list];
+                // Visible instances are drawn nearest first: from the camera in the view, from
+                // the sun in a cascade. Then the depth test rejects most hidden leaves before
+                // their pixels are shaded, which matters most in shadow cascades, where tree
+                // crowns overlap many times. Ties keep the instances' order, so the result is
+                // the same on every run.
+                const glm::mat4& list_projection =
+                    list == 0 ? view_projection : cascades->light_view_projection[list - 1];
+                sorted_instances.clear();
                 for (std::uint32_t i = 0; i < batch.count; ++i) {
                     const glm::vec4& sphere = instance_spheres[i];
                     if (!IsSphereOutside(volume, glm::vec3(sphere), sphere.w)) {
-                        instance_data.push_back(instance_sources[batch.first_source + i]);
-                        ++batch.list_count[list];
+                        const glm::vec4 clip = list_projection * glm::vec4(glm::vec3(sphere), 1.0f);
+                        // The view uses distance along the view (w); a cascade, depth from the sun (z).
+                        sorted_instances.emplace_back(list == 0 ? clip.w : clip.z, i);
                     }
                 }
+                if (batch.terrain_id == 0) {
+                    std::sort(sorted_instances.begin(), sorted_instances.end());
+                }
+                for (const auto& [depth, i] : sorted_instances) {
+                    instance_data.push_back(instance_sources[batch.first_source + i]);
+                }
+                batch.list_count[list] = static_cast<std::uint32_t>(sorted_instances.size());
                 if (list == 0) {
                     stats.instances_drawn += static_cast<int>(batch.list_count[list]);
                 } else {
@@ -1757,6 +1839,8 @@ Renderer::~Renderer() {
         for (const BloomLevel& level : impl_->bloom_levels) {
             SDL_ReleaseGPUTexture(impl_->device, level.texture);
         }
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kSceneAfterDepthPass][kRigid][0]);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kSceneAfterDepthPass][kRigid][1]);
         for (int pass = 0; pass < kMeshPassCount; ++pass) {
             for (const int kind : {kSkinned, kInstanced}) {
                 // The shadow pass uses one pipeline for both kinds of material.
@@ -1775,7 +1859,9 @@ Renderer::~Renderer() {
             }
         }
         for (SDL_GPUGraphicsPipeline* pipeline : impl_->terrain_pipelines) {
-            SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
+            if (pipeline != nullptr) {
+                SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
+            }
         }
         for (SDL_GPUGraphicsPipeline* pipeline : impl_->impostor_pipelines) {
             if (pipeline != nullptr) {
@@ -2635,10 +2721,18 @@ void Renderer::EndFrame() {
         impl.has_taa_history = false;
     }
     glm::mat4 projection = unshifted_projection;
+    // The shift in drawn pixels, as TAA needs it: x to the right, y down the image.
+    glm::vec2 jitter_pixels(0.0f);
     if (taa_on) {
         const int step = static_cast<int>(impl.frame_index % kTaaSequenceLength);
-        projection[2][0] += (Halton(step, 2) - 0.5f) * 2.0f / static_cast<float>(impl.config.width);
-        projection[2][1] += (Halton(step, 3) - 0.5f) * 2.0f / static_cast<float>(impl.config.height);
+        const float shift_x = Halton(step, 2) - 0.5f;
+        const float shift_y = Halton(step, 3) - 0.5f;
+        projection[2][0] += shift_x * 2.0f / static_cast<float>(impl.render_width);
+        projection[2][1] += shift_y * 2.0f / static_cast<float>(impl.render_height);
+        // projection[2][x] multiplies view depth z, and clip w is -z: the picture moves by
+        // minus the added amount in normalized coordinates, i.e. -shift_x pixels to the right
+        // and +shift_y pixels down.
+        jitter_pixels = glm::vec2(-shift_x, shift_y);
         impl.temporal_noise_offset = static_cast<float>(impl.frame_index % 16) * 5.588238f;
     } else {
         impl.temporal_noise_offset = 0.0f;
@@ -2708,8 +2802,8 @@ void Renderer::EndFrame() {
             SDL_GPUViewport viewport{};
             viewport.x = static_cast<float>(cascade % 2) * tile_size;
             viewport.y = static_cast<float>(cascade / 2) * tile_size;
-            viewport.w = tile_size;
-            viewport.h = tile_size;
+            viewport.w = tile_size * cascades.tile_scale[cascade];
+            viewport.h = tile_size * cascades.tile_scale[cascade];
             viewport.min_depth = 0.0f;
             viewport.max_depth = 1.0f;
             SDL_SetGPUViewport(pass, &viewport);
@@ -2739,15 +2833,21 @@ void Renderer::EndFrame() {
         SDL_EndGPURenderPass(pass);
     }
 
-    const float width = static_cast<float>(impl.config.width);
-    const float height = static_cast<float>(impl.config.height);
+    // The size the scene is drawn at; from temporal anti-aliasing on, the output size.
+    const float width = static_cast<float>(impl.render_width);
+    const float height = static_cast<float>(impl.render_height);
+    const float output_width = static_cast<float>(impl.config.width);
+    const float output_height = static_cast<float>(impl.config.height);
     // What shaders need to turn a depth image value back into a position (see common.hlsli).
     const glm::vec4 projection_info(projection[2][2], projection[3][2], 1.0f / projection[0][0], 1.0f / projection[1][1]);
     const bool ao_on = environment.ambient_occlusion && !impl.draw_commands.empty();
     const bool fog_on = environment.volumetric_fog && environment.fog_density > 0.0f;
 
-    // --- Pass 2: depth of the scene, for ambient occlusion, fog and temporal anti-aliasing. ---
-    if (ao_on || fog_on || taa_on) {
+    // --- Pass 2: depth of the scene, for ambient occlusion, fog and temporal anti-aliasing,
+    // and without multisampling also for the scene pass itself: it then tests this depth
+    // before shading, so each pixel is lit once instead of once per leaf behind it. ---
+    const bool scene_after_depth = impl.msaa_samples == 1;
+    if (ao_on || fog_on || taa_on || scene_after_depth) {
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.prepass_depth;
         depth_info.clear_depth = 0.0f;  // reversed depth
@@ -2785,7 +2885,8 @@ void Renderer::EndFrame() {
     if (ao_on) {
         AoUniforms ao_uniforms;
         ao_uniforms.projection_info = projection_info;
-        ao_uniforms.screen = glm::vec4(width, height, 0.0f, 0.0f);
+        ao_uniforms.screen =
+            glm::vec4(width, height, static_cast<float>(glm::clamp(environment.ambient_occlusion_samples, 4, 64)), 0.0f);
         ao_uniforms.ao = glm::vec4(environment.ambient_occlusion_radius, environment.ambient_occlusion_strength,
                                    0.5f * height * projection[1][1], impl.temporal_noise_offset);
         SDL_GPUTextureSamplerBinding bindings[2]{};
@@ -2823,10 +2924,17 @@ void Renderer::EndFrame() {
         }
 
         SDL_GPUDepthStencilTargetInfo depth_info{};
-        depth_info.texture = impl.scene_depth;
-        depth_info.clear_depth = 0.0f;  // reversed depth
-        depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
-        depth_info.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        if (scene_after_depth) {
+            // The depth pass's image, kept as it is: the scene pass only tests against it.
+            depth_info.texture = impl.prepass_depth;
+            depth_info.load_op = SDL_GPU_LOADOP_LOAD;
+            depth_info.store_op = SDL_GPU_STOREOP_STORE;
+        } else {
+            depth_info.texture = impl.scene_depth;
+            depth_info.clear_depth = 0.0f;  // reversed depth
+            depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
+            depth_info.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        }
         depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
         depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
@@ -2860,6 +2968,7 @@ void Renderer::EndFrame() {
         }
         frame_uniforms.cascade_far = cascades.far_distance;
         frame_uniforms.cascade_texel = cascades.texel_size;
+        frame_uniforms.cascade_scale = cascades.tile_scale;
         frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
         frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
         frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
@@ -2891,7 +3000,7 @@ void Renderer::EndFrame() {
         for (const std::uint32_t command_index : impl.visible_commands) {
             const DrawCommand& command = impl.draw_commands[command_index];
             const Material& material = command.material;
-            impl.BindMeshPipeline(pass, kScenePass, command, bound_pipeline);
+            impl.BindMeshPipeline(pass, scene_after_depth ? kSceneAfterDepthPass : kScenePass, command, bound_pipeline);
 
             const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
@@ -2912,7 +3021,8 @@ void Renderer::EndFrame() {
             SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
             impl.DrawCommandGeometry(pass, command);
         }
-        impl.DrawInstanceBatches(commands, pass, kScenePass, 0, ao_on, bound_pipeline);
+        impl.DrawInstanceBatches(commands, pass, scene_after_depth ? kSceneAfterDepthPass : kScenePass, 0, ao_on,
+                                 bound_pipeline);
         SDL_EndGPURenderPass(pass);
     }
 
@@ -2940,6 +3050,7 @@ void Renderer::EndFrame() {
                                            environment.fog_sun_glow, environment.fog_shadow_brightness);
         fog_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, glm::min(kFogWalkDistance, camera.far_plane), width,
                                          height);
+        fog_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.fog_steps, 4, 128)), 0.0f, 0.0f, 0.0f);
         SDL_GPUTextureSamplerBinding bindings[2]{};
         bindings[0].texture = impl.prepass_depth;
         bindings[0].sampler = impl.clamp_sampler;
@@ -2966,9 +3077,11 @@ void Renderer::EndFrame() {
         const int write = 1 - impl.taa_index;
         TaaUniforms taa_uniforms;
         taa_uniforms.inverse_view_projection = glm::inverse(view_projection);
+        taa_uniforms.current_view_projection = unshifted_view_projection;
         taa_uniforms.previous_view_projection = impl.previous_view_projection;
         taa_uniforms.parameters = glm::vec4(glm::clamp(impl.post.temporal_aa_blend, 0.01f, 1.0f),
-                                            impl.has_taa_history ? 1.0f : 0.0f, width, height);
+                                            impl.has_taa_history ? 1.0f : 0.0f, output_width, output_height);
+        taa_uniforms.input = glm::vec4(width, height, jitter_pixels.x, jitter_pixels.y);
         SDL_GPUTextureSamplerBinding bindings[3]{};
         bindings[0].texture = scene_image;
         bindings[0].sampler = impl.clamp_sampler;
@@ -2991,8 +3104,8 @@ void Renderer::EndFrame() {
     const bool bloom_on = impl.post.bloom && impl.post.bloom_strength > 0.0f;
     if (bloom_on || impl.post.auto_exposure) {
         SDL_GPUTexture* source = scene_image;
-        float source_width = width;
-        float source_height = height;
+        float source_width = taa_on ? output_width : width;
+        float source_height = taa_on ? output_height : height;
         for (size_t i = 0; i < impl.bloom_levels.size(); ++i) {
             const BloomLevel& level = impl.bloom_levels[i];
             ParameterUniforms uniforms;
@@ -3062,7 +3175,7 @@ void Renderer::EndFrame() {
 
         SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = scene_image;
-        bindings[0].sampler = impl.clamp_sampler;
+        bindings[0].sampler = impl.linear_clamp_sampler;
         bindings[1].texture = bloom_on ? impl.bloom_levels[0].texture : white;
         bindings[1].sampler = impl.linear_clamp_sampler;
         bindings[2].texture = impl.post.auto_exposure ? impl.luminance_targets[impl.luminance_index] : white;
@@ -3084,6 +3197,10 @@ void Renderer::EndFrame() {
         uniforms.white_balance = glm::vec4(balance, 0.0f);
         uniforms.grading = glm::vec4(glm::max(impl.post.saturation, 0.0f), glm::max(impl.post.contrast, 0.0f),
                                      glm::clamp(impl.post.vignette, 0.0f, 1.0f), glm::clamp(impl.post.sharpen, 0.0f, 2.0f));
+        // 1: the scene image has the output's size (read pixel by pixel); 0: it is smaller
+        // (drawn at render_scale without TAA) and is stretched.
+        const bool same_size = taa_on || (impl.render_width == impl.config.width && impl.render_height == impl.config.height);
+        uniforms.input = glm::vec4(same_size ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
         impl.DrawFullscreenPass(commands, impl.output_target, false, impl.tonemap_pipeline, bindings, 4, &uniforms,
                                 sizeof(uniforms));
     }
@@ -3249,6 +3366,14 @@ int Renderer::GetWidth() const {
 
 int Renderer::GetHeight() const {
     return impl_->config.height;
+}
+
+int Renderer::GetRenderWidth() const {
+    return impl_->render_width;
+}
+
+int Renderer::GetRenderHeight() const {
+    return impl_->render_height;
 }
 
 int Renderer::GetMsaaSamples() const {

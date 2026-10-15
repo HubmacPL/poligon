@@ -3,6 +3,8 @@
 #include <charconv>
 #include <cstring>
 
+#include "poligon/graphics_quality.h"
+
 namespace poligon {
 
 namespace {
@@ -85,6 +87,37 @@ bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& opt
             } else {
                 options.replay_path = value;
             }
+        } else if (argument == "--quality") {
+            const char* value = ReadOptionValue(argc, argv, i, error);
+            if (value == nullptr) {
+                return false;
+            }
+            GraphicsPreset preset = GraphicsPreset::High;
+            if (!ParseGraphicsPreset(value, preset)) {
+                error = std::string("--quality needs low, medium, high or ultra, got \"") + value + "\"";
+                return false;
+            }
+            options.quality = value;
+        } else if (argument == "--resolution") {
+            const char* value = ReadOptionValue(argc, argv, i, error);
+            if (value == nullptr) {
+                return false;
+            }
+            const char* end = value + std::strlen(value);
+            int width = 0;
+            int height = 0;
+            const std::from_chars_result first = std::from_chars(value, end, width);
+            bool valid = first.ec == std::errc{} && first.ptr < end && *first.ptr == 'x';
+            if (valid) {
+                const std::from_chars_result second = std::from_chars(first.ptr + 1, end, height);
+                valid = second.ec == std::errc{} && second.ptr == end;
+            }
+            if (!valid || width < 16 || height < 16 || width > 8192 || height > 8192) {
+                error = std::string("--resolution needs WIDTHxHEIGHT between 16 and 8192, got \"") + value + "\"";
+                return false;
+            }
+            options.width = width;
+            options.height = height;
         } else if (argument.rfind("--", 0) != 0) {
             options.positional.push_back(argument);
         } else {

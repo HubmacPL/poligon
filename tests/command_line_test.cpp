@@ -90,5 +90,21 @@ int main() {
         Expect(!Parse(3, argv, options, error), "--hash-interval 0 is an error");
     }
 
+    {
+        const char* argv[] = {"program", "--quality", "medium", "--resolution", "1920x1080"};
+        Expect(Parse(5, argv, options, error) && options.quality == "medium" && options.width == 1920 &&
+                   options.height == 1080,
+               "--quality and --resolution are read");
+    }
+    {
+        const char* argv[] = {"program", "--quality", "extreme"};
+        Expect(!Parse(3, argv, options, error) && error.find("extreme") != std::string::npos,
+               "an unknown preset is an error that names it");
+    }
+    for (const char* bad : {"1920", "1920x", "x1080", "1920x1080x", "8x8", "1920*1080"}) {
+        const char* argv[] = {"program", "--resolution", bad};
+        Expect(!Parse(3, argv, options, error), "a malformed or too small resolution is an error");
+    }
+
     return test::ExitCode();
 }

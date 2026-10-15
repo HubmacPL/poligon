@@ -45,6 +45,11 @@ struct FragmentInput {
     bool is_front_face : SV_IsFrontFace;
 };
 
+#ifdef EARLY_DEPTH_TEST
+// The depth pass has drawn the final depth; test it before running the shader. Discards
+// below then only drop color (depth is not written in this pass).
+[earlydepthstencil]
+#endif
 float4 main(FragmentInput input) : SV_Target0 {
     if (!KeptByFade(input.fade, input.clip_position.xy + float2(material_factors.w, 0.0))) {
         discard;

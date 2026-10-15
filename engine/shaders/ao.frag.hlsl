@@ -14,7 +14,7 @@ SamplerState depth_sampler : register(s0, space2);
 
 cbuffer AoUniforms : register(b0, space3) {
     float4 projection_info;  // see ViewPosition in common.hlsli
-    float4 screen;           // xy: size in pixels
+    float4 screen;           // xy: size in pixels, z: samples per pixel
     float4 ao;               // x: radius in meters, y: strength, z: pixels per meter at 1 m distance, w: the frame's noise offset
 };
 
@@ -24,7 +24,6 @@ struct FragmentInput {
     float2 ndc : TEXCOORD1;
 };
 
-static const int kSampleCount = 20;
 static const float kSpiralTurns = 7.0;
 static const float kMaxPixelRadius = 64.0;
 
@@ -59,13 +58,14 @@ float main(FragmentInput input) : SV_Target0 {
         return 1.0;  // too far away for the effect to cover even a pixel
     }
 
+    int sample_count = (int)screen.z;
     float start_angle = InterleavedGradientNoise(input.clip_position.xy + float2(ao.w, 0.0)) * 6.2831853;
     // Depth precision falls with distance; the bias keeps flat distant surfaces from darkening themselves.
     float bias = 0.03 * radius + 0.002 * distance_to_camera;
     float radius_squared = radius * radius;
     float sum = 0.0;
-    for (int i = 0; i < kSampleCount; ++i) {
-        float along = (i + 0.5) / kSampleCount;
+    for (int i = 0; i < sample_count; ++i) {
+        float along = (i + 0.5) / sample_count;
         float angle = start_angle + along * kSpiralTurns * 6.2831853;
         float2 offset = float2(cos(angle), sin(angle)) * (along * pixel_radius);
         float3 to_sample = PositionAt(pixel + int2(offset)) - position;
@@ -74,6 +74,6 @@ float main(FragmentInput input) : SV_Target0 {
         float falloff = max(radius_squared - distance_squared, 0.0);
         sum += falloff * falloff * falloff * max((height - bias) / (distance_squared + 0.0001), 0.0);
     }
-    float obscurance = sum * 5.0 / (radius_squared * radius_squared * radius_squared * kSampleCount);
+    float obscurance = sum * 5.0 / (radius_squared * radius_squared * radius_squared * sample_count);
     return saturate(1.0 - obscurance * ao.y);
 }
