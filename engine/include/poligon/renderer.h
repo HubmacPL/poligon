@@ -104,6 +104,9 @@ struct RendererConfig {
     int msaa_samples = 4;
     // Width and height in pixels of each of the four shadow images (cascades).
     int shadow_map_size = 2048;
+    // Share of the drawn width and height of the cloud image (Environment::clouds); the clouds
+    // are walked at this size and stretched over the sky.
+    float cloud_resolution = 0.25f;
     // The two far cascades use only this share of their image's width and height: they
     // cover large areas where fine shadow detail is lost anyway, and in a forest their cost
     // grows with every pixel (crowns overlap many times as seen from the sun).
@@ -185,6 +188,30 @@ struct Environment {
     int water_reflection_steps = 24;
     float water_reflection_distance = 400.0f;
 
+    // Volumetric clouds in a layer of the sky, with their shadows on the land (drawn where
+    // the sky shows, so only with draw_sky). Coverage: 0 = clear, 1 = overcast; they also
+    // turn the sky's light greyer and softer. Heights in meters; density is the light lost
+    // per meter inside a cloud. They drift downwind (wind_direction, wind_time) at
+    // cloud_speed meters per second. Steps along each line of sight and towards the sun:
+    // more is smoother and costs more (set by GraphicsQuality).
+    bool clouds = false;
+    float cloud_coverage = 0.45f;
+    float cloud_bottom = 1500.0f;
+    float cloud_top = 3500.0f;
+    float cloud_density = 0.02f;
+    float cloud_size = 6000.0f;     // meters across one repeat of the cloud shapes
+    float cloud_speed = 8.0f;
+    bool cloud_shadows = true;
+    int cloud_steps = 48;
+    int cloud_light_steps = 5;
+
+    // Haze of distance (aerial perspective): far things fade into a haze that is bluish away
+    // from the sun and bright towards it. Density per meter; 0 = off. Its color is the sky's
+    // horizon color.
+    float aerial_density = 0.0f;
+    // How much sunlight thin leaves (double-sided materials) let through to their far side.
+    float foliage_translucency = 0.35f;
+
     // Wind: the direction it blows towards (world x and z), its strength (1 = a moderate
     // breeze; 0 turns the wind off) and how long it has been blowing, in seconds. Give the
     // game's own time, not the clock, so that replays match. Plants move according to
@@ -228,6 +255,7 @@ struct MeshHandle {
 
 struct CompressedImage;  // poligon/texture_compression.h
 class TrampleMap;        // poligon/trample.h
+struct SkyOcclusionMap;  // poligon/sky_occlusion.h
 
 // Identifies a texture created by Renderer. An id of 0 means "no texture".
 struct TextureHandle {
@@ -474,6 +502,13 @@ public:
     // over and get lower by its value. The map is copied when its version changes; it must
     // live as long as it is set. nullptr turns it off. See poligon/trample.h.
     void SetTrampleMap(const TrampleMap* map);
+    // How much of the sky each place sees (hills, tree crowns): sky light on every surface is
+    // darkened by it. Copied when its version changes; it must live as long as it is set.
+    // nullptr turns it off. See poligon/sky_occlusion.h.
+    void SetSkyOcclusion(const SkyOcclusionMap* map);
+    // Makes the noise volumes clouds are shaped from (about a second). Otherwise the first
+    // frame with Environment::clouds does it; call this while loading to keep that frame short.
+    void PrepareClouds();
     // Draws a water surface: usually a flat mesh at the water's level (poligon/water.h makes
     // them for lakes). It is drawn after everything else in the scene and reads what was
     // drawn under it: see WaterMaterial and Environment::water_reflection_steps.

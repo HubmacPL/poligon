@@ -7,6 +7,12 @@
 #define LIGHTING_AO_BINDING 3
 #define LIGHTING_AO_T t3
 #define LIGHTING_AO_S s3
+#define LIGHTING_CLOUD_BINDING 4
+#define LIGHTING_CLOUD_T t4
+#define LIGHTING_CLOUD_S s4
+#define LIGHTING_SKY_BINDING 5
+#define LIGHTING_SKY_T t5
+#define LIGHTING_SKY_S s5
 #include "lighting.hlsli"
 #define IMPOSTOR_FRAGMENT
 #define IMPOSTOR_NORMALS

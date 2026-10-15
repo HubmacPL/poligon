@@ -41,6 +41,18 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("fog.shadow_brightness", environment.fog_shadow_brightness, 0.0f, 1.0f);
     visitor.Float("fog.sun_glow", environment.fog_sun_glow, 0.0f, 5.0f);
 
+    visitor.Section("clouds and haze");
+    visitor.Bool("clouds.on", environment.clouds);
+    visitor.Float("clouds.coverage", environment.cloud_coverage, 0.0f, 1.0f);
+    visitor.Float("clouds.bottom", environment.cloud_bottom, 200.0f, 6000.0f);
+    visitor.Float("clouds.top", environment.cloud_top, 300.0f, 9000.0f);
+    visitor.Float("clouds.density", environment.cloud_density, 0.001f, 0.2f);
+    visitor.Float("clouds.size", environment.cloud_size, 1000.0f, 40000.0f);
+    visitor.Float("clouds.speed", environment.cloud_speed, 0.0f, 60.0f);
+    visitor.Bool("clouds.shadows", environment.cloud_shadows);
+    visitor.Float("haze.density", environment.aerial_density, 0.0f, 0.002f);
+    visitor.Float("foliage.translucency", environment.foliage_translucency, 0.0f, 2.0f);
+
     visitor.Section("wind");
     visitor.Float("wind.strength", environment.wind_strength, 0.0f, 3.0f);
     visitor.Float("wind.direction_x", environment.wind_direction.x, -1.0f, 1.0f);
@@ -85,6 +97,14 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("quality.shadow_map_size", shadow_map_size, 512.0f, 4096.0f);
     quality.shadow_map_size = static_cast<int>(shadow_map_size);
     visitor.Float("quality.far_shadow_scale", quality.far_shadow_scale, 0.25f, 1.0f);
+    visitor.Bool("quality.clouds", quality.clouds);
+    float cloud_steps = static_cast<float>(quality.cloud_steps);
+    visitor.Float("quality.cloud_steps", cloud_steps, 4.0f, 256.0f);
+    quality.cloud_steps = static_cast<int>(cloud_steps);
+    float cloud_light_steps = static_cast<float>(quality.cloud_light_steps);
+    visitor.Float("quality.cloud_light_steps", cloud_light_steps, 1.0f, 16.0f);
+    quality.cloud_light_steps = static_cast<int>(cloud_light_steps);
+    visitor.Float("quality.cloud_resolution", quality.cloud_resolution, 0.125f, 1.0f);
     float water_steps = static_cast<float>(quality.water_reflection_steps);
     visitor.Float("quality.water_reflection_steps", water_steps, 0.0f, 128.0f);
     quality.water_reflection_steps = static_cast<int>(water_steps);

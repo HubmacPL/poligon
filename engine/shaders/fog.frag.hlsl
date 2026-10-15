@@ -1,7 +1,8 @@
 // Volumetric fog, at half resolution. For every pixel the line of sight is walked in steps
 // from the camera to the first surface. Each step adds the light the fog scatters towards
 // the camera there, and removes part of the light coming from behind it. Steps that lie in
-// the sun's shadow add less, which is what makes shafts of light visible between trees.
+// the sun's shadow (or a cloud's) add less, which is what makes shafts of light visible
+// between trees.
 //
 // Output: rgb = light added by the fog, a = part of the scene's light that gets through.
 #include "common.hlsli"
@@ -16,6 +17,12 @@ Texture2D<float> shadow_texture : register(t1, space2);
 [[vk::combinedImageSampler]][[vk::binding(1, 2)]]
 SamplerComparisonState shadow_sampler : register(s1, space2);
 
+// Share of sunlight the clouds let through over the land around the camera.
+[[vk::combinedImageSampler]][[vk::binding(2, 2)]]
+Texture2D<float> cloud_shadow_texture : register(t2, space2);
+[[vk::combinedImageSampler]][[vk::binding(2, 2)]]
+SamplerState cloud_shadow_sampler : register(s2, space2);
+
 cbuffer FogUniforms : register(b0, space3) {
     float4x4 inverse_view_projection;
     float4x4 shadow_matrices[4];
@@ -28,6 +35,7 @@ cbuffer FogUniforms : register(b0, space3) {
     float4 fog_shape;        // x: thinning per meter of height, y: base height, z: sun glow strength, w: brightness of shadowed fog
     float4 options;          // x: shadows on, y: farthest distance walked, zw: size of the depth image in pixels
     float4 quality;          // x: steps along each line of sight
+    float4 cloud_shadow_area;  // xy: world x and z of the cloud shadow image's corner, z: 1 / its size, w: 1 = on
 };
 
 struct FragmentInput {
@@ -37,9 +45,17 @@ struct FragmentInput {
 };
 
 
+float CloudShadow(float3 world_position) {
+    if (cloud_shadow_area.w < 0.5) {
+        return 1.0;
+    }
+    float2 uv = (world_position.xz - cloud_shadow_area.xy) * cloud_shadow_area.z;
+    return any(uv < 0.0) || any(uv > 1.0) ? 1.0 : cloud_shadow_texture.SampleLevel(cloud_shadow_sampler, uv, 0.0);
+}
+
 float SunVisibility(float3 world_position) {
     if (options.x < 0.5) {
-        return 1.0;
+        return CloudShadow(world_position);
     }
     float view_depth = dot(world_position - camera_position.xyz, camera_forward.xyz);
     int cascade = 4;
@@ -49,10 +65,10 @@ float SunVisibility(float3 world_position) {
         }
     }
     if (cascade == 4) {
-        return 1.0;  // beyond the shadow distance
+        return CloudShadow(world_position);  // beyond the shadow distance
     }
     float4 shadow_position = mul(shadow_matrices[cascade], float4(world_position, 1.0));
-    return shadow_texture.SampleCmpLevelZero(shadow_sampler, shadow_position.xy, shadow_position.z);
+    return shadow_texture.SampleCmpLevelZero(shadow_sampler, shadow_position.xy, shadow_position.z) * CloudShadow(world_position);
 }
 
 float4 main(FragmentInput input) : SV_Target0 {

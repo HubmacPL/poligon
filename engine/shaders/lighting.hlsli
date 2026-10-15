@@ -1,11 +1,16 @@
 // Lighting shared by every fragment shader that draws a lit surface (mesh.frag.hlsl,
-// terrain.frag.hlsl): the frame's uniforms, the sun with its shadows, ambient light from
-// the sky and the ground, a faint reflection of the sky, and fog.
+// terrain.frag.hlsl, impostor.frag.hlsl, water.frag.hlsl): the frame's uniforms, the sun with
+// its shadows and the shadows of clouds, ambient light from the sky (darkened where hills
+// and tree crowns hide it) and the ground, light shining through thin leaves, a faint
+// reflection of the sky, fog and the haze of distance (aerial perspective).
 //
-// A shader that includes this file first says which texture slots the shadow image and
-// the ambient occlusion image use, because its own textures come before them:
+// A shader that includes this file first says which texture slots the shadow image, the
+// ambient occlusion image, the cloud shadow image and the sky occlusion map use, because its
+// own textures come before them:
 //     #define LIGHTING_SHADOW_BINDING 3   // and LIGHTING_SHADOW_T t3, LIGHTING_SHADOW_S s3
 //     #define LIGHTING_AO_BINDING 4       // and LIGHTING_AO_T t4, LIGHTING_AO_S s4
+//     #define LIGHTING_CLOUD_BINDING 5    // and LIGHTING_CLOUD_T t5, LIGHTING_CLOUD_S s5
+//     #define LIGHTING_SKY_BINDING 6      // and LIGHTING_SKY_T t6, LIGHTING_SKY_S s6
 // The frame's uniforms are always uniform buffer 0 of the fragment shader.
 #include "common.hlsli"
 
@@ -20,6 +25,19 @@ SamplerComparisonState shadow_sampler : register(LIGHTING_SHADOW_S, space2);
 Texture2D<float> ao_texture : register(LIGHTING_AO_T, space2);
 [[vk::combinedImageSampler]][[vk::binding(LIGHTING_AO_BINDING, 2)]]
 SamplerState ao_sampler : register(LIGHTING_AO_S, space2);
+
+// Share of sunlight that gets through the clouds, over the land around the camera
+// (cloud_shadow.frag.hlsl).
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_CLOUD_BINDING, 2)]]
+Texture2D<float> cloud_shadow_texture : register(LIGHTING_CLOUD_T, space2);
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_CLOUD_BINDING, 2)]]
+SamplerState cloud_shadow_sampler : register(LIGHTING_CLOUD_S, space2);
+
+// Share of the sky each place on the land sees (poligon/sky_occlusion.h).
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_SKY_BINDING, 2)]]
+Texture2D<float> sky_occlusion_texture : register(LIGHTING_SKY_T, space2);
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_SKY_BINDING, 2)]]
+SamplerState sky_occlusion_sampler : register(LIGHTING_SKY_S, space2);
 
 cbuffer FrameUniforms : register(b0, space3) {
     float4x4 shadow_matrices[4];  // world position -> shadow image coordinates and depth, per cascade
@@ -38,7 +56,48 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 options;               // x: shadows on, y: alpha to coverage on, z: sky reflections on, w: shadow texel size
     float4 screen;                // x: screen-space ambient occlusion on, y: tint by shadow cascade (debug)
     float4 cascade_scale;         // share of its tile's width and height each cascade uses
+    float4 cloud_shadow_area;     // xy: world x and z of the cloud shadow image's corner, z: 1 / its size in meters, w: 1 = on
+    float4 sky_occlusion_area;    // xy: world x and z of the sky occlusion map's first point, z: 1 / its size in meters, w: 1 = on
+    float4 aerial;                // rgb: color of the haze of distance, a: its density per meter (0 = off)
+    float4 foliage;               // x: how much sunlight thin leaves let through
 };
+
+// Share of sunlight the clouds let through at a place (1 without clouds).
+float CloudShadow(float3 world_position) {
+    if (cloud_shadow_area.w < 0.5) {
+        return 1.0;
+    }
+    float2 uv = (world_position.xz - cloud_shadow_area.xy) * cloud_shadow_area.z;
+    if (any(uv < 0.0) || any(uv > 1.0)) {
+        return 1.0;
+    }
+    return cloud_shadow_texture.SampleLevel(cloud_shadow_sampler, uv, 0.0);
+}
+
+// Share of the sky a place sees (1 without a map). The map holds the ground's view; a point
+// higher up (a tree's crown) gets the same value, which darkens crowns a little too much.
+float SkyVisibility(float3 world_position, float3 normal) {
+    if (sky_occlusion_area.w < 0.5) {
+        return 1.0;
+    }
+    float2 uv = (world_position.xz - sky_occlusion_area.xy) * sky_occlusion_area.z;
+    if (any(uv < 0.0) || any(uv > 1.0)) {
+        return 1.0;
+    }
+    return sky_occlusion_texture.SampleLevel(sky_occlusion_sampler, uv, 0.0);
+}
+
+// Distant things fade into the haze: bluish away from the sun, warm and bright towards it.
+float3 ApplyAerialPerspective(float3 color, float3 world_position) {
+    if (aerial.a <= 0.0) {
+        return color;
+    }
+    float3 view = world_position - camera_position.xyz;
+    float distance_to_camera = length(view);
+    float towards_sun = pow(saturate(dot(view / max(distance_to_camera, 0.001), -light_direction.xyz)), 6.0);
+    float3 haze = lerp(aerial.rgb, aerial.rgb * 0.5 + light_color.rgb * 0.35, towards_sun);
+    return lerp(color, haze, 1.0 - exp(-distance_to_camera * aerial.a));
+}
 
 static const float kPi = 3.14159265;
 
@@ -174,7 +233,7 @@ float3 ShadeSurface(Surface surface) {
 
     // --- Sun ---
     if (dot(light_color.rgb, light_color.rgb) > 0.0) {
-        float visibility = SunVisibility(surface.world_position, surface.surface_normal);
+        float visibility = SunVisibility(surface.world_position, surface.surface_normal) * CloudShadow(surface.world_position);
         float3 sun = light_color.rgb * visibility;
 
         // Specular highlight (GGX microfacet model).
@@ -194,16 +253,23 @@ float3 ShadeSurface(Surface surface) {
         // the sun's color; the highlight is scaled by pi to match.
         color += (diffuse_color * (1.0 - fresnel) + specular * kPi) * sun * n_dot_l;
 
-        // Thin foliage lets some light through: a leaf lit from behind glows on the near side.
+        // Thin foliage lets light through: a leaf lit from behind glows on the near side, in
+        // a warmer, more saturated green than its lit face (light passes the leaf's color
+        // twice), and most when the camera looks towards the sun through it.
         if (surface.thin_foliage) {
-            float back_light = saturate(dot(-normal, to_light));
-            color += diffuse_color * sun * back_light * 0.35;
+            float back_light = saturate(dot(-normal, to_light) * 0.6 + 0.4);
+            float through = pow(saturate(dot(-to_camera, to_light)), 4.0);
+            float3 transmitted_color = diffuse_color * (0.4 + 0.8 * diffuse_color);
+            color += transmitted_color * sun * foliage.x * (back_light * 0.6 + through * 1.4);
         }
     }
 
     // --- Ambient light: from the sky above and the ground below ---
+    // The sky's light comes mostly from the blue zenith, so surfaces in shadow take a cool
+    // tint; hills and tree crowns around a place hide part of the sky (large-scale occlusion).
     float sky_amount = normal.y * 0.5 + 0.5;
-    float3 ambient = lerp(ambient_ground.rgb, ambient_sky.rgb, sky_amount);
+    float sky_visible = SkyVisibility(surface.world_position, normal);
+    float3 ambient = lerp(ambient_ground.rgb * lerp(0.6, 1.0, sky_visible), ambient_sky.rgb * sky_visible, sky_amount);
     color += diffuse_color * ambient * occlusion;
 
     // Smooth surfaces also mirror the sky faintly.
@@ -228,5 +294,5 @@ float3 ShadeSurface(Surface surface) {
         float fog_amount = 1.0 - exp(-distance_to_camera * fog.a);
         color = lerp(color, fog.rgb, fog_amount);
     }
-    return color;
+    return ApplyAerialPerspective(color, surface.world_position);
 }

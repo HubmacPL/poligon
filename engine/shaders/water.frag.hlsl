@@ -20,6 +20,12 @@
 #define LIGHTING_AO_BINDING 3
 #define LIGHTING_AO_T t3
 #define LIGHTING_AO_S s3
+#define LIGHTING_CLOUD_BINDING 4
+#define LIGHTING_CLOUD_T t4
+#define LIGHTING_CLOUD_S s4
+#define LIGHTING_SKY_BINDING 5
+#define LIGHTING_SKY_T t5
+#define LIGHTING_SKY_S s5
 #include "lighting.hlsli"
 
 // The scene as drawn before the water, and its depth (copied: the water writes depth).
@@ -124,7 +130,7 @@ float4 main(FragmentInput input) : SV_Target0 {
     float3 under = scene_texture.SampleLevel(scene_sampler, bent_uv, 0.0).rgb;
     float3 transmitted = exp(-absorption.rgb * path);
     float3 to_light = -light_direction.xyz;
-    float sun_visibility = SunVisibility(position, float3(0.0, 1.0, 0.0));
+    float sun_visibility = SunVisibility(position, float3(0.0, 1.0, 0.0)) * CloudShadow(position);
     float3 light_in_water = ambient_sky.rgb + light_color.rgb * saturate(to_light.y) * sun_visibility * 0.35;
     float scattered = 1.0 - exp(-absorption.a * path);
     float3 refracted = under * transmitted + water_color.rgb * light_in_water * scattered;
@@ -184,6 +190,8 @@ float4 main(FragmentInput input) : SV_Target0 {
         float distance_to_camera = length(camera_position.xyz - position);
         color = lerp(color, fog.rgb, 1.0 - exp(-distance_to_camera * fog.a));
     }
+
+    color = ApplyAerialPerspective(color, position);
 
     // 5. The shore: fade into the ground under the water where it is only centimeters deep.
     float shore = saturate(water_depth / max(wind.w, 0.001));

@@ -47,6 +47,12 @@ struct GraphicsQuality {
     int fog_steps = 32;
     // Steps of each ray water reflects through the picture; 0 = water mirrors only the sky.
     int water_reflection_steps = 24;
+    // Clouds: drawn at all, steps along a line of sight and towards the sun, and the share of
+    // the drawn size their image has (RendererConfig::cloud_resolution).
+    bool clouds = true;
+    int cloud_steps = 48;
+    int cloud_light_steps = 5;
+    float cloud_resolution = 0.25f;
 
     // --- For the game's systems ---
     // Multiply how far plants keep each level of detail, and how far they cast shadows.

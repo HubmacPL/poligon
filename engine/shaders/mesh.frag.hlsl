@@ -12,6 +12,12 @@
 #define LIGHTING_AO_BINDING 4
 #define LIGHTING_AO_T t4
 #define LIGHTING_AO_S s4
+#define LIGHTING_CLOUD_BINDING 5
+#define LIGHTING_CLOUD_T t5
+#define LIGHTING_CLOUD_S s5
+#define LIGHTING_SKY_BINDING 6
+#define LIGHTING_SKY_T t6
+#define LIGHTING_SKY_S s6
 #include "lighting.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]

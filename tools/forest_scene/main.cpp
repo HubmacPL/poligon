@@ -57,6 +57,7 @@
 #include "poligon/procedural_plants.h"
 #include "poligon/platform.h"
 #include "poligon/render_settings.h"
+#include "poligon/sky_occlusion.h"
 #include "poligon/terrain.h"
 #include "poligon/trample.h"
 #include "poligon/vegetation.h"
@@ -228,6 +229,9 @@ public:
         : renderer_(renderer), assets_(assets), terrain_cache_(build_folder / "terrain_cache"), input_(input),
           actions_(actions), settings_(settings), settings_path_(settings_path) {
         OpenAssets(asset_list, build_folder / "cooked");
+        if (settings.environment.clouds) {
+            renderer_.PrepareClouds();
+        }
         std::string level_error;
         if (!poligon::LoadLevel(level_path.string().c_str(), level_, level_error, poligon::GetPlantRuleWords())) {
             std::printf("forest_scene: %s; using the default land\n", level_error.c_str());
@@ -882,6 +886,10 @@ private:
         if (std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize) {
             poligon::AddPlantCollider(physics_, kind.plants, variant, foot, placement.turn, placement.scale);
         }
+        // Tall plants' crowns hide part of the sky from the ground below them.
+        if (variant.height * placement.scale > 6.0f) {
+            crowns_.push_back({x, z, (variant.half_width.x + variant.half_width.y) * 0.5f * placement.scale * 0.9f});
+        }
         ++placed_count_;
     }
 
@@ -941,7 +949,21 @@ private:
             }
         }
         std::printf("forest_scene: %d things placed by %zu rules\n", placed_count_, rules_.size());
+        BuildSkyOcclusion();
         GrowGroundCover();
+    }
+
+    // How much of the sky each place sees: the land around it (out to 160 m) and the crowns
+    // of the trees above it, over 2.4 km around the start.
+    void BuildSkyOcclusion() {
+        const auto started = std::chrono::steady_clock::now();
+        sky_occlusion_ = poligon::MakeTerrainSkyOcclusion(*terrain_, {0.0f, 0.0f}, 2400.0f, 4.0f);
+        for (const glm::vec3& crown : crowns_) {
+            poligon::AddCanopy(sky_occlusion_, {crown.x, crown.y}, crown.z, 0.55f);
+        }
+        renderer_.SetSkyOcclusion(&sky_occlusion_);
+        std::printf("forest_scene: sky occlusion of the land and %zu crowns in %.1f s\n", crowns_.size(),
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
     }
 
     // Grass, ferns, nettles, low shrubs and stones are not planted: they grow on the fly
@@ -1032,6 +1054,9 @@ private:
     // The level's plant rules, and where plants have been walked flat.
     std::vector<poligon::PlantRule> rules_;
     poligon::TrampleMap trample_{128.0f, 256};
+    // Crowns of tall plants (x, z, radius) and the sky occlusion made from them and the land.
+    std::vector<glm::vec3> crowns_;
+    poligon::SkyOcclusionMap sky_occlusion_;
     int loaded_kind_count_ = 0;
     // All plants, rocks and stumps: placed once, drawn by distance.
     poligon::Vegetation vegetation_;
@@ -1096,6 +1121,16 @@ poligon::RenderSettings MakeForestSettings() {
     environment.fog_sun_glow = 1.2f;
     environment.wind_direction = {0.6f, 0.8f};
     environment.wind_strength = 1.0f;
+    // Fair-weather clouds, their shadows drifting over the land, and the haze of distance
+    // that turns far hills blue.
+    environment.clouds = true;
+    environment.cloud_coverage = 0.32f;
+    environment.cloud_bottom = 1400.0f;
+    environment.cloud_top = 3200.0f;
+    environment.cloud_density = 0.025f;
+    environment.cloud_speed = 6.0f;
+    environment.aerial_density = 0.00012f;
+    environment.foliage_translucency = 0.5f;
 
     settings.post.bloom = true;
     settings.post.auto_exposure = true;

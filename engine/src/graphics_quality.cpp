@@ -19,6 +19,8 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.ambient_occlusion_samples = 8;
         quality.fog_steps = 16;
         quality.water_reflection_steps = 0;
+        quality.cloud_steps = 20;
+        quality.cloud_light_steps = 3;
         quality.vegetation_detail = 0.6f;
         quality.vegetation_shadow = 0.5f;
         quality.ground_cover_density = 0.35f;
@@ -34,6 +36,8 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.ambient_occlusion_samples = 12;
         quality.fog_steps = 20;
         quality.water_reflection_steps = 12;
+        quality.cloud_steps = 32;
+        quality.cloud_light_steps = 4;
         quality.vegetation_detail = 0.8f;
         quality.vegetation_shadow = 0.75f;
         quality.ground_cover_density = 0.65f;
@@ -49,6 +53,9 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.ambient_occlusion_samples = 32;
         quality.fog_steps = 48;
         quality.water_reflection_steps = 48;
+        quality.cloud_steps = 96;
+        quality.cloud_light_steps = 6;
+        quality.cloud_resolution = 0.5f;
         quality.vegetation_detail = 1.5f;
         quality.vegetation_shadow = 1.5f;
         quality.ground_cover_density = 1.5f;
@@ -92,6 +99,9 @@ void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environme
     environment.ambient_occlusion_samples = quality.ambient_occlusion_samples;
     environment.fog_steps = quality.fog_steps;
     environment.water_reflection_steps = quality.water_reflection_steps;
+    environment.clouds = environment.clouds && quality.clouds;
+    environment.cloud_steps = quality.cloud_steps;
+    environment.cloud_light_steps = quality.cloud_light_steps;
     post.bloom = post.bloom && quality.bloom;
     post.temporal_aa = post.temporal_aa && quality.temporal_aa;
 }
@@ -99,6 +109,7 @@ void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environme
 void ApplyGraphicsQuality(const GraphicsQuality& quality, RendererConfig& config) {
     config.shadow_map_size = quality.shadow_map_size;
     config.far_shadow_scale = quality.far_shadow_scale;
+    config.cloud_resolution = quality.cloud_resolution;
     config.msaa_samples = quality.temporal_aa ? 1 : quality.msaa_samples;
     config.render_scale = quality.temporal_aa ? quality.render_scale : 1.0f;
 }

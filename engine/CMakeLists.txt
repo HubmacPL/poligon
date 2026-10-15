@@ -41,6 +41,8 @@ add_library(poligon_engine STATIC
   src/plant_rules.cpp
   src/procedural_plants.cpp
   src/trample.cpp
+  src/sky_occlusion.cpp
+  src/cloud_noise.cpp
   src/physics.cpp
   src/platform.cpp
   src/render_settings.cpp
@@ -106,7 +108,7 @@ function(poligon_embed_shader source stage symbol header)
     # Every shader may include the shared .hlsli files, so a change there rebuilds all of them.
     DEPENDS ${input} ${embed} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting.hlsli
             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh.frag.hlsl
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.frag.hlsl
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.frag.hlsl ${CMAKE_CURRENT_SOURCE_DIR}/shaders/clouds.hlsli
     COMMENT "Compiling shader ${source}"
     VERBATIM)
   target_sources(poligon_engine PRIVATE ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h)
@@ -120,6 +122,9 @@ poligon_embed_shader(shaders/terrain.vert.hlsl vertex kTerrainVert terrain_vert)
 poligon_embed_shader(shaders/terrain.frag.hlsl fragment kTerrainFrag terrain_frag)
 poligon_embed_shader(shaders/water.frag.hlsl fragment kWaterFrag water_frag)
 poligon_embed_shader(shaders/depth_copy.frag.hlsl fragment kDepthCopyFrag depth_copy_frag)
+poligon_embed_shader(shaders/clouds.frag.hlsl fragment kCloudsFrag clouds_frag)
+poligon_embed_shader(shaders/cloud_shadow.frag.hlsl fragment kCloudShadowFrag cloud_shadow_frag)
+poligon_embed_shader(shaders/clouds_composite.frag.hlsl fragment kCloudsCompositeFrag clouds_composite_frag)
 poligon_embed_shader(shaders/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
 poligon_embed_shader(shaders/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
 poligon_embed_shader(shaders/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)

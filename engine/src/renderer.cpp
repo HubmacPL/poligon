@@ -16,7 +16,9 @@
 
 #include "poligon/fatal_error.h"
 #include "poligon/texture_compression.h"
+#include "poligon/sky_occlusion.h"
 #include "poligon/trample.h"
+#include "cloud_noise.h"
 #include "poligon_shaders/ao_blur_frag_dxil.h"
 #include "poligon_shaders/ao_blur_frag_spirv.h"
 #include "poligon_shaders/ao_frag_dxil.h"
@@ -65,6 +67,12 @@
 #include "poligon_shaders/terrain_vert_spirv.h"
 #include "poligon_shaders/tonemap_frag_dxil.h"
 #include "poligon_shaders/tonemap_frag_spirv.h"
+#include "poligon_shaders/clouds_frag_dxil.h"
+#include "poligon_shaders/clouds_frag_spirv.h"
+#include "poligon_shaders/cloud_shadow_frag_dxil.h"
+#include "poligon_shaders/cloud_shadow_frag_spirv.h"
+#include "poligon_shaders/clouds_composite_frag_dxil.h"
+#include "poligon_shaders/clouds_composite_frag_spirv.h"
 #include "poligon_shaders/water_frag_dxil.h"
 #include "poligon_shaders/water_frag_spirv.h"
 #include "poligon_shaders/depth_copy_frag_dxil.h"
@@ -107,6 +115,23 @@ struct FragmentFrameUniforms {
     glm::vec4 options;
     glm::vec4 screen;
     glm::vec4 cascade_scale;
+    glm::vec4 cloud_shadow_area;
+    glm::vec4 sky_occlusion_area;
+    glm::vec4 aerial;
+    glm::vec4 foliage;
+};
+
+struct CloudUniforms {
+    glm::mat4 inverse_view_projection;
+    glm::vec4 camera_position;
+    glm::vec4 light_direction;
+    glm::vec4 light_color;
+    glm::vec4 sky_zenith;
+    glm::vec4 sky_horizon;
+    glm::vec4 layer;
+    glm::vec4 shape;
+    glm::vec4 quality;
+    glm::vec4 shadow_area;
 };
 
 struct MaterialUniforms {
@@ -220,6 +245,7 @@ struct FogUniforms {
     glm::vec4 fog_shape;
     glm::vec4 options;
     glm::vec4 quality;
+    glm::vec4 cloud_shadow_area;
 };
 
 struct FogCompositeUniforms {
@@ -564,6 +590,107 @@ struct Renderer::Impl {
     std::uint32_t trample_version = 0xFFFFFFFFu;
     glm::vec4 trample_info{0.0f};
     SDL_GPUTexture* no_trample_texture = nullptr;
+    // Clouds: noise volumes (made on the first frame that has clouds), the cloud image, the
+    // cloud shadow image over the land around the camera, and their pipelines.
+    SDL_GPUTexture* cloud_shape = nullptr;
+    SDL_GPUTexture* cloud_detail = nullptr;
+    SDL_GPUTexture* cloud_weather = nullptr;
+    SDL_GPUTexture* cloud_target = nullptr;
+    SDL_GPUTexture* cloud_shadow_target = nullptr;
+    SDL_GPUGraphicsPipeline* clouds_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* cloud_shadow_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* clouds_composite_pipeline = nullptr;
+    SDL_GPUSampler* repeat_sampler = nullptr;
+    // What the lighting shaders read this frame: the cloud shadow image (or white) and the
+    // sky occlusion map (or white).
+    SDL_GPUTexture* frame_cloud_shadow = nullptr;
+    SDL_GPUTexture* frame_sky_occlusion = nullptr;
+    // The sky occlusion map (Renderer::SetSkyOcclusion) and its copy on the card.
+    const SkyOcclusionMap* sky_occlusion_map = nullptr;
+    SDL_GPUTexture* sky_occlusion_texture = nullptr;
+    int sky_occlusion_resolution = 0;
+    std::uint32_t sky_occlusion_version = 0xFFFFFFFFu;
+
+    // The two lighting textures every lit surface reads, after its others (lighting.hlsli).
+    void AddLightingBindings(SDL_GPUTextureSamplerBinding* bindings) const {
+        bindings[0].texture = frame_cloud_shadow;
+        bindings[0].sampler = linear_clamp_sampler;
+        bindings[1].texture = frame_sky_occlusion;
+        bindings[1].sampler = linear_clamp_sampler;
+    }
+
+    SDL_GPUTexture* CreateVolume(int size, const std::vector<std::uint8_t>& bytes) {
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_3D;
+        info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = static_cast<Uint32>(size);
+        info.height = static_cast<Uint32>(size);
+        info.layer_count_or_depth = static_cast<Uint32>(size);
+        info.num_levels = 1;
+        SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+        if (texture == nullptr) {
+            FatalSdlError("cannot create cloud noise volume");
+        }
+        SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(bytes.data(), static_cast<Uint32>(bytes.size()));
+        SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        SDL_GPUTextureTransferInfo source{};
+        source.transfer_buffer = transfer;
+        source.pixels_per_row = static_cast<Uint32>(size);
+        source.rows_per_layer = static_cast<Uint32>(size);
+        SDL_GPUTextureRegion destination{};
+        destination.texture = texture;
+        destination.w = static_cast<Uint32>(size);
+        destination.h = static_cast<Uint32>(size);
+        destination.d = static_cast<Uint32>(size);
+        SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
+        SDL_EndGPUCopyPass(copy_pass);
+        if (!SDL_SubmitGPUCommandBuffer(commands)) {
+            FatalSdlError("cannot submit cloud noise upload");
+        }
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        return texture;
+    }
+
+    void CreateCloudTextures() {
+        if (cloud_shape != nullptr) {
+            return;
+        }
+        cloud_shape = CreateVolume(64, MakeCloudShapeNoise(64, 1u));
+        cloud_detail = CreateVolume(32, MakeCloudDetailNoise(32, 2u));
+        const std::vector<std::uint8_t> weather = MakeCloudWeatherMap(256, 3u);
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = 256;
+        info.height = 256;
+        info.layer_count_or_depth = 1;
+        info.num_levels = 1;
+        cloud_weather = SDL_CreateGPUTexture(device, &info);
+        if (cloud_weather == nullptr) {
+            FatalSdlError("cannot create cloud weather map");
+        }
+        SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(weather.data(), static_cast<Uint32>(weather.size()));
+        SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        SDL_GPUTextureTransferInfo source{};
+        source.transfer_buffer = transfer;
+        source.pixels_per_row = 256;
+        source.rows_per_layer = 256;
+        SDL_GPUTextureRegion destination{};
+        destination.texture = cloud_weather;
+        destination.w = 256;
+        destination.h = 256;
+        destination.d = 1;
+        SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
+        SDL_EndGPUCopyPass(copy_pass);
+        if (!SDL_SubmitGPUCommandBuffer(commands)) {
+            FatalSdlError("cannot submit cloud weather upload");
+        }
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+    }
 
     // Temporal anti-aliasing: two images written in turn, each frame reading the other as
     // its history, the previous frame's camera (without its shift), and the frame count
@@ -771,6 +898,12 @@ struct Renderer::Impl {
         }
         water_scene_copy = CreateTarget(kSceneFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                         "copy of the scene for water");
+        const float cloud_scale = glm::clamp(config.cloud_resolution, 0.125f, 1.0f);
+        cloud_target = CreateTarget(kSceneFormat, drawn_and_read, glm::max(8, static_cast<int>(static_cast<float>(width) * cloud_scale)),
+                                    glm::max(8, static_cast<int>(static_cast<float>(height) * cloud_scale)), SDL_GPU_SAMPLECOUNT_1,
+                                    nullptr, "cloud image");
+        cloud_shadow_target = CreateTarget(SDL_GPU_TEXTUREFORMAT_R8_UNORM, drawn_and_read, 256, 256, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                           "cloud shadow image");
         water_depth_copy = CreateTarget(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1,
                                         nullptr, "copy of the depth for water");
 
@@ -835,8 +968,17 @@ struct Renderer::Impl {
         linear_clamp_info.mag_filter = SDL_GPU_FILTER_LINEAR;
         linear_clamp_sampler = SDL_CreateGPUSampler(device, &linear_clamp_info);
 
+        SDL_GPUSamplerCreateInfo repeat_info{};
+        repeat_info.min_filter = SDL_GPU_FILTER_LINEAR;
+        repeat_info.mag_filter = SDL_GPU_FILTER_LINEAR;
+        repeat_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        repeat_info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        repeat_info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        repeat_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        repeat_sampler = SDL_CreateGPUSampler(device, &repeat_info);
+
         if (texture_sampler == nullptr || shadow_sampler == nullptr || clamp_sampler == nullptr ||
-            linear_clamp_sampler == nullptr) {
+            linear_clamp_sampler == nullptr || repeat_sampler == nullptr) {
             FatalSdlError("cannot create sampler");
         }
     }
@@ -902,7 +1044,7 @@ struct Renderer::Impl {
     void CreatePipelines() {
         SDL_GPUShader* mesh_vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil),
                                                   kMeshVertSpirv, sizeof(kMeshVertSpirv));
-        SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 2, kMeshFragDxil,
+        SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kMeshFragDxil,
                                                     sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
         SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
                                                       sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
@@ -1050,7 +1192,7 @@ struct Renderer::Impl {
         // ("greater or equal" with reversed depth: the surface the depth pass kept) before
         // the shader runs, writing no depth.
         SDL_GPUShader* after_depth_fragment =
-            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
+            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
                          kMeshAfterDepthFragSpirv, sizeof(kMeshAfterDepthFragSpirv));
         after_depth_info = mesh_info;
         after_depth_info.fragment_shader = after_depth_fragment;
@@ -1096,7 +1238,7 @@ struct Renderer::Impl {
         SDL_GPUShader* terrain_vertex =
             CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 1, 3, kTerrainVertDxil, sizeof(kTerrainVertDxil), kTerrainVertSpirv,
                          sizeof(kTerrainVertSpirv), 1);
-        SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kTerrainFragDxil,
+        SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 2, kTerrainFragDxil,
                                                        sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv));
         const auto create_terrain = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUShader* fragment,
                                         SDL_GPUCullMode cull_mode) {
@@ -1121,7 +1263,7 @@ struct Renderer::Impl {
         SDL_GPUShader* impostor_vertex =
             CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kImpostorVertDxil, sizeof(kImpostorVertDxil), kImpostorVertSpirv,
                          sizeof(kImpostorVertSpirv), 1);
-        SDL_GPUShader* impostor_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kImpostorFragDxil,
+        SDL_GPUShader* impostor_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 6, 2, kImpostorFragDxil,
                                                         sizeof(kImpostorFragDxil), kImpostorFragSpirv, sizeof(kImpostorFragSpirv));
         SDL_GPUShader* impostor_depth_fragment =
             CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kImpostorDepthFragDxil, sizeof(kImpostorDepthFragDxil),
@@ -1141,7 +1283,7 @@ struct Renderer::Impl {
         impostor_pipelines[kScenePass] = create_impostor(mesh_info, impostor_fragment);
         impostor_pipelines[kDepthPass] = create_impostor(prepass_info, impostor_depth_fragment);
         SDL_GPUShader* impostor_after_depth_fragment =
-            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
+            CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 6, 2, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
                          kImpostorAfterDepthFragSpirv, sizeof(kImpostorAfterDepthFragSpirv));
         impostor_pipelines[kSceneAfterDepthPass] = create_impostor(after_depth_info, impostor_after_depth_fragment);
         SDL_ReleaseGPUShader(device, impostor_after_depth_fragment);
@@ -1197,7 +1339,7 @@ struct Renderer::Impl {
              FullscreenBlend::Replace},
             {&ao_blur_pipeline, 2, kAoBlurFragDxil, sizeof(kAoBlurFragDxil), kAoBlurFragSpirv, sizeof(kAoBlurFragSpirv),
              kAoFormat, FullscreenBlend::Replace},
-            {&fog_pipeline, 2, kFogFragDxil, sizeof(kFogFragDxil), kFogFragSpirv, sizeof(kFogFragSpirv), kSceneFormat,
+            {&fog_pipeline, 3, kFogFragDxil, sizeof(kFogFragDxil), kFogFragSpirv, sizeof(kFogFragSpirv), kSceneFormat,
              FullscreenBlend::Replace},
             {&fog_composite_pipeline, 2, kFogCompositeFragDxil, sizeof(kFogCompositeFragDxil), kFogCompositeFragSpirv,
              sizeof(kFogCompositeFragSpirv), kSceneFormat, FullscreenBlend::AddAndDim},
@@ -1211,6 +1353,12 @@ struct Renderer::Impl {
              FullscreenBlend::Replace},
             {&depth_copy_pipeline, 1, kDepthCopyFragDxil, sizeof(kDepthCopyFragDxil), kDepthCopyFragSpirv,
              sizeof(kDepthCopyFragSpirv), SDL_GPU_TEXTUREFORMAT_R32_FLOAT, FullscreenBlend::Replace},
+            {&clouds_pipeline, 4, kCloudsFragDxil, sizeof(kCloudsFragDxil), kCloudsFragSpirv, sizeof(kCloudsFragSpirv), kSceneFormat,
+             FullscreenBlend::Replace},
+            {&cloud_shadow_pipeline, 3, kCloudShadowFragDxil, sizeof(kCloudShadowFragDxil), kCloudShadowFragSpirv,
+             sizeof(kCloudShadowFragSpirv), SDL_GPU_TEXTUREFORMAT_R8_UNORM, FullscreenBlend::Replace},
+            {&clouds_composite_pipeline, 2, kCloudsCompositeFragDxil, sizeof(kCloudsCompositeFragDxil), kCloudsCompositeFragSpirv,
+             sizeof(kCloudsCompositeFragSpirv), kSceneFormat, FullscreenBlend::AddAndDim},
         };
         for (const FullscreenPass& pass : passes) {
             SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, pass.sampler_count, 1, pass.dxil,
@@ -1221,7 +1369,7 @@ struct Renderer::Impl {
 
         // --- Water: a mesh drawn over the single-sample scene, testing and writing depth. ---
         {
-            SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 2, kWaterFragDxil,
+            SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 6, 2, kWaterFragDxil,
                                                          sizeof(kWaterFragDxil), kWaterFragSpirv, sizeof(kWaterFragSpirv));
             SDL_GPUGraphicsPipelineCreateInfo water_info = mesh_info;
             water_info.fragment_shader = water_fragment;
@@ -1510,7 +1658,7 @@ struct Renderer::Impl {
 
             if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
                 const MaterialUniforms material_uniforms = MakeMaterialUniforms(material, temporal_noise_offset);
-                SDL_GPUTextureSamplerBinding bindings[5]{};
+                SDL_GPUTextureSamplerBinding bindings[7]{};
                 bindings[0].texture = GetTexture(material.texture, white_texture);
                 bindings[0].sampler = texture_sampler;
                 if (IsScenePass(mesh_pass)) {
@@ -1523,7 +1671,8 @@ struct Renderer::Impl {
                     bindings[3].sampler = shadow_sampler;
                     bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
                     bindings[4].sampler = clamp_sampler;
-                    SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
+                    AddLightingBindings(&bindings[5]);
+                    SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
                 } else {
                     // The depth-only passes need the material only to cut out leaves.
                     SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
@@ -1593,7 +1742,7 @@ struct Renderer::Impl {
                           0.5f / weight_size.y);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-            SDL_GPUTextureSamplerBinding bindings[7]{};
+            SDL_GPUTextureSamplerBinding bindings[9]{};
             bindings[0].texture = terrain.height_texture;
             bindings[0].sampler = linear_clamp_sampler;
             bindings[1].texture = GetTexture(textured ? look.colors : white_array_texture, white_array_texture);
@@ -1609,7 +1758,8 @@ struct Renderer::Impl {
             bindings[5].sampler = shadow_sampler;
             bindings[6].texture = ao_on ? ao_target : textures[white_texture.id - 1];
             bindings[6].sampler = clamp_sampler;
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
+            AddLightingBindings(&bindings[7]);
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
         } else {
             // The depth-only passes use the leaf-cutting shader with nothing to cut.
             MaterialUniforms material_uniforms{};
@@ -1651,7 +1801,7 @@ struct Renderer::Impl {
         ImpostorMaterial material;
         material.material = glm::vec4(kImpostorAlphaCutoff, kImpostorRoughness, temporal_noise_offset, 0.0f);
 
-        SDL_GPUTextureSamplerBinding bindings[4]{};
+        SDL_GPUTextureSamplerBinding bindings[6]{};
         bindings[0].texture = textures[impostor.color.id - 1];
         bindings[0].sampler = texture_sampler;
         if (IsScenePass(mesh_pass)) {
@@ -1662,7 +1812,8 @@ struct Renderer::Impl {
             bindings[2].sampler = shadow_sampler;
             bindings[3].texture = ao_on ? ao_target : textures[white_texture.id - 1];
             bindings[3].sampler = clamp_sampler;
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 4);
+            AddLightingBindings(&bindings[4]);
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 6);
         } else {
             SDL_PushGPUFragmentUniformData(commands, 0, &material, sizeof(material));
             SDL_BindGPUFragmentSamplers(pass, 0, bindings, 1);
@@ -1961,16 +2112,20 @@ Renderer::~Renderer() {
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->linear_clamp_sampler);
+        SDL_ReleaseGPUSampler(impl_->device, impl_->repeat_sampler);
         for (SDL_GPUGraphicsPipeline* pipeline :
              {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
-              impl_->luminance_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline}) {
+              impl_->luminance_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline,
+              impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
         }
         for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
                                         impl_->luminance_targets[0], impl_->luminance_targets[1], impl_->taa_targets[0],
                                         impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy,
-                                        impl_->no_trample_texture, impl_->trample_texture}) {
+                                        impl_->no_trample_texture, impl_->trample_texture, impl_->cloud_shape, impl_->cloud_detail,
+                                        impl_->cloud_weather, impl_->cloud_target, impl_->cloud_shadow_target,
+                                        impl_->sky_occlusion_texture}) {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
         for (const BloomLevel& level : impl_->bloom_levels) {
@@ -2432,6 +2587,36 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->environment = environment;
     impl_->draw_commands.clear();
     impl_->water_commands.clear();
+    // The sky occlusion map, copied to the card when it changed.
+    if (impl_->sky_occlusion_map != nullptr && impl_->sky_occlusion_map->resolution >= 2) {
+        const SkyOcclusionMap& map = *impl_->sky_occlusion_map;
+        if (impl_->sky_occlusion_texture == nullptr || impl_->sky_occlusion_resolution != map.resolution) {
+            if (impl_->sky_occlusion_texture != nullptr) {
+                SDL_ReleaseGPUTexture(impl_->device, impl_->sky_occlusion_texture);
+            }
+            SDL_GPUTextureCreateInfo info{};
+            info.type = SDL_GPU_TEXTURETYPE_2D;
+            info.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+            info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            info.width = static_cast<Uint32>(map.resolution);
+            info.height = static_cast<Uint32>(map.resolution);
+            info.layer_count_or_depth = 1;
+            info.num_levels = 1;
+            impl_->sky_occlusion_texture = SDL_CreateGPUTexture(impl_->device, &info);
+            if (impl_->sky_occlusion_texture == nullptr) {
+                FatalSdlError("cannot create sky occlusion texture");
+            }
+            impl_->sky_occlusion_resolution = map.resolution;
+            impl_->sky_occlusion_version = 0xFFFFFFFFu;
+        }
+        if (impl_->sky_occlusion_version != map.version) {
+            impl_->UploadR8(impl_->sky_occlusion_texture, map.values.data(), map.resolution);
+            impl_->sky_occlusion_version = map.version;
+        }
+    }
+    if (impl_->environment.clouds && impl_->environment.draw_sky) {
+        impl_->CreateCloudTextures();
+    }
     // The trample map, copied to the card when it changed.
     if (impl_->trample_map == nullptr) {
         impl_->trample_info = glm::vec4(0.0f);
@@ -3078,6 +3263,18 @@ void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transfor
     impl_->draw_commands.push_back(command);
 }
 
+void Renderer::PrepareClouds() {
+    if (impl_->in_frame) {
+        FatalError("Renderer::PrepareClouds: call it outside BeginFrame and EndFrame");
+    }
+    impl_->CreateCloudTextures();
+}
+
+void Renderer::SetSkyOcclusion(const SkyOcclusionMap* map) {
+    impl_->sky_occlusion_map = map;
+    impl_->sky_occlusion_version = 0xFFFFFFFFu;
+}
+
 void Renderer::SetTrampleMap(const TrampleMap* map) {
     impl_->trample_map = map;
     impl_->trample_version = 0xFFFFFFFFu;
@@ -3260,12 +3457,52 @@ void Renderer::EndFrame() {
     const bool ao_on = environment.ambient_occlusion && !impl.draw_commands.empty();
     const bool fog_on = environment.volumetric_fog && environment.fog_density > 0.0f;
 
+    // --- Pass 1b: cloud shadows. For the land around the camera, the share of sunlight the
+    // clouds let through; every lit surface (and the fog) reads it. ---
+    const bool clouds_on = environment.clouds && environment.draw_sky && impl.cloud_shape != nullptr;
+    CloudUniforms cloud_uniforms{};
+    const float cloud_shadow_size = 8000.0f;
+    const glm::vec2 cloud_shadow_corner =
+        glm::floor((glm::vec2(camera.position.x, camera.position.z) - cloud_shadow_size * 0.5f) / 64.0f) * 64.0f;
+    if (clouds_on) {
+        const glm::vec2 wind = glm::length(environment.wind_direction) > 0.0f ? glm::normalize(environment.wind_direction)
+                                                                             : glm::vec2(1.0f, 0.0f);
+        const glm::vec2 drift = -wind * environment.cloud_speed * environment.wind_time;
+        cloud_uniforms.inverse_view_projection = glm::inverse(view_projection);
+        cloud_uniforms.camera_position = glm::vec4(camera.position, impl.temporal_noise_offset * 0.6180339f);
+        cloud_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
+        cloud_uniforms.light_color = ToVec4(light.color);
+        cloud_uniforms.sky_zenith = ToVec4(environment.sky_zenith) * environment.sky_light_intensity;
+        cloud_uniforms.sky_horizon = ToVec4(environment.sky_horizon) * environment.sky_light_intensity;
+        cloud_uniforms.layer = glm::vec4(environment.cloud_bottom, glm::max(environment.cloud_top, environment.cloud_bottom + 10.0f),
+                                         glm::clamp(environment.cloud_coverage, 0.0f, 1.0f), environment.cloud_density);
+        cloud_uniforms.shape = glm::vec4(environment.cloud_size, environment.cloud_size * 2.0f, drift.x, drift.y);
+        cloud_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.cloud_steps, 4, 256)),
+                                           static_cast<float>(glm::clamp(environment.cloud_light_steps, 1, 16)), 40000.0f, 0.0f);
+        cloud_uniforms.shadow_area = glm::vec4(cloud_shadow_corner, cloud_shadow_size, 0.0f);
+        if (environment.cloud_shadows) {
+            SDL_GPUTextureSamplerBinding bindings[3]{};
+            bindings[0].texture = impl.cloud_shape;
+            bindings[0].sampler = impl.repeat_sampler;
+            bindings[1].texture = impl.cloud_detail;
+            bindings[1].sampler = impl.repeat_sampler;
+            bindings[2].texture = impl.cloud_weather;
+            bindings[2].sampler = impl.repeat_sampler;
+            impl.DrawFullscreenPass(commands, impl.cloud_shadow_target, false, impl.cloud_shadow_pipeline, bindings, 3, &cloud_uniforms,
+                                    sizeof(cloud_uniforms));
+        }
+    }
+    impl.frame_cloud_shadow = clouds_on && environment.cloud_shadows ? impl.cloud_shadow_target : impl.textures[impl.white_texture.id - 1];
+    impl.frame_sky_occlusion = impl.sky_occlusion_map != nullptr && impl.sky_occlusion_texture != nullptr
+                                   ? impl.sky_occlusion_texture
+                                   : impl.textures[impl.white_texture.id - 1];
+
     // --- Pass 2: depth of the scene, for ambient occlusion, fog and temporal anti-aliasing,
     // and without multisampling also for the scene pass itself: it then tests this depth
     // before shading, so each pixel is lit once instead of once per leaf behind it. ---
     const bool scene_after_depth = impl.msaa_samples == 1;
     const bool water_on = !impl.water_commands.empty();
-    if (ao_on || fog_on || taa_on || scene_after_depth || water_on) {
+    if (ao_on || fog_on || taa_on || scene_after_depth || water_on || (environment.clouds && environment.draw_sky)) {
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.prepass_depth;
         depth_info.clear_depth = 0.0f;  // reversed depth
@@ -3389,6 +3626,19 @@ void Renderer::EndFrame() {
         frame_uniforms.cascade_far = cascades.far_distance;
         frame_uniforms.cascade_texel = cascades.texel_size;
         frame_uniforms.cascade_scale = cascades.tile_scale;
+        frame_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
+                                                     clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
+        if (impl.sky_occlusion_map != nullptr && impl.sky_occlusion_texture != nullptr) {
+            const SkyOcclusionMap& map = *impl.sky_occlusion_map;
+            const float extent = static_cast<float>(map.resolution - 1) * map.spacing;
+            // Texel centers lie on the map's points: shift by half a texel.
+            const float texel = map.spacing;
+            frame_uniforms.sky_occlusion_area = glm::vec4(map.origin - glm::vec2(texel * 0.5f), 1.0f / (extent + texel), 1.0f);
+        }
+        frame_uniforms.aerial = glm::vec4(environment.sky_horizon.r * environment.sky_light_intensity,
+                                          environment.sky_horizon.g * environment.sky_light_intensity,
+                                          environment.sky_horizon.b * environment.sky_light_intensity, environment.aerial_density);
+        frame_uniforms.foliage = glm::vec4(environment.foliage_translucency, 0.0f, 0.0f, 0.0f);
         frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
         frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
         frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
@@ -3402,6 +3652,16 @@ void Renderer::EndFrame() {
         } else {
             frame_uniforms.ambient_sky = ToVec4(light.ambient);
             frame_uniforms.ambient_ground = ToVec4(light.ambient);
+        }
+        if (clouds_on) {
+            // Under clouds the sky's light is greyer and softer: its color moves towards its own
+            // brightness, by up to half at full coverage.
+            const float cover = glm::clamp(environment.cloud_coverage, 0.0f, 1.0f) * 0.5f;
+            const auto greyer = [cover](glm::vec4 color) {
+                const float brightness = color.x * 0.2126f + color.y * 0.7152f + color.z * 0.0722f;
+                return glm::mix(color, glm::vec4(brightness * 1.1f, brightness * 1.1f, brightness * 1.1f, color.w), cover);
+            };
+            frame_uniforms.ambient_sky = greyer(frame_uniforms.ambient_sky);
         }
         frame_uniforms.sky_zenith = ToVec4(environment.sky_zenith) * environment.sky_light_intensity;
         frame_uniforms.sky_horizon = ToVec4(environment.sky_horizon) * environment.sky_light_intensity;
@@ -3427,7 +3687,7 @@ void Renderer::EndFrame() {
             const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material, impl.temporal_noise_offset);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-            SDL_GPUTextureSamplerBinding bindings[5]{};
+            SDL_GPUTextureSamplerBinding bindings[7]{};
             bindings[0].texture = impl.GetTexture(material.texture, impl.white_texture);
             bindings[0].sampler = impl.texture_sampler;
             bindings[1].texture = impl.GetTexture(material.normal_texture, impl.flat_normal_texture);
@@ -3438,7 +3698,8 @@ void Renderer::EndFrame() {
             bindings[3].sampler = impl.shadow_sampler;
             bindings[4].texture = ao_on ? impl.ao_target : impl.textures[impl.white_texture.id - 1];
             bindings[4].sampler = impl.clamp_sampler;
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 5);
+            impl.AddLightingBindings(&bindings[5]);
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
             impl.DrawCommandGeometry(pass, command);
         }
         impl.DrawInstanceBatches(commands, pass, scene_after_depth ? kSceneAfterDepthPass : kScenePass, 0, ao_on,
@@ -3489,7 +3750,7 @@ void Renderer::EndFrame() {
         vertex_frame_uniforms.trample = impl.trample_info;
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
         SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
-        SDL_GPUTextureSamplerBinding bindings[4]{};
+        SDL_GPUTextureSamplerBinding bindings[6]{};
         bindings[0].texture = impl.water_scene_copy;
         bindings[0].sampler = impl.linear_clamp_sampler;
         bindings[1].texture = impl.water_depth_copy;
@@ -3498,7 +3759,8 @@ void Renderer::EndFrame() {
         bindings[2].sampler = impl.shadow_sampler;
         bindings[3].texture = white;
         bindings[3].sampler = impl.clamp_sampler;
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 4);
+        impl.AddLightingBindings(&bindings[4]);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 6);
         const glm::mat4 inverse_view_projection = glm::inverse(view_projection);
         for (const WaterCommand& command : impl.water_commands) {
             const Mesh& mesh = impl.meshes[command.mesh_id - 1];
@@ -3534,6 +3796,31 @@ void Renderer::EndFrame() {
         SDL_EndGPURenderPass(pass);
     }
 
+    // --- Pass 4c: clouds, walked at a smaller size where the sky shows, then laid over it. ---
+    if (clouds_on) {
+        cloud_uniforms.quality.w = static_cast<float>(width);
+        cloud_uniforms.shadow_area.w = static_cast<float>(height);
+        SDL_GPUTextureSamplerBinding bindings[4]{};
+        bindings[0].texture = impl.prepass_depth;
+        bindings[0].sampler = impl.clamp_sampler;
+        bindings[1].texture = impl.cloud_shape;
+        bindings[1].sampler = impl.repeat_sampler;
+        bindings[2].texture = impl.cloud_detail;
+        bindings[2].sampler = impl.repeat_sampler;
+        bindings[3].texture = impl.cloud_weather;
+        bindings[3].sampler = impl.repeat_sampler;
+        impl.DrawFullscreenPass(commands, impl.cloud_target, false, impl.clouds_pipeline, bindings, 4, &cloud_uniforms,
+                                sizeof(cloud_uniforms));
+        SDL_GPUTextureSamplerBinding composite[2]{};
+        composite[0].texture = impl.cloud_target;
+        composite[0].sampler = impl.linear_clamp_sampler;
+        composite[1].texture = impl.prepass_depth;
+        composite[1].sampler = impl.clamp_sampler;
+        const glm::vec4 no_uniforms(0.0f);
+        impl.DrawFullscreenPass(commands, scene_image, true, impl.clouds_composite_pipeline, composite, 2, &no_uniforms,
+                                sizeof(no_uniforms));
+    }
+
     // --- Pass 5: volumetric fog at half resolution, then laid over the scene. ---
     if (fog_on) {
         FogUniforms fog_uniforms{};
@@ -3555,12 +3842,16 @@ void Renderer::EndFrame() {
         fog_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, glm::min(kFogWalkDistance, camera.far_plane), width,
                                          height);
         fog_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.fog_steps, 4, 128)), 0.0f, 0.0f, 0.0f);
-        SDL_GPUTextureSamplerBinding bindings[2]{};
+        fog_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
+                                                   clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
+        SDL_GPUTextureSamplerBinding bindings[3]{};
         bindings[0].texture = impl.prepass_depth;
         bindings[0].sampler = impl.clamp_sampler;
         bindings[1].texture = impl.shadow_atlas;
         bindings[1].sampler = impl.shadow_sampler;
-        impl.DrawFullscreenPass(commands, impl.fog_target, false, impl.fog_pipeline, bindings, 2, &fog_uniforms,
+        bindings[2].texture = impl.frame_cloud_shadow;
+        bindings[2].sampler = impl.linear_clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.fog_target, false, impl.fog_pipeline, bindings, 3, &fog_uniforms,
                                 sizeof(fog_uniforms));
 
         FogCompositeUniforms composite_uniforms;

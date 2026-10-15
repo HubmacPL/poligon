@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "poligon/renderer.h"
+#include "poligon/sky_occlusion.h"
 #include "test_support.h"
 
 namespace {
@@ -247,6 +248,134 @@ int main(int argc, char** argv) {
             std::printf("  floor under the far slab has red %d, open floor beside it %d\n", dark, bright);
         }
         Expect(dark + 60 <= bright, "a far cascade at half resolution puts the shadow under its caster");
+    }
+
+    // --- Clouds, their shadows, the haze of distance and sky occlusion ---
+    {
+        poligon::Renderer renderer(MakeConfig(backend));
+        renderer.PrepareClouds();
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        poligon::DirectionalLight sun;
+        sun.direction = {0.0f, -1.0f, 0.0f};
+        sun.color = {1.0f, 1.0f, 1.0f, 1.0f};
+        poligon::Environment environment;
+        environment.draw_sky = true;
+        environment.sky_light = true;
+        environment.sky_light_intensity = 0.3f;
+        environment.shadows = false;
+        const auto mean_of = [](const poligon::Image& image) {
+            double sum[3] = {0.0, 0.0, 0.0};
+            for (size_t i = 0; i < image.pixels.size(); i += 4) {
+                for (int c = 0; c < 3; ++c) {
+                    sum[c] += image.pixels[i + static_cast<size_t>(c)];
+                }
+            }
+            const double count = static_cast<double>(image.pixels.size() / 4);
+            return glm::vec3(static_cast<float>(sum[0] / count), static_cast<float>(sum[1] / count), static_cast<float>(sum[2] / count));
+        };
+
+        // Looking straight up: a clear sky is blue; under full cover it turns grey-white.
+        poligon::Camera up;
+        up.position = {0.0f, 2.0f, 0.0f};
+        up.target = {0.0f, 100.0f, 0.0f};
+        up.up = {0.0f, 0.0f, -1.0f};
+        poligon::Image clear_sky;
+        poligon::Image cloudy_sky;
+        for (int pass = 0; pass < 2; ++pass) {
+            environment.clouds = pass == 1;
+            environment.cloud_coverage = 1.0f;
+            environment.cloud_density = 0.05f;
+            renderer.BeginFrame(up, sun, environment);
+            renderer.EndFrame();
+            renderer.CaptureFrame(pass == 0 ? clear_sky : cloudy_sky);
+        }
+        const glm::vec3 clear = mean_of(clear_sky);
+        const glm::vec3 cloudy = mean_of(cloudy_sky);
+        if (!(clear.z > clear.x + 40.0f && cloudy.z - cloudy.x < (clear.z - clear.x) * 0.6f)) {
+            std::printf("  clear sky %.0f %.0f %.0f, cloudy sky %.0f %.0f %.0f\n", clear.x, clear.y, clear.z, cloudy.x, cloudy.y, cloudy.z);
+        }
+        Expect(clear.z > clear.x + 40.0f, "a clear sky is blue");
+        Expect(cloudy.z - cloudy.x < (clear.z - clear.x) * 0.6f, "under full cover the sky turns grey-white");
+
+        // Seen from above, a floor in full sun goes darker in the shadow of full cover.
+        poligon::Camera down;
+        down.position = {0.0f, 30.0f, 0.0f};
+        down.target = {0.0f, 0.0f, 0.0f};
+        down.up = {0.0f, 0.0f, -1.0f};
+        const poligon::Material floor = MakeMatte({0.8f, 0.8f, 0.8f, 1.0f});
+        poligon::Image sunny;
+        poligon::Image shaded;
+        for (int pass = 0; pass < 2; ++pass) {
+            environment.clouds = pass == 1;
+            renderer.BeginFrame(down, sun, environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), floor);
+            renderer.EndFrame();
+            renderer.CaptureFrame(pass == 0 ? sunny : shaded);
+        }
+        const int lit = RedAt(sunny, kSize / 2, kSize / 2);
+        const int under_cloud = RedAt(shaded, kSize / 2, kSize / 2);
+        if (!(under_cloud < lit * 0.7f)) {
+            std::printf("  floor %d in sun, %d under the clouds\n", lit, under_cloud);
+        }
+        Expect(under_cloud < lit * 0.7f, "clouds shade the land under them");
+        environment.clouds = false;
+
+        // The haze of distance: a white floor hundreds of meters away takes the horizon's color.
+        poligon::Camera level;
+        level.position = {0.0f, 3.0f, 0.0f};
+        level.target = {0.0f, 3.0f, -100.0f};  // level: the middle row is the horizon
+        level.far_plane = 6000.0f;
+        environment.sky_horizon = {0.2f, 0.4f, 0.9f, 1.0f};
+        environment.sky_light_intensity = 1.0f;
+        poligon::Image hazy;
+        environment.aerial_density = 0.01f;
+        environment.sky_light = false;  // flat white light: the floor itself is white
+        renderer.BeginFrame(level, MakeFlatLight(1.0f), environment);
+        renderer.DrawMesh(plane, glm::scale(identity, {12000.0f, 1.0f, 12000.0f}), white);
+        renderer.EndFrame();
+        renderer.CaptureFrame(hazy);
+        // Just below the horizon the floor is hundreds of meters away, at the bottom a few.
+        const std::uint8_t* far_floor = &hazy.pixels[static_cast<size_t>((kSize / 2) * kSize + kSize / 2) * 4];
+        const std::uint8_t* near_floor = &hazy.pixels[static_cast<size_t>((kSize - 2) * kSize + kSize / 2) * 4];
+        if (!(far_floor[2] > far_floor[0] + 60 && near_floor[0] > far_floor[0] + 40)) {
+            std::printf("  floor far %d %d %d, near %d %d %d\n", far_floor[0], far_floor[1], far_floor[2], near_floor[0], near_floor[1],
+                        near_floor[2]);
+        }
+        Expect(far_floor[2] > far_floor[0] + 60, "far away the floor takes the haze's blue");
+        Expect(near_floor[0] > far_floor[0] + 40, "near the camera the floor keeps its own white");
+        environment.aerial_density = 0.0f;
+
+        // Sky occlusion: under even sky light only, a floor whose map says it sees a fifth of
+        // the sky is darker than open floor.
+        environment.sky_horizon = {1.0f, 1.0f, 1.0f, 1.0f};
+        environment.sky_zenith = {1.0f, 1.0f, 1.0f, 1.0f};
+        environment.draw_sky = false;
+        environment.sky_light = true;
+        poligon::SkyOcclusionMap occlusion;
+        occlusion.resolution = 64;
+        occlusion.spacing = 1.0f;
+        occlusion.origin = {-32.0f, -32.0f};
+        occlusion.values.assign(64u * 64u, 255);
+        for (int z = 0; z < 64; ++z) {
+            for (int x = 32; x < 64; ++x) {
+                occlusion.values[static_cast<size_t>(z * 64 + x)] = 51;  // the east half sees a fifth
+            }
+        }
+        occlusion.version = 1;
+        renderer.SetSkyOcclusion(&occlusion);
+        poligon::DirectionalLight dark_sun;
+        dark_sun.color = {0.0f, 0.0f, 0.0f, 1.0f};
+        renderer.BeginFrame(down, dark_sun, environment);
+        renderer.DrawMesh(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), floor);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        renderer.SetSkyOcclusion(nullptr);
+        const int open = RedAt(frame, kSize / 4, kSize / 2);
+        const int hidden = RedAt(frame, kSize * 3 / 4, kSize / 2);
+        if (!(hidden < open * 0.5f && open > 60)) {
+            std::printf("  open floor %d, floor that sees a fifth of the sky %d\n", open, hidden);
+        }
+        Expect(open > 60 && hidden < open * 0.5f, "floor that sees less sky gets less sky light");
     }
 
     // --- Bloom ---
