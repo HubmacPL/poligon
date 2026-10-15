@@ -39,6 +39,7 @@ SamplerState orm_sampler : register(s2, space2);
 cbuffer MaterialUniforms : register(b1, space3) {
     float4 material_factors;  // x: metallic, y: roughness, z: alpha cutoff, w: the frame's noise offset
     float4 material_flags;    // x: has normal map, y: has ORM texture, z: ORM red is occlusion, w: thin foliage (1; 2: back faces keep the normal)
+    float4 material_shading;  // x: how far the normal turns towards straight up
 };
 
 struct FragmentInput {
@@ -97,6 +98,10 @@ float4 main(FragmentInput input) : SV_Target0 {
     // unless the material keeps it (grass blades with normals pointing up).
     bool flip_normal = !input.is_front_face && material_flags.w < 1.5;
     surface.surface_normal = normalize(input.world_normal) * (flip_normal ? -1.0 : 1.0);
+    if (material_shading.x > 0.0) {
+        // Grass and low plants: lit like the ground they stand on.
+        surface.surface_normal = normalize(lerp(surface.surface_normal, float3(0.0, 1.0, 0.0), material_shading.x) + float3(0.0, 1e-4, 0.0));
+    }
     surface.normal = surface.surface_normal;
     if (material_flags.x > 0.5) {
         // x and y from the map, z rebuilt (two-channel compressed maps hold no z).

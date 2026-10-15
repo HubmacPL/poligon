@@ -16,6 +16,7 @@ SamplerState normal_sampler : register(s1, space2);
 cbuffer MaterialUniforms : register(b0, space3) {
     float4 material_factors;  // z: alpha cutoff
     float4 material_flags;    // x: has normal map
+    float4 material_shading;
 };
 
 struct FragmentInput {

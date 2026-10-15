@@ -366,6 +366,10 @@ struct Material {
     // to it right after). For grass: the screen-space method takes a thin blade for a solid
     // wall and would blacken both the blade and the ground around it.
     bool casts_ambient_occlusion = true;
+    // 0 to 1: how far the normal is turned towards straight up before lighting, on both
+    // sides. Grass at 1 is lit like the flat ground it stands on, whichever way its cards
+    // or blades face; low plants such as ferns look right at about 0.5.
+    float normal_up = 0.0f;
 
     // 0 = non-metal (wood, stone, leaves), 1 = bare metal.
     float metallic = 0.0f;

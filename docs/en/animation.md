@@ -37,7 +37,7 @@ poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices())
 - The work is done by the ozz-animation library (MIT); nothing of it shows outside `animation.cpp`. Clips are stored compressed, so a pose comes back with an error of a fraction of a millimeter per meter. Between two keys rotations are mixed along a straight line and normalized, which is exact enough for keys as close together as animation files have them.
 - A clip that does not name a joint, or one of its three parts, leaves that part in its rest pose.
 - Viewer: `model_viewer FILE TURN TILT DISTANCE CLIP` plays the named clip; C switches to the next one. With `--headless --ticks N` the picture is taken N sixtieths of a second into the clip.
-- `forest_scene` has four foxes in the clearing (two moving around it, one standing, one howling). It uses the realistic fox in `poligon-assets/sketchfab/fox_realistic_demo` (FBX, 103 joints) when it is there, otherwise the Khronos sample in `poligon-assets/khronos/fox`.
+- `forest_scene` has four foxes in the clearing (two moving around it, one standing, one howling). It uses the realistic fox in `poligon-assets/source/sketchfab/fox_realistic_demo` (FBX, 103 joints) when it is there, otherwise the Khronos sample in `poligon-assets/source/khronos/fox`.
 
 ## From pose to picture
 

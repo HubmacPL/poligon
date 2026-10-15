@@ -5,7 +5,7 @@
 //
 // NODE_MODULES   folder holding the installed packages @dgreenheck/ez-tree and three
 //                (they are installed outside the repository, in poligon-assets/tools/eztree)
-// ASSETS_FOLDER  the poligon-assets folder; texture paths in the recipe are relative to it
+// ASSETS_FOLDER  the asset sources, poligon-assets/source; texture paths in the recipe are relative to it
 // RECIPE.json    what to make; ours are in tools/assets/trees/ (format below)
 //
 // Writes ASSETS_FOLDER/generated/NAME/NAME.gltf (full detail, with its textures) and

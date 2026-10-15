@@ -5,7 +5,7 @@
 // Cooks every asset whose cooked file is missing or older than its sources or the list,
 // and with --pack also writes one archive of the whole cooked folder. Prints what it did;
 // exit code 1 when an asset failed (the others are still cooked).
-// Example: asset_cooker tools/forest_scene/assets.txt ../poligon-assets build/cooked
+// Example: asset_cooker tools/forest_scene/assets.txt ../poligon-assets/source ../poligon-assets/cooked
 #include <chrono>
 #include <cstdio>
 #include <cstring>

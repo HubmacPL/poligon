@@ -168,8 +168,13 @@ int main() {
             poligon::Vegetation vegetation;
             poligon::PlantSettings settings;
             settings.split_variants = true;
+            settings.normal_up = 0.7f;
+            settings.casts_ambient_occlusion = false;
             const size_t expected = model == &grass ? 6 : 3;
-            Expect(poligon::MakePlantKind(loaded, settings, vegetation).variants.size() == expected, "each tuft or clump is a variant");
+            const poligon::PlantKind kind = poligon::MakePlantKind(loaded, settings, vegetation);
+            Expect(kind.variants.size() == expected, "each tuft or clump is a variant");
+            const poligon::Material& material = kind.variants[0].species.levels[0].parts[0].material;
+            Expect(material.normal_up == 0.7f && !material.casts_ambient_occlusion, "the kind's lighting settings reach its materials");
         }
         Expect(poligon::MakeGrassModel(7u, 2, 0.4f, 0.8f, 8, 14).meshes[1].vertices[3].position ==
                    poligon::MakeGrassModel(7u, 2, 0.4f, 0.8f, 8, 14).meshes[1].vertices[3].position,

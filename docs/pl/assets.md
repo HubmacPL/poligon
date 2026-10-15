@@ -4,7 +4,16 @@ Jak gra nazywa, przygotowuje i wczytuje swoje tekstury i modele, jak z modeli po
 
 Nagłówki: `poligon/assets.h`, `poligon/texture_compression.h`, `poligon/plants.h`, `poligon/level.h`. Narzędzie: `asset_cooker`. Przykład: `examples/assets`. Test: `tests/assets_test.cpp`.
 
-**Stan (ustalone 2026-10-14, zbudowane 2026-10-15):** jedna lista nazywa każdy asset z jego źródłem i ustawieniami; wypiekacz zamienia źródła w szybko wczytujące się pliki ze skompresowanymi teksturami; gra wczytuje po nazwie przez jedną bibliotekę, z folderu wypieczonego albo z archiwum; rośliny z modeli robi silnik; plik poziomu trzyma ustawienia terenu, start gracza, rzeczy postawione ręcznie i reguły sadzenia ([vegetation.md](vegetation.md)). Jeszcze nie: animacje wypiekane jako archiwa ozz (klipy są zapisane jako klucze i zamieniane w animacje ozz przy wczytaniu), podział folderu danych na połówki źródłową i wypieczoną (czeka na decyzję autora: wypieczone pliki trafiają teraz do `build/cooked`, źródła zostają w `poligon-assets` bez zmian).
+**Stan (ustalone 2026-10-14, zbudowane 2026-10-15):** jedna lista nazywa każdy asset z jego źródłem i ustawieniami; wypiekacz zamienia źródła w szybko wczytujące się pliki ze skompresowanymi teksturami; gra wczytuje po nazwie przez jedną bibliotekę, z folderu wypieczonego albo z archiwum; rośliny z modeli robi silnik; plik poziomu trzyma ustawienia terenu, start gracza, rzeczy postawione ręcznie i reguły sadzenia ([vegetation.md](vegetation.md)). Jeszcze nie: animacje wypiekane jako archiwa ozz (klipy są zapisane jako klucze i zamieniane w animacje ozz przy wczytaniu). Folder danych został podzielony na połówki źródłową i wypieczoną 2026-10-16 (zob. niżej).
+
+## Folder danych
+
+Dane gry leżą poza repozytorium, w `poligon-assets` obok folderu projektu, w dwóch połówkach:
+
+- `source/`: to, na co wskazują linie `source` listy assetów, względem niego. Pobrane pliki (`polyhaven/`, `ambientcg/`, `sketchfab/`, `khronos/`), pliki zrobione naszymi narzędziami (`generated/` drzewa, `lods/` prostsze poziomy, `impostors/`, `prepared/` naprawione tekstury) i dane wysokości (`terrain/`).
+- `cooked/`: to, co zapisuje wypiekacz i wczytuje gra. Można go w każdej chwili usunąć; następne uruchomienie wypiecze go od nowa.
+
+Obok są foldery robocze, które nie są danymi gry: `previews/` i `thumbnails/` (obrazki do oceny), `tools/` (EZ-Tree i three.js dla make_tree.mjs), `superseded/` (stare wersje zachowane do porównań). Wygenerowany teren `forest_scene` to pamięć podręczna w `build/terrain_cache`.
 
 ## Lista assetów
 
@@ -42,7 +51,7 @@ impostor impostors/pine.impostor
 
 ```cpp
 poligon::AssetLibrary library;
-library.Open("build/cooked", error);          // folder wypieczony albo archiwum
+library.Open("../poligon-assets/cooked", error);  // folder wypieczony albo archiwum
 const poligon::LoadedModel* pine = library.LoadModel(renderer, "trees/pine", error);
 poligon::TextureHandle floor = library.LoadTexture(renderer, "ground/forest_floor_color", error);
 const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color", error);  // np. do tablic tekstur

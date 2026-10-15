@@ -196,6 +196,27 @@ int main(int argc, char** argv) {
                         std::printf("  back face pixel has red %d\n", red);
                     }
                 }
+
+                // A wall facing the camera, with the sun straight above: edge-on to the sun
+                // it gets no sunlight, unless normal_up turns its normal up (grass cards).
+                poligon::Camera front;
+                front.position = {0.0f, 0.0f, 3.0f};
+                front.target = {0.0f, 0.0f, 0.0f};
+                const glm::mat4 wall = glm::scale(glm::rotate(identity, glm::radians(90.0f), {1.0f, 0.0f, 0.0f}), {40.0f, 1.0f, 40.0f});
+                for (int up = 0; up < 2; ++up) {
+                    poligon::Material card = white;
+                    card.normal_up = up == 1 ? 1.0f : 0.0f;
+                    renderer.BeginFrame(front, sun, environment);
+                    renderer.DrawMesh(plane, wall, card);
+                    renderer.EndFrame();
+                    renderer.CaptureFrame(frame);
+                    const int red = RedAt(frame, kSize / 2, kSize / 2);
+                    if ((up == 0 && red >= 30) || (up == 1 && red <= 200)) {
+                        std::printf("  wall pixel has red %d\n", red);
+                    }
+                    Expect(up == 0 ? red < 30 : red > 200, up == 0 ? "a wall edge-on to the sun gets no sunlight"
+                                                                   : "with normal_up 1 the wall is lit like the ground");
+                }
             }
 
             // Tinting by shadow cascade: with a 40 m range the cascades end at about 4.6, 9.9,

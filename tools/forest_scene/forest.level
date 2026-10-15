@@ -17,13 +17,25 @@ object rocks/boulder 3538 5112 40 2.2
 object rocks/boulder 3585 5121 160 1.8
 object rocks/boulder 3572 5096 275 2.6
 
-# --- Trees: one grid of 9 m for all four, out to 1200 m from the start. Pines on drier
+# --- Trees: one grid of 9 m for all of them, out to 1200 m from the start. Pines on drier
 # ground, spruces and birches where it is wetter, oaks on gentle slopes; none on steep
-# gully walls, in the water or right at the shore. ---
+# gully walls, in the water or right at the shore. Each kind has two trees (the second with
+# _b), half the density each, growing in the same clumps. ---
 plant trees/pine
 group trees
 spacing 9
-density 0.0055
+density 0.00275
+scale 0.8 1.2
+slope 0 30 4
+moisture 0 0.35 0.15
+water_distance 10 1e9 6
+water_depth 0 0 0.01
+patch 350 0.75
+area 1200
+
+plant trees/pine_b
+group trees
+density 0.00275
 scale 0.8 1.2
 slope 0 30 4
 moisture 0 0.35 0.15
@@ -34,7 +46,18 @@ area 1200
 
 plant trees/spruce
 group trees
-density 0.0035
+density 0.00175
+scale 0.8 1.2
+slope 0 30 4
+moisture 0.25 1 0.1
+water_distance 8 1e9 6
+water_depth 0 0 0.01
+patch 160 0.55
+area 1200
+
+plant trees/spruce_b
+group trees
+density 0.00175
 scale 0.8 1.2
 slope 0 30 4
 moisture 0.25 1 0.1
@@ -45,7 +68,18 @@ area 1200
 
 plant trees/birch
 group trees
-density 0.0025
+density 0.00125
+scale 0.8 1.2
+slope 0 28 4
+moisture 0.2 0.8 0.1
+water_distance 6 1e9 4
+water_depth 0 0 0.01
+patch 90 0.5
+area 1200
+
+plant trees/birch_b
+group trees
+density 0.00125
 scale 0.8 1.2
 slope 0 28 4
 moisture 0.2 0.8 0.1
@@ -56,7 +90,18 @@ area 1200
 
 plant trees/oak
 group trees
-density 0.002
+density 0.001
+scale 0.8 1.2
+slope 0 18 4
+moisture 0.1 0.5 0.1
+water_distance 12 1e9 6
+water_depth 0 0 0.01
+patch 220 0.5
+area 1200
+
+plant trees/oak_b
+group trees
+density 0.001
 scale 0.8 1.2
 slope 0 18 4
 moisture 0.1 0.5 0.1
@@ -183,6 +228,27 @@ slope 0 20 3
 moisture 0.15 0.8 0.1
 water_depth 0 0 0.01
 patch 30 0.35
+
+# Downloaded grass clumps (Poly Haven): green clumps on most open ground, pale dry ones
+# on drier ground.
+cover plants/grass_medium
+density 2
+scale 1 1.6
+slope 0 35 3
+moisture 0.1 1 0.08
+water_depth 0 0 0.01
+patch 25 0.6
+align 1
+every_nth 2
+
+cover plants/grass_tall
+density 0.6
+scale 1 1.5
+slope 0 25 3
+moisture 0.03 0.4 0.08
+water_depth 0 0 0.01
+patch 35 0.45
+align 1
 
 cover plants/grass
 density 1.5

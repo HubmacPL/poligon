@@ -1,0 +1,134 @@
+{
+  "name": "birch_b",
+  "base": "aspen_large",
+  "options": {
+    "seed": 9413,
+    "branch": {
+      "levels": 3,
+      "angle": {
+        "1": 34,
+        "2": 55,
+        "3": 60
+      },
+      "children": {
+        "0": 12,
+        "1": 5,
+        "2": 3
+      },
+      "force": {
+        "direction": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "strength": 0.01
+      },
+      "gnarliness": {
+        "0": 0.03,
+        "1": 0.12,
+        "2": 0.2,
+        "3": 0.2
+      },
+      "length": {
+        "0": 70,
+        "1": 19,
+        "2": 10,
+        "3": 5
+      },
+      "radius": {
+        "0": 0.9,
+        "1": 0.4,
+        "2": 0.6,
+        "3": 0.6
+      },
+      "sections": {
+        "0": 12,
+        "1": 7,
+        "2": 5,
+        "3": 3
+      },
+      "segments": {
+        "0": 8,
+        "1": 5,
+        "2": 3,
+        "3": 3
+      },
+      "start": {
+        "1": 0.35,
+        "2": 0.15,
+        "3": 0.1
+      },
+      "taper": {
+        "0": 0.75,
+        "1": 0.6,
+        "2": 0.7,
+        "3": 0.7
+      }
+    },
+    "leaves": {
+      "billboard": "double",
+      "angle": 50,
+      "count": 4,
+      "start": 0.2,
+      "size": 4.5,
+      "sizeVariance": 0.35
+    }
+  },
+  "height": 15,
+  "bark": {
+    "color": "tools/eztree/node_modules/@dgreenheck/ez-tree/src/lib/assets/bark/birch_color_1k.jpg",
+    "normal": "tools/eztree/node_modules/@dgreenheck/ez-tree/src/lib/assets/bark/birch_normal_1k.jpg",
+    "orm": "prepared/birch_bark/birch_bark_orm.png",
+    "meters": 0.8
+  },
+  "leaves": {
+    "color": "tools/eztree/node_modules/@dgreenheck/ez-tree/src/lib/assets/leaves/aspen_color.png",
+    "atlas": [
+      [
+        0.25,
+        0.0,
+        0.75,
+        1.0
+      ]
+    ],
+    "alpha_cutoff": 0.5,
+    "roundness": 0.5,
+    "tint": [
+      0.2,
+      0.5,
+      0.2
+    ]
+  },
+  "levels": [
+    {
+      "segments": {
+        "0": 8,
+        "1": 5,
+        "2": 3,
+        "3": 3
+      },
+      "drop_branch_level": 3
+    },
+    {
+      "segments": {
+        "0": 6,
+        "1": 4,
+        "2": 3,
+        "3": 3
+      },
+      "drop_branch_level": 2,
+      "leaf_keep": 0.5
+    },
+    {
+      "segments": {
+        "0": 5,
+        "1": 3,
+        "2": 3,
+        "3": 3
+      },
+      "drop_branch_level": 2,
+      "leaf_keep": 0.25,
+      "single_cards": true
+    }
+  ]
+}

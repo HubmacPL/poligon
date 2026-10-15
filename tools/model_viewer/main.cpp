@@ -4,7 +4,7 @@
 // CLIP is the name of the animation clip to play (default: the model's first one); C
 // switches to the next clip. With --headless, --ticks N plays N sixtieths of a second
 // before the picture is taken.
-//   Double click (no arguments): browse the models in the "poligon-assets" folder next to the project.
+//   Double click (no arguments): browse the models in poligon-assets/source next to the project.
 //   A folder:                    browse every model in it.
 //   One picture:                 model_viewer tree.glb --headless --dump-frame tree.png
 //
@@ -111,20 +111,16 @@ std::filesystem::path FindAssetsFolder(const char* program_path) {
     return {};
 }
 
-// The models offered when the viewer is started without arguments: simplified and generated
-// ones, plus downloaded originals that have no simplified version (the originals of
-// simplified models can take a minute to load).
-std::vector<std::string> FindDefaultModels(const std::filesystem::path& assets) {
-    std::vector<std::string> models = FindModels(assets / "simplified");
-    for (const std::string& model : FindModels(assets / "generated")) {
-        models.push_back(model);
-    }
+// The models offered when the viewer is started without arguments, from the source half of
+// the assets folder: generated ones, and downloaded ones as their first simpler level when
+// they have one (some originals take a minute to load).
+std::vector<std::string> FindDefaultModels(const std::filesystem::path& source) {
+    std::vector<std::string> models = FindModels(source / "generated");
     std::error_code error;
-    for (const std::string& model : FindModels(assets / "polyhaven")) {
-        const std::filesystem::path asset_name = std::filesystem::path(model).parent_path().filename();
-        if (!std::filesystem::is_directory(assets / "simplified" / asset_name, error)) {
-            models.push_back(model);
-        }
+    for (const std::string& model : FindModels(source / "polyhaven")) {
+        const std::string asset_name = std::filesystem::path(model).parent_path().filename().string();
+        const std::filesystem::path simpler = source / "lods" / asset_name / "lod1" / (asset_name + ".gltf");
+        models.push_back(std::filesystem::is_regular_file(simpler, error) ? simpler.string() : model);
     }
     return models;
 }
@@ -381,10 +377,10 @@ int main(int argc, char** argv) {
     if (options.positional.empty()) {
         const std::filesystem::path assets = FindAssetsFolder(argv[0]);
         if (!assets.empty()) {
-            model_paths = FindDefaultModels(assets);
+            model_paths = FindDefaultModels(assets / "source");
         }
         if (model_paths.empty()) {
-            error = "No models found. Expected a folder named poligon-assets next to the project folder, "
+            error = "No models found. Expected a folder named poligon-assets (with source inside) next to the project folder, "
                     "or start the viewer with a model file: drag a .gltf or .glb file onto model_viewer.exe.";
         }
     } else if (std::filesystem::is_directory(options.positional[0], file_error)) {

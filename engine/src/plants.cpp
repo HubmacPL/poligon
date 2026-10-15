@@ -13,12 +13,14 @@ struct Box {
     glm::vec3 max{-1.0e30f};
 };
 
-// The model's materials with the kind's wind response.
+// The model's materials with the kind's wind response and lighting settings.
 std::vector<Material> WindyMaterials(const LoadedModel& model, const PlantSettings& settings) {
     std::vector<Material> materials = model.render.materials;
     for (Material& material : materials) {
         material.wind_bend = settings.wind_bend;
         material.wind_flutter = material.alpha_cutoff > 0.0f ? settings.wind_flutter : 0.0f;
+        material.normal_up = std::max(material.normal_up, settings.normal_up);
+        material.casts_ambient_occlusion = material.casts_ambient_occlusion && settings.casts_ambient_occlusion;
     }
     return materials;
 }

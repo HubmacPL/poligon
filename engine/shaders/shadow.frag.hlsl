@@ -11,6 +11,7 @@ SamplerState base_sampler : register(s0, space2);
 cbuffer MaterialUniforms : register(b0, space3) {
     float4 material_factors;  // z: alpha cutoff, w: the frame's noise offset
     float4 material_flags;
+    float4 material_shading;
 };
 
 struct FragmentInput {

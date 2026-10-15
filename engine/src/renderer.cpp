@@ -137,6 +137,7 @@ struct CloudUniforms {
 struct MaterialUniforms {
     glm::vec4 factors;
     glm::vec4 flags;
+    glm::vec4 shading;  // x: Material::normal_up
 };
 
 struct ImpostorUniforms {
@@ -411,7 +412,7 @@ bool SameFragmentBindings(const Material& a, const Material& b) {
     return a.texture.id == b.texture.id && a.normal_texture.id == b.normal_texture.id &&
            a.orm_texture.id == b.orm_texture.id && a.metallic == b.metallic && a.roughness == b.roughness &&
            a.alpha_cutoff == b.alpha_cutoff && a.double_sided == b.double_sided && a.occlusion_in_orm == b.occlusion_in_orm &&
-           a.back_faces_keep_normal == b.back_faces_keep_normal;
+           a.back_faces_keep_normal == b.back_faces_keep_normal && a.normal_up == b.normal_up;
 }
 
 // A plane as (normal, distance): points with dot(normal, p) + distance >= 0 are inside.
@@ -2017,6 +2018,7 @@ struct Renderer::Impl {
         uniforms.flags = glm::vec4(material.normal_texture.id != 0 ? 1.0f : 0.0f, material.orm_texture.id != 0 ? 1.0f : 0.0f,
                                    material.occlusion_in_orm ? 1.0f : 0.0f,
                                    material.double_sided ? (material.back_faces_keep_normal ? 2.0f : 1.0f) : 0.0f);
+        uniforms.shading = glm::vec4(glm::clamp(material.normal_up, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f);
         return uniforms;
     }
 };

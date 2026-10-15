@@ -97,6 +97,8 @@ Header: `poligon/procedural_plants.h`. No free (CC0) models of reeds, cattails o
 - Their materials set two `Material` fields made for grass (see rendering.md): `back_faces_keep_normal`, because blade normals point mostly up so that grass is lit like the ground it grows from, and `casts_ambient_occlusion = false`, because screen-space ambient occlusion takes a thin blade for a solid wall and blackened the blades and the ground around every tuft.
 - In `forest_scene` they are ground cover: short grass (0.12 to 0.3 m, 8 tufts per square meter, drawn to 30 m) over most open ground, meadow grass (0.4 to 0.8 m) and flowers in moister patches, with the downloaded tufts at a lower density for variety. Cost: within the measurement noise in every preset.
 - Limits: blades are flat strips without a normal map; no simpler levels (they end at 30 to 45 m, where the ground texture takes over); a lawn as dense as a real one would need far more blades or pictures of grass on cards.
+- Downloaded grass clumps (Poly Haven `grass_medium_01` and `grass_medium_02`, CC0) add thicker tufts: their alpha maps were merged into the color picture with `image_tool merge-alpha`, and their simpler levels made with `simplify_model.py ... foliage` (0.4 and 0.15). In `forest_scene` they are `plants/grass_medium` (green, 2 per square meter, every other variant) and `plants/grass_tall` (pale and dry, on drier ground), with levels to 6, 15 and 35 m. Cost: about 0.5 to 1 ms in medium and high.
+- `PlantSettings::normal_up` and `casts_ambient_occlusion` pass the two lighting settings to all of a kind's materials (see `Material` in rendering.md). Downloaded grass needs `normal_up = 1`: its normals face along each card, and lit that way the clumps came out black. Ferns, nettles and low shrubs use 0.5. All low plants are left out of ambient occlusion.
 
 ## Trampled paths
 
@@ -127,11 +129,11 @@ pine.levels.back().impostor = pine_card;                    // ... as the impost
 
 ## In forest_scene
 
-Pine, spruce, birch and oak have impostors in `poligon-assets/impostors` (baked with `impostor_baker ... --keep-origin`). Their levels: full mesh to 28 m, medium to 70 m, low to 150 m, impostor to 1700 m, each fading over the last tenth. Big trees now stand out to 1200 m from the start (about 55000 of them; undergrowth stays within 250 m, physics within 500 m), and the open wedge east of the start ends at 400 m, so the far forest shows in the panorama. Measured (headless, release, 150 frames): 7.7 ms from the brow of the hill with the forest to the horizon (9.9 ms with meshes out to 450 m and nothing beyond), 13.1 ms inside the forest.
+Pine, spruce, birch and oak have impostors in `poligon-assets/source/impostors` (baked with `impostor_baker ... --keep-origin`). Their levels: full mesh to 28 m, medium to 70 m, low to 150 m, impostor to 1700 m, each fading over the last tenth. Big trees now stand out to 1200 m from the start (about 55000 of them; undergrowth stays within 250 m, physics within 500 m), and the open wedge east of the start ends at 400 m, so the far forest shows in the panorama. Measured (headless, release, 150 frames): 7.7 ms from the brow of the hill with the forest to the horizon (9.9 ms with meshes out to 450 m and nothing beyond), 13.1 ms inside the forest.
 
 ## The trees of forest_scene
 
-Pine, spruce, birch, oak, young pine and young spruce, all generated with `tools/assets/make_tree.mjs` from the recipes in `tools/assets/trees/` (see [rendering.md](rendering.md)), each with three levels made from the same tree. Twigs: Poly Haven `fir_tree_01` (spruce) and `pine_tree_01` (pine), EZ-Tree's aspen and oak twigs; bark: Poly Haven `fir_tree_01` (spruce), ambientCG `Bark014` (pine), EZ-Tree's birch and oak bark; all CC0 or shipped with EZ-Tree (MIT).
+Pine, spruce, birch, oak (each in two trees, the second from a recipe ending in `_b` with another seed, height and branching, planted at half the density each in the same clumps), young pine and young spruce, all generated with `tools/assets/make_tree.mjs` from the recipes in `tools/assets/trees/` (see [rendering.md](rendering.md)), each with three levels made from the same tree. Twigs: Poly Haven `fir_tree_01` (spruce) and `pine_tree_01` (pine), EZ-Tree's aspen and oak twigs; bark: Poly Haven `fir_tree_01` (spruce), ambientCG `Bark014` (pine), EZ-Tree's birch and oak bark; all CC0 or shipped with EZ-Tree (MIT).
 
 Triangles per level:
 
@@ -159,7 +161,7 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- INPUT OUTPUT.g
 - A mesh counts as leaves when all its materials take their transparency from a texture. Models whose leaves and bark share one mesh are collapsed whole (the Poly Haven jacaranda and island tree were such).
 - The simpler levels use the materials of the full model, matched by name; `LoadModelFromFile(path, model, error, false)` reads such a file without its textures.
 - Without `foliage` the script first welds corners that lie in the same place: some scans (Poly Haven's `boulder_01`) store every triangle with its own corners, and collapsing stops early on them.
-- In `forest_scene` the boulder, the rock set, the stump, the fallen trunk (to a twelfth and a fiftieth of the triangles) and the shrub `shrub_02` (with `foliage`) have two simpler levels in `poligon-assets/lods`, used from 15 m and 45 m and drawn up to 150 m. A file holding several variants (the rock set holds six) is matched to its simpler files by node names.
+- In `forest_scene` the boulder, the rock set, the stump, the fallen trunk (to a twelfth and a fiftieth of the triangles) and the shrub `shrub_02` (with `foliage`) have two simpler levels in `poligon-assets/source/lods`, used from 15 m and 45 m and drawn up to 150 m. A file holding several variants (the rock set holds six) is matched to its simpler files by node names.
 
 ## What it costs: measurements
 

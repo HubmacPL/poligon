@@ -3,8 +3,9 @@
 // through and look at. It exists to judge the renderer on a whole scene and to measure how
 // long a frame takes. The land is generated on the first run (about three minutes) and then
 // loaded from build/terrain_cache. The models and textures are named in assets.txt (next to
-// this file) and cooked into build/cooked when the program starts, whenever the list or a
-// source changed (poligon/assets.h). The land's settings, the player's start, things put by
+// this file); their sources are in poligon-assets/source, and they are cooked into
+// poligon-assets/cooked when the program starts, whenever the list or a source changed
+// (poligon/assets.h). The land's settings, the player's start, things put by
 // hand and the rules that plant the forest, the shore and the ground cover are in
 // forest.level (poligon/level.h, poligon/plant_rules.h). Walking flattens grass into paths
 // (poligon/trample.h).
@@ -90,6 +91,8 @@ constexpr LevelDistances kTreeLevels{28.0f, 70.0f, 150.0f, 1700.0f, 450.0f};
 constexpr LevelDistances kYoungTreeLevels{28.0f, 70.0f, 150.0f, 0.0f, 150.0f};
 // Rocks, stumps, fallen trunks and shrubs.
 constexpr LevelDistances kThingLevels{15.0f, 45.0f, 150.0f, 0.0f, 150.0f};
+// Downloaded grass clumps: dense cut-out blades, so their full level is kept close.
+constexpr LevelDistances kGrassLevels{6.0f, 15.0f, 35.0f, 0.0f, 35.0f};
 constexpr float kSmallPlantDistance = 45.0f;
 constexpr float kMediumThingDistance = 150.0f;
 constexpr float kShadowDistance = 65.0f;
@@ -226,9 +229,9 @@ public:
                const std::filesystem::path& asset_list, const std::filesystem::path& level_path, const poligon::Input& input,
                const ForestActions& actions,
                const float view[4], bool turn_given, const poligon::RenderSettings& settings, const std::string& settings_path)
-        : renderer_(renderer), assets_(assets), terrain_cache_(build_folder / "terrain_cache"), input_(input),
+        : renderer_(renderer), sources_(assets / "source"), terrain_cache_(build_folder / "terrain_cache"), input_(input),
           actions_(actions), settings_(settings), settings_path_(settings_path) {
-        OpenAssets(asset_list, build_folder / "cooked");
+        OpenAssets(asset_list, assets / "cooked");
         if (settings.environment.clouds) {
             renderer_.PrepareClouds();
         }
@@ -459,8 +462,8 @@ private:
         applied_quality_valid_ = true;
     }
 
-    // Cooks what changed since the last run (sources in poligon-assets, cooked files in
-    // build/cooked) and opens the cooked folder.
+    // Cooks what changed since the last run (sources in poligon-assets/source, cooked files
+    // in poligon-assets/cooked) and opens the cooked folder.
     void OpenAssets(const std::filesystem::path& list_path, const std::filesystem::path& cooked) {
         poligon::AssetList list;
         std::string error;
@@ -469,7 +472,7 @@ private:
         } else {
             const auto started = std::chrono::steady_clock::now();
             const poligon::CookReport report =
-                poligon::CookAssets(list, list_path.string().c_str(), assets_.string().c_str(), cooked.string().c_str());
+                poligon::CookAssets(list, list_path.string().c_str(), sources_.string().c_str(), cooked.string().c_str());
             std::printf("forest_scene: assets: %d cooked, %d up to date, in %.1f s\n", report.cooked, report.up_to_date,
                         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
             for (const std::string& failure : report.errors) {
@@ -710,14 +713,28 @@ private:
         spruce_ = LoadKind("trees/spruce", false, MakeSettings(true, kTreeLevels, false, {1.0f, 1.0f}, false, true, PlantCollider::Trunk, 0.25f));
         birch_ = LoadKind("trees/birch", false, MakeSettings(true, kTreeLevels, false, {1.3f, 1.3f}, false, true, PlantCollider::Trunk, 0.14f));
         oak_ = LoadKind("trees/oak", false, MakeSettings(true, kTreeLevels, false, {0.8f, 1.0f}, false, true, PlantCollider::Trunk, 0.45f));
+        // Second trees of each kind; trunk radii scaled from the first by height.
+        pine_b_ = LoadKind("trees/pine_b", false, MakeSettings(true, kTreeLevels, false, {1.0f, 1.0f}, false, true, PlantCollider::Trunk, 0.35f));
+        spruce_b_ = LoadKind("trees/spruce_b", false, MakeSettings(true, kTreeLevels, false, {1.0f, 1.0f}, false, true, PlantCollider::Trunk, 0.29f));
+        birch_b_ = LoadKind("trees/birch_b", false, MakeSettings(true, kTreeLevels, false, {1.3f, 1.3f}, false, true, PlantCollider::Trunk, 0.12f));
+        oak_b_ = LoadKind("trees/oak_b", false, MakeSettings(true, kTreeLevels, false, {0.8f, 1.0f}, false, true, PlantCollider::Trunk, 0.38f));
         young_spruce_ = LoadKind("trees/spruce_young", false, MakeSettings(true, kYoungTreeLevels, false, {1.5f, 1.0f}, false, true));
         young_pine_ = LoadKind("trees/pine_young", false, MakeSettings(true, kYoungTreeLevels, false, {1.5f, 1.0f}, false, true));
         // Downloaded models; simpler levels from tools/assets/simplify_model.py.
         shrub_ = LoadKind("plants/shrub", false, MakeSettings(true, kThingLevels, false, {2.5f, 1.0f}, true, false));
-        low_shrub_ = LoadKind("plants/low_shrub", true, MakeSettings(false, kTreeLevels, true, {4.0f, 1.2f}, true, false));
-        fern_ = LoadKind("plants/fern", true, MakeSettings(false, kTreeLevels, true, {5.0f, 1.2f}, true, false));
-        nettle_ = LoadKind("plants/nettle", true, MakeSettings(false, kTreeLevels, true, {4.0f, 1.0f}, true, false));
-        grass_ = LoadKind("plants/grass", true, MakeSettings(false, kTreeLevels, true, {6.0f, 1.5f}, true, false));
+        // Low plants are lit partly, and grass fully, like the ground under them (normal_up),
+        // and left out of ambient occlusion, which makes thin leaves far too dark.
+        const auto low_plant = [](poligon::PlantSettings settings, float normal_up) {
+            settings.normal_up = normal_up;
+            settings.casts_ambient_occlusion = false;
+            return settings;
+        };
+        low_shrub_ = LoadKind("plants/low_shrub", true, low_plant(MakeSettings(false, kTreeLevels, true, {4.0f, 1.2f}, true, false), 0.5f));
+        fern_ = LoadKind("plants/fern", true, low_plant(MakeSettings(false, kTreeLevels, true, {5.0f, 1.2f}, true, false), 0.5f));
+        nettle_ = LoadKind("plants/nettle", true, low_plant(MakeSettings(false, kTreeLevels, true, {4.0f, 1.0f}, true, false), 0.5f));
+        grass_ = LoadKind("plants/grass", true, low_plant(MakeSettings(false, kTreeLevels, true, {6.0f, 1.5f}, true, false), 1.0f));
+        grass_medium_ = LoadKind("plants/grass_medium", true, low_plant(MakeSettings(true, kGrassLevels, true, {6.0f, 1.5f}, true, false), 1.0f));
+        grass_tall_ = LoadKind("plants/grass_tall", true, low_plant(MakeSettings(true, kGrassLevels, true, {5.0f, 1.5f}, true, false), 1.0f));
         boulder_ = LoadKind("rocks/boulder", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
         rocks_ = LoadKind("rocks/mossy_rocks", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, true, false, PlantCollider::Block));
         stump_ = LoadKind("wood/stump", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
@@ -750,7 +767,8 @@ private:
     const Kind* FindKind(const std::string& name) const {
         for (const Kind* kind : {&pine_, &spruce_, &birch_, &oak_, &young_spruce_, &young_pine_, &shrub_, &low_shrub_, &fern_,
                                  &nettle_, &grass_, &boulder_, &rocks_, &stump_, &fallen_trunk_, &reed_, &cattail_, &water_lily_,
-                                 &short_grass_, &meadow_grass_, &flowers_}) {
+                                 &short_grass_, &meadow_grass_, &flowers_, &grass_medium_, &grass_tall_, &pine_b_, &spruce_b_,
+                                 &birch_b_, &oak_b_}) {
             if (kind->asset_name == name && !kind->plants.variants.empty()) {
                 return kind;
             }
@@ -1030,7 +1048,7 @@ private:
     }
 
     poligon::Renderer& renderer_;
-    std::filesystem::path assets_;
+    std::filesystem::path sources_;
     const poligon::Input& input_;
     ForestActions actions_;
 
@@ -1054,7 +1072,8 @@ private:
     poligon::WaterMaterial water_material_;
     std::vector<poligon::RenderModel> render_models_;
     Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
-        rocks_, stump_, fallen_trunk_, reed_, cattail_, water_lily_, short_grass_, meadow_grass_, flowers_;
+        rocks_, stump_, fallen_trunk_, reed_, cattail_, water_lily_, short_grass_, meadow_grass_, flowers_, grass_medium_, grass_tall_, pine_b_,
+        spruce_b_, birch_b_, oak_b_;
     // Models made in memory (water plants), kept for their meshes and textures.
     std::vector<std::unique_ptr<poligon::LoadedModel>> procedural_models_;
     // The level's plant rules, and where plants have been walked flat.
@@ -1190,8 +1209,9 @@ int main(int argc, char** argv) {
     }
 
     const std::filesystem::path assets = FindAssetsFolder(argv[0]);
-    if (assets.empty()) {
-        const char* message = "No folder named poligon-assets found next to the project folder.";
+    std::error_code assets_error;
+    if (assets.empty() || !std::filesystem::is_directory(assets / "source", assets_error)) {
+        const char* message = "No folder named poligon-assets, with the asset sources in its folder source, found next to the project folder.";
         std::fprintf(stderr, "forest_scene: %s\n", message);
         if (started_by_hand) {
             poligon::ShowMessageBox("Poligon forest scene", message);
@@ -1236,8 +1256,8 @@ int main(int argc, char** argv) {
     }
 
     const auto load_start = std::chrono::steady_clock::now();
-    // Generated land and cooked assets are kept in the build folder (the program runs from
-    // build/PRESET/bin); the asset list is in the project's tools/forest_scene.
+    // Generated land is kept in the build folder (the program runs from build/PRESET/bin);
+    // the asset list is in the project's tools/forest_scene.
     std::error_code path_error;
     const std::filesystem::path build_folder =
         std::filesystem::absolute(argv[0], path_error).parent_path().parent_path().parent_path();

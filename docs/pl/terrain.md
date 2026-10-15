@@ -97,7 +97,7 @@ terrain_tool generate PODRĘCZNY PODGLĄDY [NAZWA=WARTOŚĆ ...]              ge
 
 ## Pierwsza prawdziwa mapa: Batorz
 
-W `poligon-assets/terrain/batorz` (poza repozytorium):
+W `poligon-assets/source/terrain/batorz` (poza repozytorium):
 
 - `tiles/`: 16 kafli po 3 × 3 km, wysokość co 2 m, 137 MB, pobrane 2026-10-14. Kwadrat 12 × 12 km wokół 50.861443 N, 22.496135 E (EPSG:2180: wschód 739948 do 751948, północ 332549 do 344549).
 - `batorz_real_2m.heights`: połączone kafle, 6000 × 6000 punktów; wysokości 218,8 do 320,7 m; 21 załatanych dziurek.

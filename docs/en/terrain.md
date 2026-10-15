@@ -97,7 +97,7 @@ terrain_tool generate CACHE PREVIEWS [NAME=VALUE ...]              generate (or 
 
 ## The first real map: Batorz
 
-In `poligon-assets/terrain/batorz` (outside the repository):
+In `poligon-assets/source/terrain/batorz` (outside the repository):
 
 - `tiles/`: 16 tiles of 3 x 3 km, one height every 2 m, 137 MB, downloaded on 2026-10-14. The square is 12 x 12 km around 50.861443 N, 22.496135 E (EPSG:2180: east 739948 to 751948, north 332549 to 344549).
 - `batorz_real_2m.heights`: the tiles joined, 6000 x 6000 points; heights 218.8 to 320.7 m; 21 pinholes filled.

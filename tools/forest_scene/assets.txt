@@ -1,8 +1,8 @@
 poligon-assets 1
 
-# The assets of forest_scene. Sources are in the poligon-assets folder next to the project
-# (outside the repository); forest_scene cooks them into build/cooked when it starts, and
-# again whenever this list or a source changes. Format: docs/en/assets.md.
+# The assets of forest_scene. Sources are in poligon-assets/source next to the project
+# (outside the repository); forest_scene cooks them into poligon-assets/cooked when it
+# starts, and again whenever this list or a source changes. Format: docs/en/assets.md.
 
 # --- Trees: made with tools/assets/make_tree.mjs; simpler levels from the same script,
 # impostors from impostor_baker. ---
@@ -29,6 +29,31 @@ source generated/oak/oak.gltf
 lod lods/oak/lod1/oak.gltf
 lod lods/oak/lod2/oak.gltf
 impostor impostors/oak.impostor
+
+# Second trees of the same kinds: other seeds and shapes (recipes *_b.json).
+model trees/pine_b
+source generated/pine_b/pine_b.gltf
+lod lods/pine_b/lod1/pine_b.gltf
+lod lods/pine_b/lod2/pine_b.gltf
+impostor impostors/pine_b.impostor
+
+model trees/spruce_b
+source generated/spruce_b/spruce_b.gltf
+lod lods/spruce_b/lod1/spruce_b.gltf
+lod lods/spruce_b/lod2/spruce_b.gltf
+impostor impostors/spruce_b.impostor
+
+model trees/birch_b
+source generated/birch_b/birch_b.gltf
+lod lods/birch_b/lod1/birch_b.gltf
+lod lods/birch_b/lod2/birch_b.gltf
+impostor impostors/birch_b.impostor
+
+model trees/oak_b
+source generated/oak_b/oak_b.gltf
+lod lods/oak_b/lod1/oak_b.gltf
+lod lods/oak_b/lod2/oak_b.gltf
+impostor impostors/oak_b.impostor
 
 model trees/spruce_young
 source generated/spruce_young/spruce_young.gltf
@@ -62,6 +87,20 @@ max_size 1024
 
 model plants/grass
 source polyhaven/grass_bermuda_01/grass_bermuda_01_2k.gltf
+max_size 1024
+
+# Grass clumps with their alpha maps merged into the color picture (image_tool merge-alpha);
+# simpler levels with simplify_model.py in foliage mode (0.4 and 0.15).
+model plants/grass_medium
+source polyhaven/grass_medium_01/grass_medium_01_2k.gltf
+lod lods/grass_medium_01/lod1/grass_medium_01.gltf
+lod lods/grass_medium_01/lod2/grass_medium_01.gltf
+max_size 1024
+
+model plants/grass_tall
+source polyhaven/grass_medium_02/grass_medium_02_2k.gltf
+lod lods/grass_medium_02/lod1/grass_medium_02.gltf
+lod lods/grass_medium_02/lod2/grass_medium_02.gltf
 max_size 1024
 
 model rocks/boulder

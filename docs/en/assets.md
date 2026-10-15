@@ -4,7 +4,16 @@ How a game names, prepares and loads its textures and models, how plants are mad
 
 Headers: `poligon/assets.h`, `poligon/texture_compression.h`, `poligon/plants.h`, `poligon/level.h`. Tool: `asset_cooker`. Example: `examples/assets`. Test: `tests/assets_test.cpp`.
 
-**State (decided on 2026-10-14, built on 2026-10-15):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start, things put by hand and the plant rules ([vegetation.md](vegetation.md)). Not yet: animations cooked as ozz archives (clips are stored as keys and turned into ozz animations on load), the data folder split into source and cooked halves (waiting for the author's decision: cooked files now go to `build/cooked`, sources stay in `poligon-assets` as they are).
+**State (decided on 2026-10-14, built on 2026-10-15):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start, things put by hand and the plant rules ([vegetation.md](vegetation.md)). Not yet: animations cooked as ozz archives (clips are stored as keys and turned into ozz animations on load). The data folder was split into its source and cooked halves on 2026-10-16 (see below).
+
+## The data folder
+
+Game data lives outside the repository, in `poligon-assets` next to the project folder, in two halves:
+
+- `source/`: what the asset list's `source` lines point at, relative to it. Downloads (`polyhaven/`, `ambientcg/`, `sketchfab/`, `khronos/`), files made by our tools (`generated/` trees, `lods/` simpler levels, `impostors/`, `prepared/` repaired textures) and the elevation data (`terrain/`).
+- `cooked/`: what the cooker writes and the game loads. It can be deleted at any time; the next start cooks it again.
+
+Next to them are work folders that are not game data: `previews/` and `thumbnails/` (pictures for judging), `tools/` (EZ-Tree and three.js for make_tree.mjs), `superseded/` (old versions kept for comparison). The generated land of `forest_scene` is a cache in `build/terrain_cache`.
 
 ## The asset list
 
@@ -42,7 +51,7 @@ impostor impostors/pine.impostor
 
 ```cpp
 poligon::AssetLibrary library;
-library.Open("build/cooked", error);          // a cooked folder or an archive
+library.Open("../poligon-assets/cooked", error);  // a cooked folder or an archive
 const poligon::LoadedModel* pine = library.LoadModel(renderer, "trees/pine", error);
 poligon::TextureHandle floor = library.LoadTexture(renderer, "ground/forest_floor_color", error);
 const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color", error);  // e.g. for texture arrays

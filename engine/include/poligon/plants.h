@@ -42,6 +42,12 @@ struct PlantSettings {
     // See Material::wind_bend and wind_flutter; flutter goes to cut-out (leaf) materials only.
     float wind_bend = 0.0f;
     float wind_flutter = 0.0f;
+    // Given to all the model's materials: see Material::normal_up and
+    // casts_ambient_occlusion. Grass: 1 and false; ferns and other low plants: about 0.5
+    // and false (screen-space ambient occlusion makes thin leaves and the ground under
+    // them far too dark).
+    float normal_up = 0.0f;
+    bool casts_ambient_occlusion = true;
     PlantCollider collider = PlantCollider::None;
     // For PlantCollider::Trunk: the trunk's radius before scaling, meters.
     float trunk_radius = 0.3f;

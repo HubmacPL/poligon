@@ -97,6 +97,8 @@ Nagłówek: `poligon/procedural_plants.h`. Nie znaleziono darmowych (CC0) modeli
 - Ich materiały ustawiają dwa pola `Material` zrobione dla trawy (zob. rendering.md): `back_faces_keep_normal`, bo normalne źdźbeł wskazują głównie w górę, żeby trawa była oświetlona jak ziemia, z której rośnie, oraz `casts_ambient_occlusion = false`, bo przyciemnianie zagłębień w przestrzeni ekranu bierze cienkie źdźbło za litą ścianę i czerniło źdźbła oraz ziemię wokół każdej kępy.
 - W `forest_scene` są pokrywą ziemi: krótka trawa (0,12 do 0,3 m, 8 kęp na metr kwadratowy, rysowana do 30 m) na większości otwartego terenu, trawa łąkowa (0,4 do 0,8 m) i kwiaty w wilgotniejszych plamach, a pobrane kępy w mniejszej gęstości dla rozmaitości. Koszt: w granicach szumu pomiaru w każdym presecie.
 - Ograniczenia: źdźbła to płaskie paski bez mapy normalnych; bez prostszych poziomów (kończą się na 30 do 45 m, gdzie przejmuje tekstura podłoża); trawnik gęsty jak prawdziwy wymagałby dużo więcej źdźbeł albo obrazków trawy na kartach.
+- Pobrane kępy trawy (Poly Haven `grass_medium_01` i `grass_medium_02`, CC0) dodają grubsze kępy: ich maski alfa połączono z obrazem koloru przez `image_tool merge-alpha`, a prostsze poziomy zrobiono przez `simplify_model.py ... foliage` (0,4 i 0,15). W `forest_scene` to `plants/grass_medium` (zielona, 2 na metr kwadratowy, co druga odmiana) i `plants/grass_tall` (jasna i sucha, na suchszym terenie), z poziomami do 6, 15 i 35 m. Koszt: około 0,5 do 1 ms w medium i high.
+- `PlantSettings::normal_up` i `casts_ambient_occlusion` przekazują oba ustawienia oświetlenia wszystkim materiałom rodzaju (zob. `Material` w rendering.md). Pobrana trawa potrzebuje `normal_up = 1`: jej normalne biegną wzdłuż każdej karty i tak oświetlone kępy wychodziły czarne. Paprocie, pokrzywy i niskie krzewy mają 0,5. Wszystkie niskie rośliny są wyłączone z przyciemniania zagłębień.
 
 ## Wydeptane ścieżki
 
@@ -127,11 +129,11 @@ pine.levels.back().impostor = pine_card;                    // ... jako impostor
 
 ## W forest_scene
 
-Sosna, świerk, brzoza i dąb mają impostory w `poligon-assets/impostors` (wypalone przez `impostor_baker ... --keep-origin`). Ich poziomy: pełna siatka do 28 m, średnia do 70 m, niska do 150 m, impostor do 1700 m, każdy z przejściem na ostatniej dziesiątej części. Duże drzewa stoją teraz do 1200 m od startu (około 55000; podszyt zostaje w promieniu 250 m, fizyka 500 m), a otwarty klin na wschód od startu kończy się na 400 m, więc daleki las widać w panoramie. Zmierzone (bez okna, release, 150 klatek): 7,7 ms ze skraju wzgórza z lasem po horyzont (9,9 ms z siatkami do 450 m i niczym dalej), 13,1 ms w lesie.
+Sosna, świerk, brzoza i dąb mają impostory w `poligon-assets/source/impostors` (wypalone przez `impostor_baker ... --keep-origin`). Ich poziomy: pełna siatka do 28 m, średnia do 70 m, niska do 150 m, impostor do 1700 m, każdy z przejściem na ostatniej dziesiątej części. Duże drzewa stoją teraz do 1200 m od startu (około 55000; podszyt zostaje w promieniu 250 m, fizyka 500 m), a otwarty klin na wschód od startu kończy się na 400 m, więc daleki las widać w panoramie. Zmierzone (bez okna, release, 150 klatek): 7,7 ms ze skraju wzgórza z lasem po horyzont (9,9 ms z siatkami do 450 m i niczym dalej), 13,1 ms w lesie.
 
 ## Drzewa forest_scene
 
-Sosna, świerk, brzoza, dąb, młoda sosna i młody świerk, wszystkie generowane przez `tools/assets/make_tree.mjs` z przepisów w `tools/assets/trees/` (zob. [rendering.md](rendering.md)), każde z trzema poziomami zrobionymi z tego samego drzewa. Gałązki: Poly Haven `fir_tree_01` (świerk) i `pine_tree_01` (sosna), gałązki osiki i dębu z EZ-Tree; kora: Poly Haven `fir_tree_01` (świerk), ambientCG `Bark014` (sosna), kora brzozy i dębu z EZ-Tree; wszystko CC0 albo dostarczane z EZ-Tree (MIT).
+Sosna, świerk, brzoza, dąb (każde w dwóch drzewach, drugie z przepisu kończącego się na `_b`, z innym ziarnem, wysokością i rozgałęzieniem, sadzone po połowie gęstości w tych samych kępach), młoda sosna i młody świerk, wszystkie generowane przez `tools/assets/make_tree.mjs` z przepisów w `tools/assets/trees/` (zob. [rendering.md](rendering.md)), każde z trzema poziomami zrobionymi z tego samego drzewa. Gałązki: Poly Haven `fir_tree_01` (świerk) i `pine_tree_01` (sosna), gałązki osiki i dębu z EZ-Tree; kora: Poly Haven `fir_tree_01` (świerk), ambientCG `Bark014` (sosna), kora brzozy i dębu z EZ-Tree; wszystko CC0 albo dostarczane z EZ-Tree (MIT).
 
 Trójkąty na poziom:
 
@@ -159,7 +161,7 @@ blender -b --factory-startup -P tools/assets/simplify_model.py -- WEJŚCIE WYJŚ
 - Siatka liczy się jako liście, gdy wszystkie jej materiały biorą przezroczystość z tekstury. Modele, w których liście i kora dzielą jedną siatkę, są zwijane w całości (takie były jacaranda i drzewo wyspowe z Poly Haven).
 - Uproszczone poziomy używają materiałów pełnego modelu, dopasowanych po nazwie; `LoadModelFromFile(path, model, error, false)` czyta taki plik bez tekstur.
 - Bez `foliage` skrypt najpierw zszywa narożniki leżące w tym samym miejscu: niektóre skany (`boulder_01` z Poly Haven) zapisują każdy trójkąt z własnymi narożnikami i zwijanie zatrzymuje się na nich za wcześnie.
-- W `forest_scene` głaz, zestaw kamieni, pniak, przewrócony pień (do jednej dwunastej i jednej pięćdziesiątej trójkątów) oraz krzew `shrub_02` (z `foliage`) mają dwa prostsze poziomy w `poligon-assets/lods`, używane od 15 m i 45 m i rysowane do 150 m. Plik z kilkoma wariantami (zestaw kamieni ma sześć) jest łączony ze swoimi prostszymi plikami po nazwach węzłów.
+- W `forest_scene` głaz, zestaw kamieni, pniak, przewrócony pień (do jednej dwunastej i jednej pięćdziesiątej trójkątów) oraz krzew `shrub_02` (z `foliage`) mają dwa prostsze poziomy w `poligon-assets/source/lods`, używane od 15 m i 45 m i rysowane do 150 m. Plik z kilkoma wariantami (zestaw kamieni ma sześć) jest łączony ze swoimi prostszymi plikami po nazwach węzłów.
 
 ## Ile to kosztuje: pomiary
 

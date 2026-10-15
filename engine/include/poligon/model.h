@@ -29,6 +29,7 @@ struct ModelMaterial {
     // See Material in renderer.h. Not part of model files; set by code (grass made by code).
     bool back_faces_keep_normal = false;
     bool casts_ambient_occlusion = true;
+    float normal_up = 0.0f;
     // The base color texture, already decoded. Empty (width 0) when the material has none
     // or when the image could not be loaded (the reason is then in Model::warnings).
     Image base_color_texture;
