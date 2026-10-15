@@ -2,7 +2,7 @@
 
 Rysowanie roślin, kamieni i innych rzeczy, które stoją w wielkich ilościach: instancjonowanie, poziomy szczegółowości, komórki.
 
-Nagłówki: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`), `poligon/impostor.h`. Narzędzie: `impostor_baker`. Przykłady: `examples/vegetation`, `examples/impostor`. Testy: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, część o instancjonowaniu w `tests/scene_render_test.cpp`.
+Nagłówki: `poligon/vegetation.h`, `poligon/ground_cover.h`, `poligon/plant_rules.h`, `poligon/procedural_plants.h`, `poligon/trample.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/impostor.h`. Narzędzie: `impostor_baker`. Przykłady: `examples/vegetation`, `examples/impostor`. Testy: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, część o instancjonowaniu w `tests/scene_render_test.cpp`.
 
 **Stan:** instancjonowanie, poziomy szczegółowości wybierane według odległości, komórki, osobne traktowanie cieni, impostory jako najdalszy poziom, płynne przejścia między poziomami, narzędzia do prostszych poziomów drzew i do impostorów. Jeszcze nie: wiatr, rozmieszczanie roślin regułami terenu, rośliny tworzone w locie wokół gracza.
 
@@ -71,7 +71,32 @@ cover.Draw(renderer, camera);           // między BeginFrame a EndFrame
 - `Update` nic nie robi, dopóki kamera zostaje w jednej komórce; przejście do nowej buduje komórki, które weszły w zasięg (kilka, każda w ułamku milisekundy), i przekazuje wszystkie żywe rośliny do `Vegetation` w środku, które rysuje je z poziomami, przenikaniem, wiatrem i cieniami jak wszystko inne.
 - `sink_meters` zakopuje kamyki odrobinę; `scale_min`/`scale_max` różnicują wielkość; `CollectInstances` wylicza, co istnieje (testy, narzędzia).
 - W `forest_scene`: trawa (3 na m², plamami, co trzeci z 21 wariantów kępek, cienie tylko do 8 m), paprocie, pokrzywy, niskie krzewy i małe omszałe kamienie rosną w promieniu 90 m od gracza na całych 6 × 6 km, po jednej warstwie na wariant modelu; nic z tego nie jest już sadzone. Drzewa, duże krzewy, głazy, pniaki i pnie zostają posadzone (`Vegetation`), bo mają kolizje i cienie z daleka. Zmierzone (release, bez okna, 200 klatek, ten sam bieg z promieniem skróconym do 1 m jako odniesienie): 1,1 do 1,6 ms na klatkę za około 16000 dodatkowych instancji w zasięgu, z czego 4000 do 4500 w kadrze. Każda warstwa kosztuje jedno polecenie rysowania na przebieg, więc rodzaj z wieloma wariantami powinien używać kilku z nich albo mieć warianty połączone w kępy.
-- Jeszcze nie: malowana mapa podłoża mówiąca, gdzie która warstwa rośnie (dziś tylko nachylenie, wysokość i szum), mapa wygniatania dla ścieżek w trawie, i płynne pojawianie się komórki, gdy wchodzi bliżej niż najdalsza odległość warstwy.
+- Warstwy mogą iść za mapami generatora terenu (patrz Reguły sadzenia niżej), a rośliny na wydeptanym terenie się kładą (patrz Wydeptane ścieżki). Jeszcze nie: płynne pojawianie się, gdy komórka powstaje bliżej niż najdalsza odległość warstwy.
+
+## Reguły sadzenia
+
+Nagłówek: `poligon/plant_rules.h`. Przykład: `examples/plant_rules`. Test: `tests/plant_rules_test.cpp`.
+
+- To, gdzie rosną rośliny, to dane: reguły w pliku poziomu (`poligon/level.h`), które czytają mapy generatora terenu. Reguła nazywa rodzaj i podaje gęstość (roślin na metr kwadratowy tam, gdzie każdy warunek jest w pełni spełniony), odstęp, zakres rozmiarów, warunki na mapach (`slope`, `height`, `moisture`, `sediment`, `rock`, `flow`, `water_distance`, `water_depth`, każdy jako dół, góra i zanik, patrz `MapConditions`), kępy (`patch ROZMIAR POKRYCIE`), obszar wokół startu gracza, `sink`, `align`, `on_water` i `seed`. `ParsePlantRules` czyta je z wierszy, które `LoadLevel` zostawia innym czytelnikom (podaj `GetPlantRuleWords()`); złe wiersze to błędy z numerem wiersza.
+- Reguły `plant` stawiają rzeczy raz, na obszarze (`PlacePlants`): roztrzęsiona siatka o danym odstępie, jeden kandydat na komórkę, zostawiany z prawdopodobieństwem gęstość × odstęp do kwadratu × waga warunków × kępy. Każda komórka decyduje ze swoich współrzędnych i ziarna, więc rozstawienie nie zależy od kolejności czegokolwiek. Reguły jednej grupy (`group`) dzielą siatkę (`PlacePlantGroup`): w każdej komórce rośnie najwyżej jedna z nich, wybrana z prawdopodobieństwami, jakie miałaby każda osobno, więc drzewa różnych rodzajów nigdy w siebie nie wchodzą.
+- Reguły `cover` stają się warstwami pokrywy ziemi: `GroundCoverLayer::conditions` bierze warunki reguły, a `GroundCover::SetMaps(maps, world_to_map)` daje warstwom mapy; roślina zostaje wtedy z prawdopodobieństwem wagi warunków (dodatkowa liczba losowa jest losowana tylko przy ustawionych mapach, więc pokrywa bez map rozstawia się dokładnie jak dotąd).
+- W `forest_scene` (`tools/forest_scene/forest.level`): sosny na suchym, świerki i brzozy tam, gdzie wilgotniej, dęby na łagodnych zboczach, w jednej grupie na siatce 9 m do 1200 m, żadne na ścianach wąwozów, w wodzie ani przy brzegu; młode drzewa, krzewy, głazy, pniaki i zwalone pnie w promieniu 250 m; trzcina, pałka i grzybienie przy każdym jeziorze w promieniu 1500 m; trawa, paprocie, pokrzywy, niskie krzewy i drobne kamienie jako pokrywa. Około 71000 rzeczy staje w niecałą sekundę. Polana w stronę jeziora to własny filtr sceny (argument `keep`), nie reguła.
+
+## Rośliny wodne i przybrzeżne
+
+Nagłówek: `poligon/procedural_plants.h`. Nie znaleziono darmowych (CC0) modeli trzciny, pałki ani grzybieni, więc robi je silnik: `MakeReedModel`, `MakeCattailModel`, `MakeWaterLilyModel` zwracają model z trzema różnymi kępami obok siebie i ich własnymi małymi teksturami (też robionymi kodem), które `MakePlantKind` z `split_variants` zamienia w trzy odmiany; `UploadLoadedModel` kładzie taki model na kartę graficzną tak, jak zrobiłaby to biblioteka assetów.
+
+- Trzcina: 18 do 31 łodyg w kępie, po 2 lub 3 taśmowate liście, 1,6 do 2,6 m, wygięte na zewnątrz, i pierzasta brązowa wiecha na mniej więcej połowie łodyg (skrzyżowane karty). Pałka: sztywniejsze, szersze liście i 3 do 6 łodyg z brązową kolbą. Grzybienie: 6 do 13 okrągłych liści z wcięciem, leżących na wodzie, i do 2 białych kwiatów.
+- Reguły stawiają je według głębokości wody i odległości od brzegu: trzcinę w wodzie do pół metra i na linii brzegu, pałkę między 8 a 40 cm, grzybienie pływające (`on_water 1`) od 0,7 do 2,5 m.
+- Ograniczenia: liście to proste paski, a wiechy karty; bez prostszych poziomów (są małe i rysowane do 45 m); grzybień nie kołysze się na falach.
+
+## Wydeptane ścieżki
+
+Nagłówek: `poligon/trample.h`. Test: część o wygniataniu w `tests/vegetation_render_test.cpp` i w `tests/plant_rules_test.cpp`.
+
+- `TrampleMap` to kwadratowa siatka (domyślnie 128 m, 256 komórek) wartości od 0 (nietknięte) do 1 (płasko) wokół gracza. Gra przygniata rośliny tam, gdzie coś chodzi (`Trample(position, radius, amount)`), pozwala im powoli się podnosić (`Recover`) i przesuwa siatkę za graczem o całe komórki (`Recenter`), więc wartości zostają na swoim miejscu na terenie. To zwykła arytmetyka na tickach gry, więc powtórki zostawiają te same ścieżki.
+- `Renderer::SetTrampleMap(&map)` kopiuje ją na kartę, gdy się zmieniła; shader wierzchołków instancji czyta ją przy podstawie każdej rośliny, a roślina, której materiał gnie się na wietrze (`wind_bend` powyżej 0), przechyla się w swoją stronę i obniża, do 15% wysokości, w każdym przebiegu (jej cień idzie za nią).
+- W `forest_scene`: chodzenie kładzie trawę w około pół sekundy, biegające lisy robią to samo na swoich okręgach, a rośliny podnoszą się w około półtorej minuty; chodzenie tą samą drogą utrzymuje ścieżkę.
 
 ## Impostory
 

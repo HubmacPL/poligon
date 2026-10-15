@@ -4,7 +4,7 @@ Jak gra nazywa, przygotowuje i wczytuje swoje tekstury i modele, jak z modeli po
 
 Nagłówki: `poligon/assets.h`, `poligon/texture_compression.h`, `poligon/plants.h`, `poligon/level.h`. Narzędzie: `asset_cooker`. Przykład: `examples/assets`. Test: `tests/assets_test.cpp`.
 
-**Stan (ustalone 2026-10-14, zbudowane 2026-10-15):** jedna lista nazywa każdy asset z jego źródłem i ustawieniami; wypiekacz zamienia źródła w szybko wczytujące się pliki ze skompresowanymi teksturami; gra wczytuje po nazwie przez jedną bibliotekę, z folderu wypieczonego albo z archiwum; rośliny z modeli robi silnik; plik poziomu trzyma ustawienia terenu, start gracza i rzeczy postawione ręcznie. Jeszcze nie: reguły sadzenia w pliku poziomu (następny krok), animacje wypiekane jako archiwa ozz (klipy są zapisane jako klucze i zamieniane w animacje ozz przy wczytaniu), podział folderu danych na połówki źródłową i wypieczoną (czeka na decyzję autora: wypieczone pliki trafiają teraz do `build/cooked`, źródła zostają w `poligon-assets` bez zmian).
+**Stan (ustalone 2026-10-14, zbudowane 2026-10-15):** jedna lista nazywa każdy asset z jego źródłem i ustawieniami; wypiekacz zamienia źródła w szybko wczytujące się pliki ze skompresowanymi teksturami; gra wczytuje po nazwie przez jedną bibliotekę, z folderu wypieczonego albo z archiwum; rośliny z modeli robi silnik; plik poziomu trzyma ustawienia terenu, start gracza, rzeczy postawione ręcznie i reguły sadzenia ([vegetation.md](vegetation.md)). Jeszcze nie: animacje wypiekane jako archiwa ozz (klipy są zapisane jako klucze i zamieniane w animacje ozz przy wczytaniu), podział folderu danych na połówki źródłową i wypieczoną (czeka na decyzję autora: wypieczone pliki trafiają teraz do `build/cooked`, źródła zostają w `poligon-assets` bez zmian).
 
 ## Lista assetów
 
@@ -61,7 +61,7 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 - `wind_bend` i `wind_flutter` trafiają do materiałów (drżenie tylko do wycinanych alfą); `shadow_distance` i `shadow_level_bias` do gatunku.
 - `AddPlantCollider(physics, kind, variant, foot, turn, scale)` dodaje to, co zatrzymuje gracza: `PlantCollider::Trunk` (stojący walec o promieniu `trunk_radius`, najwyżej 8 m wysokości), `Block` (pudełko trochę mniejsze niż odmiana) albo nic.
 
-To przeniosło z `forest_scene` grupowanie odmian, szukanie prostszych poziomów i impostorów po folderach oraz wybór kolizji; pętla sadzenia przejdzie razem z regułami sadzenia.
+To przeniosło z `forest_scene` grupowanie odmian, szukanie prostszych poziomów i impostorów po folderach oraz wybór kolizji; pętla sadzenia stała się regułami sadzenia (`poligon/plant_rules.h`).
 
 ## Plik poziomu
 
@@ -78,4 +78,4 @@ object rocks/boulder 3538 5112 40 2.2    # asset, x i z na mapie, obrót, skala
 - `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/level.h`). Nieznane słowa i złe wartości to błędy z numerem wiersza; wiersze, których pierwsze słowo bierze inny czytelnik (np. reguły sadzenia), trafiają do `Level::other_lines`.
 - `player_start lake` używa `FindLakeViewpoint` (`poligon/terrain_generator.h`): łagodny teren 150 do 500 m od największego jeziora, jak najwyżej nad nim, z jego środkiem w widoku.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` czytają i zapisują ustawienia generatora po nazwie; `terrain_tool generate` używa tych samych nazw.
-- `forest_scene` czyta `tools/forest_scene/forest.level`: domyślny teren, start nad jeziorem i trzy głazy postawione ręcznie.
+- `forest_scene` czyta `tools/forest_scene/forest.level`: domyślny teren, start nad jeziorem, trzy głazy postawione ręcznie i 18 reguł sadzenia.

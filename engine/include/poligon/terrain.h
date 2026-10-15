@@ -67,25 +67,10 @@ private:
 
 // --- Ground layers from the generator's maps ---
 
-// A range of values with soft ends: full weight from `low` to `high`, falling to nothing
-// over `fade` beyond each end. The default range takes everything.
-struct TerrainRange {
-    float low = -1.0e30f;
-    float high = 1.0e30f;
-    float fade = 1.0f;
-};
-
 // Where one ground layer covers the land, judged from the generator's maps
-// (poligon/terrain_generator.h). Each condition gives 0 to 1 and they are multiplied.
+// (MapConditions, poligon/terrain_generator.h).
 struct TerrainLayerRule {
-    TerrainRange slope_degrees;
-    TerrainRange height;          // meters
-    TerrainRange moisture;        // 0 = dry, 1 = wet
-    TerrainRange sediment;        // meters of loose material
-    TerrainRange rock;            // 0 = soil, 1 = bare rock
-    TerrainRange flow;            // log10 of the square meters that drain through
-    TerrainRange water_distance;  // meters to lake water
-    TerrainRange water_depth;     // meters of water above the ground; 0 on land
+    MapConditions conditions;
     // Irregular patches: with patch_size above 0 the weight is also multiplied by noise of
     // about that size (meters), cut so that `patch_cover` of the land (0 to 1) is covered.
     float patch_size = 0.0f;

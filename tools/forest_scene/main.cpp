@@ -4,8 +4,10 @@
 // long a frame takes. The land is generated on the first run (about three minutes) and then
 // loaded from build/terrain_cache. The models and textures are named in assets.txt (next to
 // this file) and cooked into build/cooked when the program starts, whenever the list or a
-// source changed (poligon/assets.h). The land's settings, the player's start and things put
-// by hand are in forest.level (poligon/level.h).
+// source changed (poligon/assets.h). The land's settings, the player's start, things put by
+// hand and the rules that plant the forest, the shore and the ground cover are in
+// forest.level (poligon/level.h, poligon/plant_rules.h). Walking flattens grass into paths
+// (poligon/trample.h).
 //
 // Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
 //   X Z         where to stand, in meters from the start (default 0 0): a slope above
@@ -50,10 +52,13 @@
 #include "poligon/level.h"
 #include "poligon/model.h"
 #include "poligon/physics.h"
+#include "poligon/plant_rules.h"
 #include "poligon/plants.h"
+#include "poligon/procedural_plants.h"
 #include "poligon/platform.h"
 #include "poligon/render_settings.h"
 #include "poligon/terrain.h"
+#include "poligon/trample.h"
 #include "poligon/vegetation.h"
 #include "poligon/renderer.h"
 #include "poligon/water.h"
@@ -224,9 +229,12 @@ public:
           actions_(actions), settings_(settings), settings_path_(settings_path) {
         OpenAssets(asset_list, build_folder / "cooked");
         std::string level_error;
-        if (!poligon::LoadLevel(level_path.string().c_str(), level_, level_error)) {
+        if (!poligon::LoadLevel(level_path.string().c_str(), level_, level_error, poligon::GetPlantRuleWords())) {
             std::printf("forest_scene: %s; using the default land\n", level_error.c_str());
+        } else if (!poligon::ParsePlantRules(level_.other_lines, rules_, level_error)) {
+            std::printf("forest_scene: %s: %s\n", level_path.string().c_str(), level_error.c_str());
         }
+        renderer_.SetTrampleMap(&trample_);
         CreateGround();
         camera_.position = {view[0], Ground(view[0], view[1]) + kEyeHeight, view[1]};
         camera_.yaw_degrees = turn_given ? view[2] : start_yaw_;
@@ -308,6 +316,19 @@ public:
         if (!flying_) {
             camera_.position = physics_.GetCharacterPosition(walker_) + glm::vec3(0.0f, kEyeHeight, 0.0f);
         }
+        // Grass under walking feet goes flat in about half a second and stands up again
+        // over about a minute and a half; walking the same way again makes a path.
+        const glm::vec2 feet(camera_.position.x, camera_.position.z);
+        trample_.Recenter(feet);
+        if (!flying_ && (forward != 0.0f || right != 0.0f)) {
+            trample_.Trample(feet, 0.5f, 2.0f * delta);
+        }
+        for (const Animal& animal : animals_) {
+            if (animal.circle_radius > 0.0f) {
+                trample_.Trample({animal.transform[3].x, animal.transform[3].z}, 0.3f, 1.5f * delta);
+            }
+        }
+        trample_.Recover(0.011f * delta);
     }
 
     // Average processor time of EndFrame over the run, for the summary at the end.
@@ -538,28 +559,28 @@ private:
         // 0: mossy forest floor, wherever nothing else fits.
         rules[0].strength = 0.35f;
         // 1: dry litter in patches on drier ground.
-        rules[1].moisture = {0.0f, 0.45f, 0.15f};
+        rules[1].conditions.moisture = {0.0f, 0.45f, 0.15f};
         rules[1].patch_size = 45.0f;
         rules[1].patch_cover = 0.45f;
         // 2: grass in clearings on gentle, moderately moist ground.
-        rules[2].slope_degrees = {0.0f, 18.0f, 6.0f};
-        rules[2].moisture = {0.3f, 0.85f, 0.15f};
+        rules[2].conditions.slope_degrees = {0.0f, 18.0f, 6.0f};
+        rules[2].conditions.moisture = {0.3f, 0.85f, 0.15f};
         rules[2].patch_size = 120.0f;
         rules[2].patch_cover = 0.4f;
         // 3: mud where water gathers: wet ground, the bottoms of drainage lines, a band along
         // the shore.
-        rules[3].moisture = {0.82f, 1.0f, 0.1f};
-        rules[3].water_depth = {0.0f, 0.05f, 0.05f};
+        rules[3].conditions.moisture = {0.82f, 1.0f, 0.1f};
+        rules[3].conditions.water_depth = {0.0f, 0.05f, 0.05f};
         rules[3].strength = 1.2f;
         // 4: sand and gravel on the shore line and in shallow water.
-        rules[4].water_distance = {0.0f, 2.0f, 2.0f};
-        rules[4].water_depth = {0.0f, 0.5f, 0.4f};
+        rules[4].conditions.water_distance = {0.0f, 2.0f, 2.0f};
+        rules[4].conditions.water_depth = {0.0f, 0.5f, 0.4f};
         rules[4].strength = 1.6f;
         // 5: small stones on the lake bed and in stream beds.
-        rules[5].water_depth = {0.6f, 1000.0f, 0.4f};
+        rules[5].conditions.water_depth = {0.6f, 1000.0f, 0.4f};
         rules[5].strength = 2.0f;
         // 6: rock on steep ground and where the generator found bare rock.
-        rules[6].slope_degrees = {32.0f, 90.0f, 8.0f};
+        rules[6].conditions.slope_degrees = {32.0f, 90.0f, 8.0f};
         rules[6].strength = 2.0f;
         poligon::Image weights[2];
         const auto weights_started = std::chrono::steady_clock::now();
@@ -632,14 +653,8 @@ private:
     // The things the level puts by hand, by asset name.
     void PlaceLevelObjects() {
         for (const poligon::LevelObject& object : level_.objects) {
-            const Kind* kind = nullptr;
-            for (const Kind* candidate : {&pine_, &spruce_, &birch_, &oak_, &young_spruce_, &young_pine_, &shrub_, &low_shrub_,
-                                          &fern_, &nettle_, &grass_, &boulder_, &rocks_, &stump_, &fallen_trunk_}) {
-                if (candidate->asset_name == object.asset) {
-                    kind = candidate;
-                }
-            }
-            if (kind == nullptr || kind->plants.variants.empty()) {
+            const Kind* kind = FindKind(object.asset);
+            if (kind == nullptr) {
                 std::printf("forest_scene: the level places \"%s\", which is not loaded\n", object.asset.c_str());
                 continue;
             }
@@ -703,6 +718,34 @@ private:
         rocks_ = LoadKind("rocks/mossy_rocks", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, true, false, PlantCollider::Block));
         stump_ = LoadKind("wood/stump", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
         fallen_trunk_ = LoadKind("wood/fallen_trunk", false, MakeSettings(true, kThingLevels, false, {0.0f, 0.0f}, false, false, PlantCollider::Block));
+        // Water and shore plants made by the engine: no free models were found.
+        reed_ = MakeProceduralKind("procedural/reed", poligon::MakeReedModel(11u), {3.0f, 1.2f});
+        cattail_ = MakeProceduralKind("procedural/cattail", poligon::MakeCattailModel(12u), {2.0f, 0.8f});
+        water_lily_ = MakeProceduralKind("procedural/water_lily", poligon::MakeWaterLilyModel(13u), {0.0f, 0.0f});
+    }
+
+    // A kind from a model made in memory; small, one level, short shadows.
+    Kind MakeProceduralKind(const char* name, const poligon::Model& model, glm::vec2 wind) {
+        procedural_models_.push_back(std::make_unique<poligon::LoadedModel>(poligon::UploadLoadedModel(renderer_, model)));
+        Kind kind;
+        kind.is_small = true;
+        kind.asset_name = name;
+        kind.plants = poligon::MakePlantKind(*procedural_models_.back(), MakeSettings(false, kTreeLevels, true, wind, true, false),
+                                             vegetation_);
+        std::printf("forest_scene: %s: %zu variant(s), %lld triangles\n", name, kind.plants.variants.size(),
+                    static_cast<long long>(model.GetTriangleCount()));
+        return kind;
+    }
+
+    // The kind with this asset name, or nullptr.
+    const Kind* FindKind(const std::string& name) const {
+        for (const Kind* kind : {&pine_, &spruce_, &birch_, &oak_, &young_spruce_, &young_pine_, &shrub_, &low_shrub_, &fern_,
+                                 &nettle_, &grass_, &boulder_, &rocks_, &stump_, &fallen_trunk_, &reed_, &cattail_, &water_lily_}) {
+            if (kind->asset_name == name && !kind->plants.variants.empty()) {
+                return kind;
+            }
+        }
+        return nullptr;
     }
 
     // A small pile of crates in the clearing, to knock over.
@@ -825,98 +868,79 @@ private:
                            glm::scale(glm::mat4(1.0f), glm::vec3(fox_scale_));
     }
 
-    // Puts one random variant of `kind` at (x, z), standing on the ground, turned at random.
-    // `sink` pushes it into the ground by that part of its height (rocks, stumps).
-    void Place(const Kind& kind, Random& random, float x, float z, float scale, float sink = 0.0f) {
-        const std::vector<poligon::PlantVariant>& variants = kind.plants.variants;
-        if (variants.empty()) {
-            return;
+    // Puts one plant where a rule placed it (map coordinates; its foot at `placement.height`
+    // on the map, pushed into the ground by `sink` of its height).
+    void PlaceAt(const Kind& kind, const poligon::PlantPlacement& placement, float sink) {
+        const poligon::PlantVariant& variant = kind.plants.variants[static_cast<size_t>(placement.variant)];
+        const float x = placement.position.x - map_offset_.x;
+        const float z = placement.position.y - map_offset_.y;
+        const glm::vec3 foot(x, placement.height + world_height_offset_ - variant.height * placement.scale * sink, z);
+        vegetation_.AddInstance(variant.species_id, glm::translate(glm::mat4(1.0f), foot) *
+                                                        glm::rotate(glm::mat4(1.0f), placement.turn, {0.0f, 1.0f, 0.0f}) *
+                                                        glm::scale(glm::mat4(1.0f), glm::vec3(placement.scale)));
+        // What blocks the way gets a body in the physics world, where the player can walk.
+        if (std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize) {
+            poligon::AddPlantCollider(physics_, kind.plants, variant, foot, placement.turn, placement.scale);
         }
-        const size_t index = std::min(static_cast<size_t>(random.Next() * static_cast<float>(variants.size())), variants.size() - 1);
-        const poligon::PlantVariant& variant = variants[index];
-        // Nothing grows or lies on slopes this steep (the walls of gullies), or in a lake.
-        if (terrain_->GetSlopeDegrees(x, z) > 33.0f || IsWater(x, z)) {
-            return;
+        ++placed_count_;
+    }
+
+    // Whether a large thing may stand at a world position: not in the small clearing at the
+    // start, and not in the clearing that opens from the start towards the lake.
+    bool KeepsTheViewOpen(float x, float z) const {
+        if (x * x + z * z < 14.0f * 14.0f) {
+            return false;
         }
-        // A clearing opens from the start towards the lake, so that the lake is in view:
-        // no trees or large things within 22 degrees of that direction.
-        if (!kind.is_small && lake_distance_ > 0.0f) {
+        if (lake_distance_ > 0.0f) {
             const glm::vec2 offset(x, z);
             const float along = glm::dot(offset, lake_direction_);
             const float across = std::fabs(lake_direction_.x * offset.y - lake_direction_.y * offset.x);
             if (along > -8.0f && along < lake_distance_ && across < 8.0f + along * 0.4f) {
-                return;
+                return false;
             }
         }
-        Placement placement;
-        placement.variant = &variant;
-        placement.position = {x, Ground(x, z) - variant.height * scale * sink, z};
-        const float turn = random.Between(0.0f, 6.2831853f);
-        placement.transform = glm::translate(glm::mat4(1.0f), placement.position) *
-                              glm::rotate(glm::mat4(1.0f), turn, {0.0f, 1.0f, 0.0f}) *
-                              glm::scale(glm::mat4(1.0f), glm::vec3(scale));
-
-        // What blocks the way gets a body in the physics world, where the player can walk.
-        if (std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize) {
-            poligon::AddPlantCollider(physics_, kind.plants, variant, placement.position, turn, scale);
-        }
-        placement.is_small = kind.is_small;
-        vegetation_.AddInstance(variant.species_id, placement.transform);
-        ++placed_count_;
+        return true;
     }
 
-    // Scatters `count` plants evenly at random over a square around the middle.
-    void Scatter(const Kind& kind, Random& random, int count, float half_size, float scale_low, float scale_high,
-                 float sink = 0.0f) {
-        for (int i = 0; i < count; ++i) {
-            const float x = random.Between(-half_size, half_size);
-            const float z = random.Between(-half_size, half_size);
-            Place(kind, random, x, z, random.Between(scale_low, scale_high), sink);
-        }
-    }
-
+    // Plants everything the level's "plant" rules describe, group by group, around the start.
     void PlantForest() {
-        Random random(20261014u);
-
-        // Big trees: one per 9 m square, shifted at random within it, with gaps. Two places
-        // stay open: a clearing on the hilltop where the walk starts, and a wide wedge to
-        // the east of it, so that the valley can be seen from the top.
-        // Beyond kForestHalfSize the big trees go on alone, out to kFarForestHalfSize; the
-        // wedge to the east stays open for 400 m, so the far forest shows in the panorama.
-        const float spacing = 9.0f;
-        for (float cell_z = -kFarForestHalfSize; cell_z < kFarForestHalfSize; cell_z += spacing) {
-            for (float cell_x = -kFarForestHalfSize; cell_x < kFarForestHalfSize; cell_x += spacing) {
-                const float x = cell_x + random.Between(1.0f, spacing - 1.0f);
-                const float z = cell_z + random.Between(1.0f, spacing - 1.0f);
-                const float choice = random.Next();
-                const float scale = random.Between(0.8f, 1.2f);
-                const bool in_clearing = x * x + z * z < 14.0f * 14.0f;
-                const bool in_view_wedge = x > 5.0f && x < 400.0f && std::fabs(z) < x * 0.75f;
-                if (in_clearing || in_view_wedge || choice < 0.22f) {
-                    continue;
-                }
-                // Of the trees: about half pines, the rest spruces, birches and oaks.
-                if (choice < 0.60f) {
-                    Place(pine_, random, x, z, scale);
-                } else if (choice < 0.72f) {
-                    Place(spruce_, random, x, z, scale);
-                } else if (choice < 0.86f) {
-                    Place(birch_, random, x, z, scale);
-                } else {
-                    Place(oak_, random, x, z, scale);
-                }
+        std::vector<std::string> group_names;
+        std::vector<std::vector<const poligon::PlantRule*>> groups;
+        for (size_t i = 0; i < rules_.size(); ++i) {
+            const poligon::PlantRule& rule = rules_[i];
+            if (rule.is_cover) {
+                continue;
+            }
+            if (FindKind(rule.kind) == nullptr) {
+                std::printf("forest_scene: a rule plants \"%s\", which is not loaded\n", rule.kind.c_str());
+                continue;
+            }
+            const std::string name = rule.group.empty() ? "#" + std::to_string(i) : rule.group;
+            const auto found = std::find(group_names.begin(), group_names.end(), name);
+            if (found == group_names.end()) {
+                group_names.push_back(name);
+                groups.push_back({&rule});
+            } else {
+                groups[static_cast<size_t>(found - group_names.begin())].push_back(&rule);
             }
         }
-
-        // The forest now covers 500 x 500 m, twelve times the area it had on the flat test
-        // ground. Undergrowth is dense near the start and thinner over the whole area.
-        Scatter(young_spruce_, random, 350, kForestHalfSize, 0.5f, 1.3f);
-        Scatter(young_pine_, random, 350, kForestHalfSize, 0.5f, 1.3f);
-        Scatter(shrub_, random, 500, kForestHalfSize, 0.7f, 1.2f);
-        Scatter(boulder_, random, 120, kForestHalfSize, 0.6f, 2.2f, 0.25f);
-        Scatter(stump_, random, 110, kForestHalfSize, 0.8f, 1.2f, 0.05f);
-        Scatter(fallen_trunk_, random, 80, kForestHalfSize, 0.9f, 1.4f, 0.1f);
-        std::printf("forest_scene: %d things placed\n", placed_count_);
+        for (const std::vector<const poligon::PlantRule*>& group : groups) {
+            std::vector<const Kind*> kinds;
+            std::vector<int> variant_counts;
+            for (const poligon::PlantRule* rule : group) {
+                kinds.push_back(FindKind(rule->kind));
+                variant_counts.push_back(static_cast<int>(kinds.back()->plants.variants.size()));
+            }
+            const auto keep = [&](int rule, glm::vec2 place) {
+                return kinds[static_cast<size_t>(rule)]->is_small ||
+                       KeepsTheViewOpen(place.x - map_offset_.x, place.y - map_offset_.y);
+            };
+            const auto placements = poligon::PlacePlantGroup(maps_, group, map_offset_, 1500.0f, variant_counts, keep);
+            for (const auto& [rule, placement] : placements) {
+                PlaceAt(*kinds[static_cast<size_t>(rule)], placement, group[static_cast<size_t>(rule)]->sink);
+            }
+        }
+        std::printf("forest_scene: %d things placed by %zu rules\n", placed_count_, rules_.size());
         GrowGroundCover();
     }
 
@@ -929,9 +953,23 @@ private:
         // every_nth: use only every n-th variant of the kind (each variant is a draw call per
         // pass). shadow_limit: shadows of the layer stop here at the latest; grass shadows
         // matter only at the player's feet.
-        const auto add = [this](const Kind& kind, float density, float scale_low, float scale_high, float patch_threshold,
-                                float max_slope, bool align, float sink, int seed, size_t every_nth, float shadow_limit) {
-            const std::vector<poligon::PlantVariant>& variants = kind.plants.variants;
+        ground_cover_->SetMaps(&maps_, map_offset_);
+        // One layer per variant of a rule's kind, sharing the rule's density between them. A
+        // kind's levels are cut at the radius, so that plants fade out before their cell goes.
+        // Dense cover (more than a plant per square meter, grass) casts shadows only at the
+        // player's feet.
+        for (const poligon::PlantRule& rule : rules_) {
+            if (!rule.is_cover) {
+                continue;
+            }
+            const Kind* kind = FindKind(rule.kind);
+            if (kind == nullptr) {
+                std::printf("forest_scene: a cover rule grows \"%s\", which is not loaded\n", rule.kind.c_str());
+                continue;
+            }
+            const std::vector<poligon::PlantVariant>& variants = kind->plants.variants;
+            const size_t every_nth = static_cast<size_t>(std::max(rule.every_nth, 1));
+            const float shadow_limit = rule.density > 1.0f ? 8.0f : 20.0f;
             for (size_t i = 0; i < variants.size(); i += every_nth) {
                 poligon::GroundCoverLayer layer;
                 layer.species = variants[i].species;
@@ -945,26 +983,22 @@ private:
                         break;
                     }
                 }
-                layer.density = density / static_cast<float>((variants.size() + every_nth - 1) / every_nth);
-                layer.scale_min = scale_low;
-                layer.scale_max = scale_high;
-                layer.patch_threshold = patch_threshold;
-                layer.patch_softness = 0.25f;
-                layer.max_slope_degrees = max_slope;
-                layer.align_to_ground = align;
-                layer.sink_meters = sink;
-                // Nothing grows under the start lake's surface. (Rules that read the
-                // generator's maps replace this in the planting step.)
-                layer.min_height = start_lake_level_ + world_height_offset_ + 0.1f;
-                layer.seed = seed * 100 + static_cast<int>(i);
+                layer.density = rule.density / static_cast<float>((variants.size() + every_nth - 1) / every_nth);
+                layer.scale_min = rule.scale_min;
+                layer.scale_max = rule.scale_max;
+                if (rule.patch_size > 0.0f) {
+                    layer.patch_size = rule.patch_size;
+                    layer.patch_threshold = 1.0f - rule.patch_cover;
+                    layer.patch_softness = 0.25f;
+                }
+                layer.max_slope_degrees = 90.0f;  // the rule's conditions decide
+                layer.align_to_ground = rule.align_to_ground;
+                layer.sink_meters = rule.sink * variants[i].height * (rule.scale_min + rule.scale_max) * 0.5f;
+                layer.seed = rule.seed * 100 + static_cast<int>(i);
+                layer.conditions = rule.conditions;
                 ground_cover_->AddLayer(layer);
             }
-        };
-        add(grass_, 3.0f, 2.5f, 4.0f, 0.2f, 40.0f, true, 0.0f, 1, 3, 8.0f);
-        add(fern_, 0.06f, 0.9f, 1.7f, 0.5f, 33.0f, false, 0.0f, 2, 1, 20.0f);
-        add(nettle_, 0.03f, 2.5f, 4.0f, 0.55f, 33.0f, false, 0.0f, 3, 1, 20.0f);
-        add(low_shrub_, 0.02f, 1.2f, 2.0f, 0.4f, 33.0f, false, 0.0f, 4, 1, 20.0f);
-        add(rocks_, 0.002f, 0.35f, 0.8f, 0.0f, 50.0f, true, 0.08f, 5, 1, 20.0f);
+        }
     }
 
     poligon::Renderer& renderer_;
@@ -992,7 +1026,12 @@ private:
     poligon::WaterMaterial water_material_;
     std::vector<poligon::RenderModel> render_models_;
     Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
-        rocks_, stump_, fallen_trunk_;
+        rocks_, stump_, fallen_trunk_, reed_, cattail_, water_lily_;
+    // Models made in memory (water plants), kept for their meshes and textures.
+    std::vector<std::unique_ptr<poligon::LoadedModel>> procedural_models_;
+    // The level's plant rules, and where plants have been walked flat.
+    std::vector<poligon::PlantRule> rules_;
+    poligon::TrampleMap trample_{128.0f, 256};
     int loaded_kind_count_ = 0;
     // All plants, rocks and stumps: placed once, drawn by distance.
     poligon::Vegetation vegetation_;

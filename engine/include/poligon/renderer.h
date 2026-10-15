@@ -227,6 +227,7 @@ struct MeshHandle {
 };
 
 struct CompressedImage;  // poligon/texture_compression.h
+class TrampleMap;        // poligon/trample.h
 
 // Identifies a texture created by Renderer. An id of 0 means "no texture".
 struct TextureHandle {
@@ -468,6 +469,11 @@ public:
     // small one fine. All patches of a call cost one draw call per pass, and each is culled
     // on its own. Patch corners should lie on height map points.
     void DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count);
+    // Grass and small plants standing on trampled ground are bent flat: instanced meshes
+    // whose material bends in the wind (wind_bend above 0) read `map` at their foot, lean
+    // over and get lower by its value. The map is copied when its version changes; it must
+    // live as long as it is set. nullptr turns it off. See poligon/trample.h.
+    void SetTrampleMap(const TrampleMap* map);
     // Draws a water surface: usually a flat mesh at the water's level (poligon/water.h makes
     // them for lakes). It is drawn after everything else in the scene and reads what was
     // drawn under it: see WaterMaterial and Environment::water_reflection_steps.

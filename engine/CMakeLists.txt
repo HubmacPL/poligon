@@ -38,6 +38,9 @@ add_library(poligon_engine STATIC
   src/assets.cpp
   src/plants.cpp
   src/level.cpp
+  src/plant_rules.cpp
+  src/procedural_plants.cpp
+  src/trample.cpp
   src/physics.cpp
   src/platform.cpp
   src/render_settings.cpp

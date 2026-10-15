@@ -183,18 +183,6 @@ const TerrainStats& Terrain::GetStats() const {
 
 namespace {
 
-float RangeWeight(const TerrainRange& range, float value) {
-    if (value < range.low) {
-        const float t = std::clamp(1.0f - (range.low - value) / std::max(range.fade, 1e-6f), 0.0f, 1.0f);
-        return t * t * (3.0f - 2.0f * t);
-    }
-    if (value > range.high) {
-        const float t = std::clamp(1.0f - (value - range.high) / std::max(range.fade, 1e-6f), 0.0f, 1.0f);
-        return t * t * (3.0f - 2.0f * t);
-    }
-    return 1.0f;
-}
-
 float CornerValue(std::int32_t x, std::int32_t z, std::uint32_t seed) {
     std::uint32_t h = seed ^ (static_cast<std::uint32_t>(x) * 0x8DA6B343u) ^ (static_cast<std::uint32_t>(z) * 0xD8163841u);
     h ^= h >> 15;
@@ -247,17 +235,10 @@ void MakeTerrainLayerWeights(const TerrainMaps& maps, const TerrainLayerRule* ru
             const size_t i = static_cast<size_t>(z) * static_cast<size_t>(maps.map_width) + static_cast<size_t>(x);
             const float px = static_cast<float>(x) * maps.map_spacing;
             const float pz = static_cast<float>(z) * maps.map_spacing;
-            const float slope = maps.height.GetSlopeDegrees(px, pz);
-            const float height = maps.height.GetHeight(px, pz);
-            const float depth = maps.GetWaterDepth(px, pz);
-            const float flow = std::log10(std::max(maps.flow[i], 1.0f));
             float total = 0.0f;
             for (int layer = 0; layer < count; ++layer) {
                 const TerrainLayerRule& rule = rules[layer];
-                float weight = rule.strength * RangeWeight(rule.slope_degrees, slope) * RangeWeight(rule.height, height) *
-                               RangeWeight(rule.moisture, maps.moisture[i]) * RangeWeight(rule.sediment, maps.sediment[i]) *
-                               RangeWeight(rule.rock, maps.rock[i]) * RangeWeight(rule.flow, flow) *
-                               RangeWeight(rule.water_distance, maps.water_distance[i]) * RangeWeight(rule.water_depth, depth);
+                float weight = rule.strength * rule.conditions.Weight(maps, glm::vec2(px, pz));
                 if (weight > 0.0f && rule.patch_size > 0.0f) {
                     const float noise = PatchNoise(px / rule.patch_size, pz / rule.patch_size, seed + static_cast<std::uint32_t>(layer) * 7919u);
                     // Cut the noise so that about `patch_cover` of the land is inside a patch.

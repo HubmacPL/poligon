@@ -43,6 +43,9 @@ struct GroundCoverLayer {
     float sink_meters = 0.0f;
     // Different seeds give different placements for layers that would otherwise coincide.
     int seed = 0;
+    // Conditions on the generator's maps (only when GroundCover::SetMaps was given maps):
+    // a plant is kept with the probability of their weight. The default takes everything.
+    MapConditions conditions;
 };
 
 struct GroundCoverStats {
@@ -75,6 +78,10 @@ public:
     float GetRadius() const;
     // Multiplies every layer's density (graphics quality); all cells are rebuilt.
     void SetDensityScale(float scale);
+    // The generator's maps of the land, for the layers' conditions; a map position is the
+    // world position (x, z) plus `world_to_map`. nullptr turns the conditions off. Cells
+    // are built again. The maps must outlive the ground cover.
+    void SetMaps(const TerrainMaps* maps, const glm::vec2& world_to_map);
     // Appends the transforms of all living plants of a layer (for tests and tools).
     void CollectInstances(int layer, std::vector<glm::mat4>& out) const;
     const GroundCoverStats& GetStats() const;

@@ -16,6 +16,7 @@
 
 #include "poligon/fatal_error.h"
 #include "poligon/texture_compression.h"
+#include "poligon/trample.h"
 #include "poligon_shaders/ao_blur_frag_dxil.h"
 #include "poligon_shaders/ao_blur_frag_spirv.h"
 #include "poligon_shaders/ao_frag_dxil.h"
@@ -79,6 +80,7 @@ constexpr int kCascadeCount = 4;
 struct VertexFrameUniforms {
     glm::mat4 view_projection;
     glm::vec4 wind{0.0f};
+    glm::vec4 trample{0.0f};  // xy: corner of the trample map, z: 1 / its size, w: 1 = on
 };
 
 struct ObjectUniforms {
@@ -554,6 +556,14 @@ struct Renderer::Impl {
     SDL_GPUTexture* water_scene_copy = nullptr;
     SDL_GPUTexture* water_depth_copy = nullptr;
     std::vector<WaterCommand> water_commands;
+    // Trampled plants (Renderer::SetTrampleMap): the map, its copy on the card and which
+    // version of it that copy holds; trample_info goes to VertexFrameUniforms::trample.
+    const TrampleMap* trample_map = nullptr;
+    SDL_GPUTexture* trample_texture = nullptr;
+    int trample_resolution = 0;
+    std::uint32_t trample_version = 0xFFFFFFFFu;
+    glm::vec4 trample_info{0.0f};
+    SDL_GPUTexture* no_trample_texture = nullptr;
 
     // Temporal anti-aliasing: two images written in turn, each frame reading the other as
     // its history, the previous frame's camera (without its shift), and the frame count
@@ -1060,7 +1070,7 @@ struct Renderer::Impl {
 
         // --- And for instanced meshes: the usual vertex buffer, another vertex shader ---
         SDL_GPUShader* instanced_vertex =
-            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshInstancedVertDxil, sizeof(kMeshInstancedVertDxil),
+            CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 1, 2, kMeshInstancedVertDxil, sizeof(kMeshInstancedVertDxil),
                          kMeshInstancedVertSpirv, sizeof(kMeshInstancedVertSpirv), 1);
         const auto create_instanced = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUCullMode cull_mode) {
             info.vertex_shader = instanced_vertex;
@@ -1231,6 +1241,32 @@ struct Renderer::Impl {
         SDL_ReleaseGPUShader(device, fullscreen_vertex);
         SDL_ReleaseGPUShader(device, sky_fragment);
         SDL_ReleaseGPUShader(device, tonemap_fragment);
+    }
+
+    // Copies a square of single bytes into a one-channel texture of that size.
+    void UploadR8(SDL_GPUTexture* texture, const std::uint8_t* values, int resolution) {
+        SDL_GPUTransferBuffer* transfer =
+            CreateFilledTransferBuffer(values, static_cast<Uint32>(resolution) * static_cast<Uint32>(resolution));
+        SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
+        if (commands == nullptr) {
+            FatalSdlError("cannot acquire command buffer");
+        }
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        SDL_GPUTextureTransferInfo source{};
+        source.transfer_buffer = transfer;
+        source.pixels_per_row = static_cast<Uint32>(resolution);
+        source.rows_per_layer = static_cast<Uint32>(resolution);
+        SDL_GPUTextureRegion destination{};
+        destination.texture = texture;
+        destination.w = static_cast<Uint32>(resolution);
+        destination.h = static_cast<Uint32>(resolution);
+        destination.d = 1;
+        SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
+        SDL_EndGPUCopyPass(copy_pass);
+        if (!SDL_SubmitGPUCommandBuffer(commands)) {
+            FatalSdlError("cannot submit texture upload");
+        }
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
     }
 
     // Data reaches the GPU through a transfer buffer: CPU-visible memory that a copy pass reads from.
@@ -1458,6 +1494,10 @@ struct Renderer::Impl {
                 SDL_BindGPUGraphicsPipeline(pass, pipeline);
                 bound_pipeline = pipeline;
                 SDL_BindGPUVertexStorageBuffers(pass, 0, &instance_buffer, 1);
+                SDL_GPUTextureSamplerBinding trample_binding{};
+                trample_binding.texture = trample_texture != nullptr && trample_info.w > 0.0f ? trample_texture : no_trample_texture;
+                trample_binding.sampler = linear_clamp_sampler;
+                SDL_BindGPUVertexSamplers(pass, 0, &trample_binding, 1);
             }
 
             ObjectUniforms object_uniforms;
@@ -1851,6 +1891,22 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     impl_->flat_normal_array_texture = CreateTextureArray(&flat_normal, 1, plain_data);
     impl_->first_layer_weights = CreateTexture(MakeSolidImage(1, 1, 255, 0, 0, 0), plain_data);
     impl_->no_weights = CreateTexture(MakeSolidImage(1, 1, 0, 0, 0, 0), plain_data);
+    {
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = 1;
+        info.height = 1;
+        info.layer_count_or_depth = 1;
+        info.num_levels = 1;
+        impl_->no_trample_texture = SDL_CreateGPUTexture(impl_->device, &info);
+        if (impl_->no_trample_texture == nullptr) {
+            FatalSdlError("cannot create trample texture");
+        }
+        const std::uint8_t zero = 0;
+        impl_->UploadR8(impl_->no_trample_texture, &zero, 1);
+    }
 
     if (config.debug_ui && impl_->window != nullptr) {
         IMGUI_CHECKVERSION();
@@ -1913,7 +1969,8 @@ Renderer::~Renderer() {
         }
         for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
                                         impl_->luminance_targets[0], impl_->luminance_targets[1], impl_->taa_targets[0],
-                                        impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy}) {
+                                        impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy,
+                                        impl_->no_trample_texture, impl_->trample_texture}) {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
         for (const BloomLevel& level : impl_->bloom_levels) {
@@ -2375,6 +2432,36 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->environment = environment;
     impl_->draw_commands.clear();
     impl_->water_commands.clear();
+    // The trample map, copied to the card when it changed.
+    if (impl_->trample_map == nullptr) {
+        impl_->trample_info = glm::vec4(0.0f);
+    } else {
+        const TrampleMap& map = *impl_->trample_map;
+        if (impl_->trample_texture == nullptr || impl_->trample_resolution != map.GetResolution()) {
+            if (impl_->trample_texture != nullptr) {
+                SDL_ReleaseGPUTexture(impl_->device, impl_->trample_texture);
+            }
+            SDL_GPUTextureCreateInfo info{};
+            info.type = SDL_GPU_TEXTURETYPE_2D;
+            info.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+            info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            info.width = static_cast<Uint32>(map.GetResolution());
+            info.height = static_cast<Uint32>(map.GetResolution());
+            info.layer_count_or_depth = 1;
+            info.num_levels = 1;
+            impl_->trample_texture = SDL_CreateGPUTexture(impl_->device, &info);
+            if (impl_->trample_texture == nullptr) {
+                FatalSdlError("cannot create trample texture");
+            }
+            impl_->trample_resolution = map.GetResolution();
+            impl_->trample_version = 0xFFFFFFFFu;
+        }
+        if (impl_->trample_version != map.GetVersion()) {
+            impl_->UploadR8(impl_->trample_texture, map.GetBytes().data(), map.GetResolution());
+            impl_->trample_version = map.GetVersion();
+        }
+        impl_->trample_info = glm::vec4(map.GetOrigin().x, map.GetOrigin().y, 1.0f / map.GetSize(), 1.0f);
+    }
     impl_->joint_palette.clear();
     impl_->instance_sources.clear();
     impl_->instance_batches.clear();
@@ -2991,6 +3078,11 @@ void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transfor
     impl_->draw_commands.push_back(command);
 }
 
+void Renderer::SetTrampleMap(const TrampleMap* map) {
+    impl_->trample_map = map;
+    impl_->trample_version = 0xFFFFFFFFu;
+}
+
 void Renderer::DrawWater(MeshHandle mesh, const glm::mat4& transform, const WaterMaterial& material) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawWater: call BeginFrame first");
@@ -3135,6 +3227,7 @@ void Renderer::EndFrame() {
             VertexFrameUniforms frame_uniforms;
             frame_uniforms.view_projection = cascades.light_view_projection[cascade];
             frame_uniforms.wind = impl.WindUniform();
+            frame_uniforms.trample = impl.trample_info;
             SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
 
             for (const std::uint32_t command_index : impl.cascade_commands[cascade]) {
@@ -3187,6 +3280,7 @@ void Renderer::EndFrame() {
         VertexFrameUniforms frame_uniforms;
         frame_uniforms.view_projection = view_projection;
         frame_uniforms.wind = impl.WindUniform();
+        frame_uniforms.trample = impl.trample_info;
         SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
         SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
         for (const std::uint32_t command_index : impl.visible_commands) {
@@ -3286,6 +3380,7 @@ void Renderer::EndFrame() {
         VertexFrameUniforms vertex_frame_uniforms;
         vertex_frame_uniforms.view_projection = view_projection;
         vertex_frame_uniforms.wind = impl.WindUniform();
+        vertex_frame_uniforms.trample = impl.trample_info;
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
 
         for (int i = 0; i < kCascadeCount; ++i) {
@@ -3391,6 +3486,7 @@ void Renderer::EndFrame() {
         VertexFrameUniforms vertex_frame_uniforms;
         vertex_frame_uniforms.view_projection = view_projection;
         vertex_frame_uniforms.wind = impl.WindUniform();
+        vertex_frame_uniforms.trample = impl.trample_info;
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
         SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
         SDL_GPUTextureSamplerBinding bindings[4]{};

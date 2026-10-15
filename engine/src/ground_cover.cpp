@@ -73,6 +73,8 @@ struct GroundCover::Impl {
     float radius = 80.0f;
     float cell_size = 16.0f;
     float density_scale = 1.0f;
+    const TerrainMaps* maps = nullptr;
+    glm::vec2 world_to_map{0.0f};
     std::vector<GroundCoverLayer> layers;
     std::vector<int> species_ids;
     Vegetation vegetation{32.0f};
@@ -101,6 +103,8 @@ struct GroundCover::Impl {
                 const float turn = random.Between(0.0f, 6.2831853f);
                 const float scale = random.Between(layer.scale_min, layer.scale_max);
                 const float patch_roll = random.Next();
+                // Drawn only with maps, so that cover without them is placed as before.
+                const float map_roll = maps != nullptr ? random.Next() : 0.0f;
                 // Every random number is drawn before any rule, so that a plant rejected by a
                 // rule does not shift the plants after it.
                 if (layer.patch_threshold > 0.0f) {
@@ -113,6 +117,9 @@ struct GroundCover::Impl {
                     }
                 }
                 if (terrain->GetSlopeDegrees(x, z) > layer.max_slope_degrees) {
+                    continue;
+                }
+                if (maps != nullptr && map_roll >= layer.conditions.Weight(*maps, glm::vec2(x, z) + world_to_map)) {
                     continue;
                 }
                 const float height = terrain->GetHeight(x, z);
@@ -236,6 +243,13 @@ void GroundCover::SetDensityScale(float scale) {
     impl_->density_scale = scale;
     impl_->cells.clear();
     impl_->has_camera = false;  // the next Update builds every cell again
+}
+
+void GroundCover::SetMaps(const TerrainMaps* maps, const glm::vec2& world_to_map) {
+    impl_->maps = maps;
+    impl_->world_to_map = world_to_map;
+    impl_->cells.clear();
+    impl_->has_camera = false;
 }
 
 float GroundCover::GetRadius() const {

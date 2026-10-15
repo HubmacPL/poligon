@@ -1,10 +1,12 @@
 // Checks the vegetation system: which level of detail each plant gets, which cells are
-// skipped, how shadows are handled, and that the plants end up in the picture.
+// skipped, how shadows are handled, that the plants end up in the picture, and that plants
+// on trampled ground are bent flat.
 // Usage: vegetation_render_test d3d12|vulkan
 #include <cstdio>
 #include <cstring>
 
 #include "poligon/renderer.h"
+#include "poligon/trample.h"
 #include "poligon/vegetation.h"
 #include "test_support.h"
 
@@ -188,5 +190,48 @@ int main(int argc, char** argv) {
     Expect(red_pixels * 4 >= covered && blue_pixels * 4 >= covered, "halfway through the fade both levels show about equally");
 
     std::printf("vegetation_render_test finished\n");
+    // Trampled ground: a 3 m tall green stalk that bends in the wind, seen from the side,
+    // stands upright on untouched ground and lies low on trampled ground.
+    {
+        poligon::Material green;
+        green.color = {0.0f, 1.0f, 0.0f, 1.0f};
+        green.roughness = 1.0f;
+        green.wind_bend = 1.0f;
+        const glm::mat4 stalk = glm::scale(identity, {0.3f, 3.0f, 0.3f}) * glm::translate(identity, {0.0f, 0.5f, 0.0f});
+        const glm::mat4 standing = identity;  // its foot at the origin
+        poligon::Camera side;
+        side.position = {0.0f, 1.5f, 8.0f};
+        side.target = {0.0f, 1.5f, 0.0f};
+        poligon::DirectionalLight flat;
+        flat.color = {0.0f, 0.0f, 0.0f, 1.0f};
+        flat.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
+        poligon::Environment plain;
+        plain.shadows = false;
+        poligon::TrampleMap trample(16.0f, 32);
+        trample.Recenter({0.0f, 0.0f});
+        trample.Trample({0.0f, 0.0f}, 2.0f, 1.0f);
+        poligon::Image upright;
+        poligon::Image flattened;
+        for (int pass = 0; pass < 2; ++pass) {
+            renderer.SetTrampleMap(pass == 0 ? nullptr : &trample);
+            renderer.BeginFrame(side, flat, plain);
+            const glm::mat4 transform = standing * stalk;
+            renderer.DrawMeshInstances(cube, green, &transform, 1);
+            renderer.EndFrame();
+            renderer.CaptureFrame(pass == 0 ? upright : flattened);
+        }
+        renderer.SetTrampleMap(nullptr);
+        // 2.5 m up the stalk, in the middle of the picture's width.
+        const int row = static_cast<int>(kSize * 0.5f - (1.0f / (8.0f * 0.57735027f)) * kSize * 0.5f);
+        const std::uint8_t* high_before = &upright.pixels[static_cast<size_t>(row * kSize + kSize / 2) * 4];
+        const std::uint8_t* high_after = &flattened.pixels[static_cast<size_t>(row * kSize + kSize / 2) * 4];
+        if (!(high_before[1] > 200 && high_after[1] < 50)) {
+            std::printf("  2.5 m up: %d %d %d upright, %d %d %d trampled\n", high_before[0], high_before[1], high_before[2],
+                        high_after[0], high_after[1], high_after[2]);
+        }
+        Expect(high_before[1] > 200, "an untrampled stalk stands 3 m tall");
+        Expect(high_after[1] < 50, "a stalk on trampled ground lies low");
+    }
+
     return test::ExitCode();
 }

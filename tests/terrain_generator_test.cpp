@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
     if (!first.lakes.empty()) {
         poligon::TerrainLayerRule rules[2];
         rules[0].strength = 0.1f;
-        rules[1].water_depth = {0.3f, 1000.0f, 0.1f};
+        rules[1].conditions.water_depth = {0.3f, 1000.0f, 0.1f};
         poligon::Image weights[2];
         poligon::MakeTerrainLayerWeights(first, rules, 2, 1u, weights);
         Expect(weights[0].width == first.map_width && weights[0].height == first.map_depth && weights[1].width == first.map_width,

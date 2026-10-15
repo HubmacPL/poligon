@@ -4,7 +4,7 @@ How a game names, prepares and loads its textures and models, how plants are mad
 
 Headers: `poligon/assets.h`, `poligon/texture_compression.h`, `poligon/plants.h`, `poligon/level.h`. Tool: `asset_cooker`. Example: `examples/assets`. Test: `tests/assets_test.cpp`.
 
-**State (decided on 2026-10-14, built on 2026-10-15):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start and things put by hand. Not yet: plant rules in the level file (the next step), animations cooked as ozz archives (clips are stored as keys and turned into ozz animations on load), the data folder split into source and cooked halves (waiting for the author's decision: cooked files now go to `build/cooked`, sources stay in `poligon-assets` as they are).
+**State (decided on 2026-10-14, built on 2026-10-15):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start, things put by hand and the plant rules ([vegetation.md](vegetation.md)). Not yet: animations cooked as ozz archives (clips are stored as keys and turned into ozz animations on load), the data folder split into source and cooked halves (waiting for the author's decision: cooked files now go to `build/cooked`, sources stay in `poligon-assets` as they are).
 
 ## The asset list
 
@@ -61,7 +61,7 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 - `wind_bend` and `wind_flutter` go to the materials (flutter to cut-out ones only); `shadow_distance` and `shadow_level_bias` to the species.
 - `AddPlantCollider(physics, kind, variant, foot, turn, scale)` adds what blocks the player: `PlantCollider::Trunk` (an upright cylinder of `trunk_radius`, at most 8 m tall), `Block` (a box a little smaller than the variant) or nothing.
 
-This moved the variant grouping, the search for simpler levels and impostors by folder, and the choice of collider out of `forest_scene`; the planting loop moves with the plant rules.
+This moved the variant grouping, the search for simpler levels and impostors by folder, and the choice of collider out of `forest_scene`; the planting loop became the plant rules (`poligon/plant_rules.h`).
 
 ## The level file
 
@@ -78,4 +78,4 @@ object rocks/boulder 3538 5112 40 2.2    # asset, map x, z, turn, scale
 - `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/level.h`). Unknown words and bad values are errors that name the line; lines whose first word another reader takes (for example the plant rules) are kept in `Level::other_lines`.
 - `player_start lake` uses `FindLakeViewpoint` (`poligon/terrain_generator.h`): gentle ground 150 to 500 m from the largest lake, as high above it as possible with its middle in view.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` read and write generator settings by name; `terrain_tool generate` uses the same names.
-- `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake and three boulders put by hand.
+- `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake, three boulders put by hand and 18 plant rules.

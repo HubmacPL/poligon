@@ -18,7 +18,7 @@ namespace {
 
 // Bump when the generator's output changes for the same settings: cache files are named
 // by a hash that includes it.
-constexpr std::uint32_t kGeneratorVersion = 2;
+constexpr std::uint32_t kGeneratorVersion = 3;
 
 // --- Random numbers and noise of our own, so that results never depend on a library ---
 
@@ -861,7 +861,9 @@ void BuildMaps(const TerrainGeneratorSettings& s, const CoarseResult& coarse, Fi
 
             const float specific_area = maps.flow[i] / s.map_spacing;
             const float wetness = std::log(specific_area / std::max(slope, 0.002f));
-            const float from_wetness = static_cast<float>(SmoothStep(5.0, 13.0, wetness));
+            // Linear in the index: ridges dry (about 3.5 and less), hillsides in between,
+            // valley floors wet (about 14.5 and more).
+            const float from_wetness = std::clamp((wetness - 3.5f) / 11.0f, 0.0f, 1.0f);
             const float from_water = std::exp(-maps.water_distance[i] / 25.0f);
             maps.moisture[i] = maps.water_distance[i] == 0.0f ? 1.0f : std::clamp(std::max(from_wetness, from_water), 0.0f, 1.0f);
         }
@@ -1027,6 +1029,55 @@ std::vector<SettingField> SettingFields(TerrainGeneratorSettings& s) {
 }
 
 } // namespace
+
+namespace {
+
+float RangeWeight(const TerrainRange& range, float value) {
+    if (value < range.low) {
+        const float t = std::clamp(1.0f - (range.low - value) / std::max(range.fade, 1e-6f), 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+    if (value > range.high) {
+        const float t = std::clamp(1.0f - (value - range.high) / std::max(range.fade, 1e-6f), 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+    return 1.0f;
+}
+
+bool IsSet(const TerrainRange& range) {
+    return range.low > -1.0e29f || range.high < 1.0e29f;
+}
+
+} // namespace
+
+float MapConditions::Weight(const TerrainMaps& maps, glm::vec2 place) const {
+    float weight = 1.0f;
+    if (IsSet(slope_degrees)) {
+        weight *= RangeWeight(slope_degrees, maps.height.GetSlopeDegrees(place.x, place.y));
+    }
+    if (weight > 0.0f && IsSet(height)) {
+        weight *= RangeWeight(height, maps.height.GetHeight(place.x, place.y));
+    }
+    if (weight > 0.0f && IsSet(moisture)) {
+        weight *= RangeWeight(moisture, maps.Sample(maps.moisture, place.x, place.y));
+    }
+    if (weight > 0.0f && IsSet(sediment)) {
+        weight *= RangeWeight(sediment, maps.Sample(maps.sediment, place.x, place.y));
+    }
+    if (weight > 0.0f && IsSet(rock)) {
+        weight *= RangeWeight(rock, maps.Sample(maps.rock, place.x, place.y));
+    }
+    if (weight > 0.0f && IsSet(flow)) {
+        weight *= RangeWeight(flow, std::log10(std::max(maps.Sample(maps.flow, place.x, place.y), 1.0f)));
+    }
+    if (weight > 0.0f && IsSet(water_distance)) {
+        weight *= RangeWeight(water_distance, maps.Sample(maps.water_distance, place.x, place.y));
+    }
+    if (weight > 0.0f && IsSet(water_depth)) {
+        weight *= RangeWeight(water_depth, maps.GetWaterDepth(place.x, place.y));
+    }
+    return weight;
+}
 
 bool SetTerrainGeneratorSetting(TerrainGeneratorSettings& settings, const std::string& name, const std::string& value) {
     if (value.empty()) {

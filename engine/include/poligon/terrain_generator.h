@@ -131,6 +131,31 @@ struct TerrainMaps {
     float GetWaterDepth(float x, float z) const;
 };
 
+// A range of values with soft ends: full weight from `low` to `high`, falling to nothing
+// over `fade` beyond each end. The default range takes everything.
+struct TerrainRange {
+    float low = -1.0e30f;
+    float high = 1.0e30f;
+    float fade = 1.0f;
+};
+
+// Conditions on the maps at a place, each a soft range; together they give a weight from
+// 0 to 1 (the product). Used by ground layers (poligon/terrain.h) and plant rules
+// (poligon/plant_rules.h). Ranges left at their default are not even looked up.
+struct MapConditions {
+    TerrainRange slope_degrees;
+    TerrainRange height;          // meters
+    TerrainRange moisture;        // 0 = dry, 1 = wet
+    TerrainRange sediment;        // meters of loose material
+    TerrainRange rock;            // 0 = soil, 1 = bare rock
+    TerrainRange flow;            // log10 of the square meters that drain through
+    TerrainRange water_distance;  // meters to lake water
+    TerrainRange water_depth;     // meters of water above the ground; 0 on land
+
+    // `place` in meters on the map.
+    float Weight(const struct TerrainMaps& maps, glm::vec2 place) const;
+};
+
 // Runs the whole simulation. Ends the process with FatalError on invalid settings.
 void GenerateTerrain(const TerrainGeneratorSettings& settings, TerrainMaps& maps);
 

@@ -48,11 +48,11 @@ int main(int argc, char** argv) {
     const poligon::Image normals[4] = {normal, normal, normal, normal};
     poligon::TerrainLayerRule rules[4];
     rules[0].strength = 0.3f;                            // grass wherever nothing else fits
-    rules[1].moisture = {0.8f, 1.0f, 0.1f};              // wet ground
-    rules[2].water_distance = {0.0f, 3.0f, 2.0f};        // the shore
-    rules[2].water_depth = {0.0f, 0.5f, 0.3f};
+    rules[1].conditions.moisture = {0.8f, 1.0f, 0.1f};              // wet ground
+    rules[2].conditions.water_distance = {0.0f, 3.0f, 2.0f};        // the shore
+    rules[2].conditions.water_depth = {0.0f, 0.5f, 0.3f};
     rules[2].strength = 1.5f;
-    rules[3].water_depth = {0.5f, 1000.0f, 0.3f};        // the lake bed
+    rules[3].conditions.water_depth = {0.5f, 1000.0f, 0.3f};        // the lake bed
     rules[3].strength = 2.0f;
     poligon::Image weights[2];
     poligon::MakeTerrainLayerWeights(maps, rules, 4, 1u, weights);

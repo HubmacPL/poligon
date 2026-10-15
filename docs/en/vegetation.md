@@ -2,7 +2,7 @@
 
 Drawing plants, rocks and other things that stand around in great numbers: instancing, levels of detail, cells.
 
-Headers: `poligon/vegetation.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`), `poligon/impostor.h`. Tool: `impostor_baker`. Examples: `examples/vegetation`, `examples/impostor`. Tests: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
+Headers: `poligon/vegetation.h`, `poligon/ground_cover.h`, `poligon/plant_rules.h`, `poligon/procedural_plants.h`, `poligon/trample.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/impostor.h`. Tool: `impostor_baker`. Examples: `examples/vegetation`, `examples/impostor`. Tests: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
 
 **State:** instancing, levels of detail chosen by distance, cells, separate handling of shadows, impostors for the farthest level, fading between levels, tools for simpler levels of trees and for impostors. Not yet: wind, placing plants by rules of the terrain, plants made on the fly around the player.
 
@@ -71,7 +71,32 @@ cover.Draw(renderer, camera);           // between BeginFrame and EndFrame
 - `Update` does nothing while the camera stays within one cell; crossing into a new one builds the cells that came into reach (a few, each in a fraction of a millisecond) and hands every living plant to a `Vegetation` inside, which then draws them with levels, fades, wind and shadows like anything else.
 - `sink_meters` buries pebbles a little; `scale_min`/`scale_max` vary size; `CollectInstances` lists what exists (tests, tools).
 - In `forest_scene`: grass (3 per m², in patches, every third of the 21 tuft variants, shadows only within 8 m), ferns, nettles, low shrubs and small moss rocks grow within 90 m of the player over the whole 6 x 6 km, with one layer per model variant; nothing of them is planted any more. Trees, big shrubs, boulders, stumps and trunks stay planted (`Vegetation`), because they have collisions and shadows from afar. Measured (release, headless, 200 frames, the same run with the radius cut to 1 m as the baseline): 1.1 to 1.6 ms per frame for about 16000 extra instances in reach, of which 4000 to 4500 in view. Each layer costs a draw call per pass, so a kind with many variants should use a few of them, or its variants should be merged into clumps.
-- Not yet: a painted ground map saying where which layer grows (today only slope, height and noise), a trample map for paths through grass, and a fade-in when a cell appears nearer than the layer's farthest distance.
+- Layers can follow the terrain generator's maps (see Plant rules below), and plants on trampled ground lie down (see Trampled paths). Not yet: a fade-in when a cell appears nearer than the layer's farthest distance.
+
+## Plant rules
+
+Header: `poligon/plant_rules.h`. Example: `examples/plant_rules`. Test: `tests/plant_rules_test.cpp`.
+
+- Where plants grow is data: rules in the level file (`poligon/level.h`) that read the terrain generator's maps. A rule names a kind and gives a density (plants per square meter where every condition holds fully), a spacing, a range of sizes, conditions on the maps (`slope`, `height`, `moisture`, `sediment`, `rock`, `flow`, `water_distance`, `water_depth`, each low, high and fade, see `MapConditions`), clumps (`patch SIZE COVER`), an area around the player's start, `sink`, `align`, `on_water` and a `seed`. `ParsePlantRules` reads them from the lines `LoadLevel` keeps for other readers (pass `GetPlantRuleWords()`); bad lines are errors that name the line.
+- `plant` rules place things once, over an area (`PlacePlants`): a jittered grid of the spacing, one candidate per cell, kept with the probability density x spacing squared x the conditions' weight x the clumps. Each cell decides from its own coordinates and the seed, so placements do not depend on the order of anything. Rules of one `group` share a grid (`PlacePlantGroup`): in each cell at most one of them grows, chosen with the probabilities each would have alone, so trees of different kinds never stand in each other.
+- `cover` rules become ground cover layers: `GroundCoverLayer::conditions` takes the rule's conditions, and `GroundCover::SetMaps(maps, world_to_map)` gives the layers the maps; a plant is then kept with the probability of the conditions' weight (an extra random number is drawn only when maps are set, so cover without maps is placed exactly as before).
+- In `forest_scene` (`tools/forest_scene/forest.level`): pines on dry ground, spruces and birches where it is wetter, oaks on gentle slopes, in one group on a 9 m grid out to 1200 m, none on gully walls, in water or at the shore; young trees, shrubs, boulders, stumps and fallen trunks within 250 m; reeds, cattails and water lilies at every lake within 1500 m; grass, ferns, nettles, low shrubs and small rocks as cover. About 71000 things are placed in under a second. The clearing towards the lake is the scene's own filter (the `keep` argument), not a rule.
+
+## Water and shore plants
+
+Header: `poligon/procedural_plants.h`. No free (CC0) models of reeds, cattails or water lilies were found, so the engine makes them: `MakeReedModel`, `MakeCattailModel`, `MakeWaterLilyModel` each return a model with three different clumps side by side and their own small textures (made in code too), which `MakePlantKind` with `split_variants` turns into three variants; `UploadLoadedModel` puts such a model on the graphics card as the asset library would.
+
+- Reeds: 18 to 31 stems a clump, 2 or 3 strap leaves each, 1.6 to 2.6 m, bending outwards, and a feathery brown plume on about half of the stems (crossed cards). Cattails: stiffer, wider leaves and 3 to 6 stems with a brown head. Water lilies: 6 to 13 round leaves with a notch, lying on the water, and up to 2 white flowers.
+- Rules put them by water depth and distance to the shore: reeds in water up to half a meter and on the shore line, cattails between 8 and 40 cm, lilies floating (`on_water 1`) from 0.7 to 2.5 m.
+- Limits: the leaves are simple strips and the plumes cards; no simpler levels (they are small and drawn to 45 m); a lily does not rock on the waves.
+
+## Trampled paths
+
+Header: `poligon/trample.h`. Test: the trample part of `tests/vegetation_render_test.cpp` and of `tests/plant_rules_test.cpp`.
+
+- A `TrampleMap` is a square grid (128 m, 256 cells by default) of values 0 (untouched) to 1 (flat) around the player. The game presses plants down where something walks (`Trample(position, radius, amount)`), lets them stand up slowly (`Recover`), and moves the grid with the player in whole cells (`Recenter`), so values stay put on the land. It is plain arithmetic on the game's ticks, so replays leave the same paths.
+- `Renderer::SetTrampleMap(&map)` copies it to the graphics card when it changed; the instanced vertex shader reads it at each plant's foot, and a plant whose material bends in the wind (`wind_bend` above 0) leans over in a direction of its own and gets lower, down to 15% of its height, in every pass (its shadow follows).
+- In `forest_scene`: walking presses grass flat in about half a second, the running foxes do the same along their circles, and plants stand up again over about a minute and a half; walking the same way again keeps a path.
 
 ## Impostors
 
