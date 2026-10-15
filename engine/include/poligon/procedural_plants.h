@@ -21,6 +21,14 @@ namespace poligon {
 //   white flowers; the model lies at height 0, to be placed on the water's surface.
 
 Model MakeReedModel(std::uint32_t seed);
+// Grass: `tufts` different tufts side by side (2 m apart), each of blades_min to blades_max
+// real blades (strips narrowing to a point, three pieces each), height_min to height_max
+// meters tall, leaning and curving outwards, in eight slightly different greens with dry
+// tips. About 65 triangles a tuft. Short lawn grass: 0.12 to 0.3 m; meadow grass: 0.4 to 0.8.
+Model MakeGrassModel(std::uint32_t seed, int tufts, float height_min, float height_max, int blades_min, int blades_max);
+// Meadow flowers: three clumps of thin stems with two leaves each and a five-petaled flower,
+// white, yellow and purple, 0.25 to 0.55 m tall.
+Model MakeFlowerModel(std::uint32_t seed);
 Model MakeCattailModel(std::uint32_t seed);
 Model MakeWaterLilyModel(std::uint32_t seed);
 

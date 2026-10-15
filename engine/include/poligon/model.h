@@ -26,6 +26,9 @@ struct ModelMaterial {
     // cutoff, "blend" (true transparency, not supported yet) is drawn as a cutout at 0.5.
     float alpha_cutoff = 0.0f;
     bool double_sided = false;
+    // See Material in renderer.h. Not part of model files; set by code (grass made by code).
+    bool back_faces_keep_normal = false;
+    bool casts_ambient_occlusion = true;
     // The base color texture, already decoded. Empty (width 0) when the material has none
     // or when the image could not be loaded (the reason is then in Model::warnings).
     Image base_color_texture;

@@ -1,7 +1,8 @@
 // Example: plants placed by rules that read the terrain generator's maps, water plants made
-// by code, and a path trampled through tall plants. A small land with a pond is generated;
-// rules put reeds in its shallows, water lilies where it is deeper, and a field of
-// cattails along one side, through which a path is walked flat.
+// by code, grass made by code, and a path trampled through tall plants. A small land with a
+// pond is generated; rules put reeds in its shallows, water lilies where it is deeper, a
+// field of cattails along one side, through which a path is walked flat, and short grass
+// on dry ground around the camera.
 // Usage: example_plant_rules OUTPUT.png
 #include <cstdio>
 
@@ -55,6 +56,11 @@ int main(int argc, char** argv) {
     const poligon::LoadedModel lily_model = poligon::UploadLoadedModel(renderer, poligon::MakeWaterLilyModel(3u));
     const poligon::PlantKind reeds = poligon::MakePlantKind(reed_model, settings, vegetation);
     const poligon::PlantKind cattails = poligon::MakePlantKind(cattail_model, settings, vegetation);
+    // Grass: three tufts of real blades, 0.15 to 0.35 m (see MakeGrassModel).
+    const poligon::LoadedModel grass_model = poligon::UploadLoadedModel(renderer, poligon::MakeGrassModel(4u, 3, 0.15f, 0.35f, 10, 16));
+    settings.level_distances = {40.0f};
+    const poligon::PlantKind grass = poligon::MakePlantKind(grass_model, settings, vegetation);
+    settings.level_distances = {200.0f};
     settings.wind_bend = 0.0f;
     const poligon::PlantKind lilies = poligon::MakePlantKind(lily_model, settings, vegetation);
 
@@ -65,16 +71,29 @@ int main(int argc, char** argv) {
         {1, "plant reeds"},         {2, "spacing 1.5"}, {3, "density 0.4"},  {4, "water_depth 0 0.4 0.15"},
         {5, "water_distance 0 2 1"}, {6, "plant lilies"}, {7, "spacing 2"},    {8, "density 0.2"},
         {9, "water_depth 0.6 3 0.3"}, {10, "on_water 1"}, {11, "plant cattails"}, {12, "spacing 1.2"},
-        {13, "density 0.6"},         {14, "water_depth 0 0 0.01"}, {15, "water_distance 2 20 2"}};
+        {13, "density 0.6"},         {14, "water_depth 0 0 0.01"}, {15, "water_distance 2 9 1"},
+        {16, "plant grass"},         {17, "spacing 0.35"}, {18, "density 0.8"}, {19, "water_depth 0 0 0.01"},
+        {20, "water_distance 9 1e9 1"}};
     if (!poligon::ParsePlantRules(lines, rules, error)) {
         std::fprintf(stderr, "%s\n", error.c_str());
         return 1;
     }
-    const poligon::PlantKind* kinds[3] = {&reeds, &lilies, &cattails};
+    // Looking at the pond from dry ground 20 m back from its shore, along a line from its middle.
+    glm::vec2 stand = pond;
+    for (float distance = 0.0f; distance < 250.0f; distance += 1.0f) {
+        stand = pond + glm::vec2(0.7071f, 0.7071f) * distance;
+        if (maps.GetWaterDepth(stand.x, stand.y) == 0.0f && maps.Sample(maps.water_distance, stand.x, stand.y) > 20.0f) {
+            break;
+        }
+    }
+    // The water plants around the pond, the grass only within 25 m of the camera.
+    const poligon::PlantKind* kinds[4] = {&reeds, &lilies, &cattails, &grass};
+    const glm::vec2 centers[4] = {pond, pond, pond, stand};
+    const float radii[4] = {150.0f, 150.0f, 150.0f, 25.0f};
     for (size_t r = 0; r < rules.size(); ++r) {
         const poligon::PlantKind& kind = *kinds[r];
         for (const poligon::PlantPlacement& placement :
-             poligon::PlacePlants(maps, rules[r], pond, 150.0f, static_cast<int>(kind.variants.size()))) {
+             poligon::PlacePlants(maps, rules[r], centers[r], radii[r], static_cast<int>(kind.variants.size()))) {
             vegetation.AddInstance(kind.variants[static_cast<size_t>(placement.variant)].species_id,
                                    glm::translate(glm::mat4(1.0f), {placement.position.x, placement.height, placement.position.y}) *
                                        glm::rotate(glm::mat4(1.0f), placement.turn, {0.0f, 1.0f, 0.0f}) *
@@ -84,16 +103,8 @@ int main(int argc, char** argv) {
     std::printf("%d plants placed by %zu rules\n", vegetation.GetInstanceCount(), rules.size());
 
     // A path walked flat from the camera towards the pond.
-    // Looking at the pond from dry ground 12 m back from its shore, along a line from its middle.
-    glm::vec2 stand = pond;
-    for (float distance = 0.0f; distance < 250.0f; distance += 1.0f) {
-        stand = pond + glm::vec2(0.7071f, 0.7071f) * distance;
-        if (maps.GetWaterDepth(stand.x, stand.y) == 0.0f && maps.Sample(maps.water_distance, stand.x, stand.y) > 12.0f) {
-            break;
-        }
-    }
     poligon::Camera camera;
-    camera.position = glm::vec3(stand.x, maps.height.GetHeight(stand.x, stand.y) + 4.0f, stand.y);
+    camera.position = glm::vec3(stand.x, maps.height.GetHeight(stand.x, stand.y) + 2.5f, stand.y);
     camera.target = glm::vec3(pond.x, maps.height.GetHeight(pond.x, pond.y), pond.y);
     camera.far_plane = 2000.0f;
     poligon::TrampleMap trample(128.0f, 256);

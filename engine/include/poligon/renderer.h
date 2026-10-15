@@ -358,6 +358,14 @@ struct Material {
     // Draw both sides of every triangle. Needed for thin things seen from both sides, such
     // as leaves; such surfaces also let some sunlight shine through.
     bool double_sided = false;
+    // For double_sided: light the back side with the same normal as the front instead of the
+    // opposite one. For grass blades, whose normals point mostly up so that a blade is lit
+    // like the ground it grows from; flipped, half the blades would face the soil and go dark.
+    bool back_faces_keep_normal = false;
+    // False: left out of the depth image that ambient occlusion is computed from (and added
+    // to it right after). For grass: the screen-space method takes a thin blade for a solid
+    // wall and would blacken both the blade and the ground around it.
+    bool casts_ambient_occlusion = true;
 
     // 0 = non-metal (wood, stone, leaves), 1 = bare metal.
     float metallic = 0.0f;

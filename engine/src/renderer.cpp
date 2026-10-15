@@ -410,7 +410,8 @@ struct InstanceBatch {
 bool SameFragmentBindings(const Material& a, const Material& b) {
     return a.texture.id == b.texture.id && a.normal_texture.id == b.normal_texture.id &&
            a.orm_texture.id == b.orm_texture.id && a.metallic == b.metallic && a.roughness == b.roughness &&
-           a.alpha_cutoff == b.alpha_cutoff && a.double_sided == b.double_sided && a.occlusion_in_orm == b.occlusion_in_orm;
+           a.alpha_cutoff == b.alpha_cutoff && a.double_sided == b.double_sided && a.occlusion_in_orm == b.occlusion_in_orm &&
+           a.back_faces_keep_normal == b.back_faces_keep_normal;
 }
 
 // A plane as (normal, distance): points with dot(normal, p) + distance >= 0 are inside.
@@ -1609,21 +1610,66 @@ struct Renderer::Impl {
         }
     }
 
+    // Which batches a call to DrawInstanceBatches draws, by Material::casts_ambient_occlusion
+    // (terrain and impostors always cast it).
+    enum AoFilter { kAllBatches, kAoCasters, kAoNonCasters };
+
+    // The depth-only drawing of the depth pass (pass 2), limited by `filter`.
+    void DrawDepthPass(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, AoFilter filter) {
+        SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
+        for (const std::uint32_t command_index : visible_commands) {
+            const DrawCommand& command = draw_commands[command_index];
+            const bool casts_ao = command.material.casts_ambient_occlusion;
+            if ((filter == kAoCasters && !casts_ao) || (filter == kAoNonCasters && casts_ao)) {
+                continue;
+            }
+            BindMeshPipeline(pass, kDepthPass, command, bound_pipeline);
+            const ObjectUniforms object_uniforms = MakeObjectUniforms(command);
+            SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
+            const MaterialUniforms material_uniforms = MakeMaterialUniforms(command.material, temporal_noise_offset);
+            SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
+            SDL_GPUTextureSamplerBinding binding{};
+            binding.texture = GetTexture(command.material.texture, white_texture);
+            binding.sampler = texture_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+            DrawCommandGeometry(pass, command);
+        }
+        DrawInstanceBatches(commands, pass, kDepthPass, 0, false, bound_pipeline, filter);
+    }
+
+    // True when something visible this frame casts no ambient occlusion.
+    bool HasAoNonCasters() const {
+        for (const std::uint32_t command_index : visible_commands) {
+            if (!draw_commands[command_index].material.casts_ambient_occlusion) {
+                return true;
+            }
+        }
+        for (const InstanceBatch& batch : instance_batches) {
+            if (batch.list_count[0] > 0 && batch.terrain_id == 0 && batch.impostor_id == 0 && !batch.material.casts_ambient_occlusion) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Copies this frame's joint matrices to the graphics card.
     void UploadJointMatrices(SDL_GPUCommandBuffer* commands) {
         UploadMatrices(commands, joint_palette, joint_buffer, joint_buffer_capacity, joint_transfer, joint_transfer_capacity);
     }
 
     // Draws, in one pass, every instance batch that has something in the given list.
-    // material_slot: the fragment uniform slot the pass's shader reads the material from.
     void DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, MeshPass mesh_pass, int list,
-                             bool ao_on, SDL_GPUGraphicsPipeline*& bound_pipeline) {
+                             bool ao_on, SDL_GPUGraphicsPipeline*& bound_pipeline, AoFilter filter = kAllBatches) {
         // Consecutive batches often share a material (the levels of one species, the parts
         // of one plant): then the fragment uniforms and textures stay bound. Every call to
         // the graphics API costs several microseconds, and a frame has hundreds of batches.
         const Material* bound_material = nullptr;
         for (const InstanceBatch& batch : instance_batches) {
             if (batch.list_count[list] == 0) {
+                continue;
+            }
+            const bool casts_ao = batch.terrain_id != 0 || batch.impostor_id != 0 || batch.material.casts_ambient_occlusion;
+            if ((filter == kAoCasters && !casts_ao) || (filter == kAoNonCasters && casts_ao)) {
                 continue;
             }
             if (batch.terrain_id != 0) {
@@ -1969,7 +2015,8 @@ struct Renderer::Impl {
         MaterialUniforms uniforms;
         uniforms.factors = glm::vec4(material.metallic, material.roughness, material.alpha_cutoff, noise_offset);
         uniforms.flags = glm::vec4(material.normal_texture.id != 0 ? 1.0f : 0.0f, material.orm_texture.id != 0 ? 1.0f : 0.0f,
-                                   material.occlusion_in_orm ? 1.0f : 0.0f, material.double_sided ? 1.0f : 0.0f);
+                                   material.occlusion_in_orm ? 1.0f : 0.0f,
+                                   material.double_sided ? (material.back_faces_keep_normal ? 2.0f : 1.0f) : 0.0f);
         return uniforms;
     }
 };
@@ -3519,21 +3566,8 @@ void Renderer::EndFrame() {
         frame_uniforms.wind = impl.WindUniform();
         frame_uniforms.trample = impl.trample_info;
         SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
-        SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
-        for (const std::uint32_t command_index : impl.visible_commands) {
-            const DrawCommand& command = impl.draw_commands[command_index];
-            impl.BindMeshPipeline(pass, kDepthPass, command, bound_pipeline);
-            const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
-            SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
-            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material, impl.temporal_noise_offset);
-            SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
-            SDL_GPUTextureSamplerBinding binding{};
-            binding.texture = impl.GetTexture(command.material.texture, impl.white_texture);
-            binding.sampler = impl.texture_sampler;
-            SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
-            impl.DrawCommandGeometry(pass, command);
-        }
-        impl.DrawInstanceBatches(commands, pass, kDepthPass, 0, false, bound_pipeline);
+        // With ambient occlusion on, what does not cast it is left out here and added after it.
+        impl.DrawDepthPass(commands, pass, ao_on ? Impl::kAoCasters : Impl::kAllBatches);
         SDL_EndGPURenderPass(pass);
     }
 
@@ -3563,6 +3597,28 @@ void Renderer::EndFrame() {
         blur_uniforms.direction = glm::vec4(0.0f, 1.0f, width, height);
         impl.DrawFullscreenPass(commands, impl.ao_target, false, impl.ao_blur_pipeline, bindings, 2, &blur_uniforms,
                                 sizeof(blur_uniforms));
+
+        // What casts no ambient occlusion (grass) joins the depth image now, for the scene
+        // pass, water, fog and anti-aliasing.
+        if (impl.HasAoNonCasters()) {
+            SDL_GPUDepthStencilTargetInfo depth_info{};
+            depth_info.texture = impl.prepass_depth;
+            depth_info.load_op = SDL_GPU_LOADOP_LOAD;
+            depth_info.store_op = SDL_GPU_STOREOP_STORE;
+            depth_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+            depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+            SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, nullptr, 0, &depth_info);
+            if (pass == nullptr) {
+                FatalSdlError("cannot begin depth pass");
+            }
+            VertexFrameUniforms vertex_uniforms;
+            vertex_uniforms.view_projection = view_projection;
+            vertex_uniforms.wind = impl.WindUniform();
+            vertex_uniforms.trample = impl.trample_info;
+            SDL_PushGPUVertexUniformData(commands, 0, &vertex_uniforms, sizeof(vertex_uniforms));
+            impl.DrawDepthPass(commands, pass, Impl::kAoNonCasters);
+            SDL_EndGPURenderPass(pass);
+        }
     }
 
     // --- Pass 4: the scene, in linear wide-range colors. ---

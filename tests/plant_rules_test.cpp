@@ -1,8 +1,9 @@
 // Checks plant rules and the trample map: rules are read from level lines (and bad ones
 // named by line), placements follow the maps' conditions, are the same on every run, and a
 // group never puts two plants in one cell; clumps lie between 0 and 1; the water plants
-// made by code split into their clumps; trampling, recovering and moving the grid behave.
+// and the grass and flowers made by code split into their clumps; trampling, recovering and moving the grid behave.
 // Usage: plant_rules_test
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -135,6 +136,44 @@ int main() {
         poligon::PlantSettings settings;
         settings.split_variants = true;
         Expect(poligon::MakePlantKind(loaded, settings, vegetation).variants.size() == 3, "its clumps become three variants");
+    }
+    // --- Grass and flowers made by code: one variant per tuft or clump ---
+    {
+        const poligon::Model grass = poligon::MakeGrassModel(5u, 6, 0.12f, 0.3f, 10, 16);
+        const poligon::Model flowers = poligon::MakeFlowerModel(6u);
+        // 10 to 16 blades of 5 triangles each (two quads and a tip) per tuft.
+        Expect(grass.GetTriangleCount() >= 6 * 10 * 5 && grass.GetTriangleCount() <= 6 * 16 * 5, "six tufts of 10 to 16 blades");
+        Expect(grass.materials.size() == 1 && grass.materials[0].double_sided && grass.materials[0].back_faces_keep_normal &&
+                   !grass.materials[0].casts_ambient_occlusion,
+               "grass is double-sided, keeps its normals on the back and casts no ambient occlusion");
+        float top = 0.0f;
+        bool normals_up = true;
+        for (const poligon::ModelMesh& mesh : grass.meshes) {
+            for (const poligon::MeshVertex& vertex : mesh.vertices) {
+                top = std::max(top, vertex.position.y);
+                normals_up = normals_up && vertex.normal.y > 0.5f;
+            }
+        }
+        Expect(normals_up, "grass normals point mostly up");
+        Expect(top > 0.1f && top <= 0.3f, "grass is no taller than asked");
+        Expect(flowers.materials.size() == 4, "flowers have leaves and three petal colors");
+        for (const poligon::Model* model : {&grass, &flowers}) {
+            poligon::LoadedModel loaded;
+            loaded.model = *model;
+            loaded.render.meshes.resize(model->meshes.size());
+            loaded.render.materials.resize(model->materials.size());
+            for (const poligon::ModelMesh& mesh : model->meshes) {
+                loaded.render.mesh_material_index.push_back(mesh.material_index);
+            }
+            poligon::Vegetation vegetation;
+            poligon::PlantSettings settings;
+            settings.split_variants = true;
+            const size_t expected = model == &grass ? 6 : 3;
+            Expect(poligon::MakePlantKind(loaded, settings, vegetation).variants.size() == expected, "each tuft or clump is a variant");
+        }
+        Expect(poligon::MakeGrassModel(7u, 2, 0.4f, 0.8f, 8, 14).meshes[1].vertices[3].position ==
+                   poligon::MakeGrassModel(7u, 2, 0.4f, 0.8f, 8, 14).meshes[1].vertices[3].position,
+               "the same seed makes the same grass");
     }
     Expect(poligon::MakeReedModel(4u).GetTriangleCount() == poligon::MakeReedModel(4u).GetTriangleCount() &&
                poligon::MakeReedModel(4u).meshes[0].vertices[5].position == poligon::MakeReedModel(4u).meshes[0].vertices[5].position,

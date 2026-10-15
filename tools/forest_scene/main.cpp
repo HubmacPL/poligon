@@ -726,16 +726,21 @@ private:
         reed_ = MakeProceduralKind("procedural/reed", poligon::MakeReedModel(11u), {3.0f, 1.2f});
         cattail_ = MakeProceduralKind("procedural/cattail", poligon::MakeCattailModel(12u), {2.0f, 0.8f});
         water_lily_ = MakeProceduralKind("procedural/water_lily", poligon::MakeWaterLilyModel(13u), {0.0f, 0.0f});
+        // Grass and flowers made by the engine: real blades, seen right from every side.
+        short_grass_ = MakeProceduralKind("procedural/short_grass", poligon::MakeGrassModel(21u, 6, 0.12f, 0.3f, 10, 16), {7.0f, 1.5f}, 30.0f);
+        meadow_grass_ = MakeProceduralKind("procedural/meadow_grass", poligon::MakeGrassModel(22u, 6, 0.4f, 0.8f, 8, 14), {5.0f, 1.5f});
+        flowers_ = MakeProceduralKind("procedural/flowers", poligon::MakeFlowerModel(23u), {5.0f, 1.0f});
     }
 
     // A kind from a model made in memory; small, one level, short shadows.
-    Kind MakeProceduralKind(const char* name, const poligon::Model& model, glm::vec2 wind) {
+    Kind MakeProceduralKind(const char* name, const poligon::Model& model, glm::vec2 wind, float distance = kSmallPlantDistance) {
         procedural_models_.push_back(std::make_unique<poligon::LoadedModel>(poligon::UploadLoadedModel(renderer_, model)));
         Kind kind;
         kind.is_small = true;
         kind.asset_name = name;
-        kind.plants = poligon::MakePlantKind(*procedural_models_.back(), MakeSettings(false, kTreeLevels, true, wind, true, false),
-                                             vegetation_);
+        poligon::PlantSettings settings = MakeSettings(false, kTreeLevels, true, wind, true, false);
+        settings.level_distances = {distance};
+        kind.plants = poligon::MakePlantKind(*procedural_models_.back(), settings, vegetation_);
         std::printf("forest_scene: %s: %zu variant(s), %lld triangles\n", name, kind.plants.variants.size(),
                     static_cast<long long>(model.GetTriangleCount()));
         return kind;
@@ -744,7 +749,8 @@ private:
     // The kind with this asset name, or nullptr.
     const Kind* FindKind(const std::string& name) const {
         for (const Kind* kind : {&pine_, &spruce_, &birch_, &oak_, &young_spruce_, &young_pine_, &shrub_, &low_shrub_, &fern_,
-                                 &nettle_, &grass_, &boulder_, &rocks_, &stump_, &fallen_trunk_, &reed_, &cattail_, &water_lily_}) {
+                                 &nettle_, &grass_, &boulder_, &rocks_, &stump_, &fallen_trunk_, &reed_, &cattail_, &water_lily_,
+                                 &short_grass_, &meadow_grass_, &flowers_}) {
             if (kind->asset_name == name && !kind->plants.variants.empty()) {
                 return kind;
             }
@@ -1048,7 +1054,7 @@ private:
     poligon::WaterMaterial water_material_;
     std::vector<poligon::RenderModel> render_models_;
     Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
-        rocks_, stump_, fallen_trunk_, reed_, cattail_, water_lily_;
+        rocks_, stump_, fallen_trunk_, reed_, cattail_, water_lily_, short_grass_, meadow_grass_, flowers_;
     // Models made in memory (water plants), kept for their meshes and textures.
     std::vector<std::unique_ptr<poligon::LoadedModel>> procedural_models_;
     // The level's plant rules, and where plants have been walked flat.

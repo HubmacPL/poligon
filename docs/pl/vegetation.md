@@ -90,6 +90,14 @@ Nagłówek: `poligon/procedural_plants.h`. Nie znaleziono darmowych (CC0) modeli
 - Reguły stawiają je według głębokości wody i odległości od brzegu: trzcinę w wodzie do pół metra i na linii brzegu, pałkę między 8 a 40 cm, grzybienie pływające (`on_water 1`) od 0,7 do 2,5 m.
 - Ograniczenia: liście to proste paski, a wiechy karty; bez prostszych poziomów (są małe i rysowane do 45 m); grzybień nie kołysze się na falach.
 
+## Trawa i kwiaty robione kodem
+
+- `MakeGrassModel(seed, tufts, height_min, height_max, blades_min, blades_max)` (`poligon/procedural_plants.h`) robi kępy prawdziwych źdźbeł: wąskie paski z trzech kawałków zwężające się w szpic, odchylone i wygięte na zewnątrz, w ośmiu trochę różnych zieleniach z suchymi końcami (obraz 64 × 128 robiony kodem). Około 65 trójkątów na kępę. W odróżnieniu od obrazków trawy na kartach wyglądają dobrze z każdej strony i z góry, gną się źdźbło po źdźble na wietrze i kładą na wydeptanym terenie.
+- `MakeFlowerModel(seed)`: trzy kępy cienkich łodyg z dwoma liśćmi i pięciopłatkowym kwiatem, białym, żółtym i fioletowym.
+- Ich materiały ustawiają dwa pola `Material` zrobione dla trawy (zob. rendering.md): `back_faces_keep_normal`, bo normalne źdźbeł wskazują głównie w górę, żeby trawa była oświetlona jak ziemia, z której rośnie, oraz `casts_ambient_occlusion = false`, bo przyciemnianie zagłębień w przestrzeni ekranu bierze cienkie źdźbło za litą ścianę i czerniło źdźbła oraz ziemię wokół każdej kępy.
+- W `forest_scene` są pokrywą ziemi: krótka trawa (0,12 do 0,3 m, 8 kęp na metr kwadratowy, rysowana do 30 m) na większości otwartego terenu, trawa łąkowa (0,4 do 0,8 m) i kwiaty w wilgotniejszych plamach, a pobrane kępy w mniejszej gęstości dla rozmaitości. Koszt: w granicach szumu pomiaru w każdym presecie.
+- Ograniczenia: źdźbła to płaskie paski bez mapy normalnych; bez prostszych poziomów (kończą się na 30 do 45 m, gdzie przejmuje tekstura podłoża); trawnik gęsty jak prawdziwy wymagałby dużo więcej źdźbeł albo obrazków trawy na kartach.
+
 ## Wydeptane ścieżki
 
 Nagłówek: `poligon/trample.h`. Test: część o wygniataniu w `tests/vegetation_render_test.cpp` i w `tests/plant_rules_test.cpp`.

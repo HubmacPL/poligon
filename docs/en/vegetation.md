@@ -90,6 +90,14 @@ Header: `poligon/procedural_plants.h`. No free (CC0) models of reeds, cattails o
 - Rules put them by water depth and distance to the shore: reeds in water up to half a meter and on the shore line, cattails between 8 and 40 cm, lilies floating (`on_water 1`) from 0.7 to 2.5 m.
 - Limits: the leaves are simple strips and the plumes cards; no simpler levels (they are small and drawn to 45 m); a lily does not rock on the waves.
 
+## Grass and flowers made by code
+
+- `MakeGrassModel(seed, tufts, height_min, height_max, blades_min, blades_max)` (`poligon/procedural_plants.h`) makes tufts of real blades: narrow strips of three pieces narrowing to a point, leaning and curving outwards, in eight slightly different greens with dry tips (a 64 x 128 picture made in code). About 65 triangles a tuft. Unlike pictures of grass on cards, they look right from every side and from above, bend blade by blade in the wind and lie down on trampled ground.
+- `MakeFlowerModel(seed)`: three clumps of thin stems with two leaves each and a five-petaled flower, white, yellow and purple.
+- Their materials set two `Material` fields made for grass (see rendering.md): `back_faces_keep_normal`, because blade normals point mostly up so that grass is lit like the ground it grows from, and `casts_ambient_occlusion = false`, because screen-space ambient occlusion takes a thin blade for a solid wall and blackened the blades and the ground around every tuft.
+- In `forest_scene` they are ground cover: short grass (0.12 to 0.3 m, 8 tufts per square meter, drawn to 30 m) over most open ground, meadow grass (0.4 to 0.8 m) and flowers in moister patches, with the downloaded tufts at a lower density for variety. Cost: within the measurement noise in every preset.
+- Limits: blades are flat strips without a normal map; no simpler levels (they end at 30 to 45 m, where the ground texture takes over); a lawn as dense as a real one would need far more blades or pictures of grass on cards.
+
 ## Trampled paths
 
 Header: `poligon/trample.h`. Test: the trample part of `tests/vegetation_render_test.cpp` and of `tests/plant_rules_test.cpp`.

@@ -154,9 +154,38 @@ on_water 1
 patch 28 0.4
 area 1500
 
-# --- Ground cover: grows on the fly around the player. ---
+# --- Ground cover: grows on the fly around the player. Grass made by the engine (real
+# blades) covers most of the ground, meadow grass and flowers grow in open, moister patches,
+# and the downloaded grass tufts add variety. ---
+cover procedural/short_grass
+density 8
+scale 0.8 1.3
+slope 0 35 3
+moisture 0.08 1 0.08
+water_depth 0 0 0.01
+patch 25 0.7
+align 1
+
+cover procedural/meadow_grass
+density 1.2
+scale 0.8 1.3
+slope 0 25 3
+moisture 0.22 1 0.1
+water_distance 1 1e9 1
+water_depth 0 0 0.01
+patch 40 0.45
+align 1
+
+cover procedural/flowers
+density 0.08
+scale 0.8 1.2
+slope 0 20 3
+moisture 0.15 0.8 0.1
+water_depth 0 0 0.01
+patch 30 0.35
+
 cover plants/grass
-density 3
+density 1.5
 scale 2.5 4
 slope 0 40 3
 water_depth 0 0 0.01

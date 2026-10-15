@@ -143,6 +143,61 @@ int main(int argc, char** argv) {
                 }
             }
 
+            // A cube whose material casts no ambient occlusion (as grass does): the floor in
+            // front of it stays white, and the cube itself is still drawn in front of it.
+            {
+                poligon::Material no_ao = white;
+                no_ao.casts_ambient_occlusion = false;
+                poligon::Environment environment;
+                environment.ambient_occlusion = true;
+                renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
+                renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+                renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}),
+                                  [&] { poligon::Material red = no_ao; red.color = {1.0f, 0.0f, 0.0f, 1.0f}; return red; }());
+                renderer.EndFrame();
+                renderer.CaptureFrame(frame);
+                Expect(RedIs(frame, near_cube.x, near_cube.y, 255, 3), "what casts no ambient occlusion leaves the floor white");
+                const glm::ivec2 cube_face = ToPixel(camera, {0.0f, 0.5f, 0.5f});
+                const std::uint8_t* face = &frame.pixels[static_cast<size_t>(cube_face.y * frame.width + cube_face.x) * 4];
+                Expect(face[0] > 200 && face[1] < 30, "the cube that casts no ambient occlusion is still drawn");
+            }
+
+            // The back of a double-sided floor, seen from below with the sun above: lit as if
+            // its normal pointed down (dark), or, with back_faces_keep_normal, by the sun (not
+            // the full 255: seen from behind, the highlight term takes a share).
+            {
+                poligon::Camera below;
+                below.position = {0.0f, -3.0f, 0.0f};
+                below.target = {0.0f, 0.0f, 0.0f};
+                below.up = {0.0f, 0.0f, -1.0f};
+                poligon::DirectionalLight sun;
+                sun.direction = {0.0f, -1.0f, 0.0f};
+                sun.color = {1.0f, 1.0f, 1.0f, 1.0f};
+                sun.ambient = {0.0f, 0.0f, 0.0f, 1.0f};
+                poligon::Environment environment;
+                environment.shadows = false;
+                environment.foliage_translucency = 0.0f;
+                environment.sky_light = false;
+                for (int keep = 0; keep < 2; ++keep) {
+                    poligon::Material sheet = white;
+                    sheet.double_sided = true;
+                    sheet.back_faces_keep_normal = keep == 1;
+                    renderer.BeginFrame(below, sun, environment);
+                    renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), sheet);
+                    renderer.EndFrame();
+                    renderer.CaptureFrame(frame);
+                    const int red = RedAt(frame, kSize / 2, kSize / 2);
+                    if (keep == 0) {
+                        Expect(red < 30, "the back of a double-sided surface faces away from the sun");
+                    } else {
+                        Expect(red > 150, "with back_faces_keep_normal the back is lit by the sun");
+                    }
+                    if ((keep == 0 && red >= 30) || (keep == 1 && red <= 150)) {
+                        std::printf("  back face pixel has red %d\n", red);
+                    }
+                }
+            }
+
             // Tinting by shadow cascade: with a 40 m range the cascades end at about 4.6, 9.9,
             // 19.5 and 40 m. The floor 3.2 m from the camera is shaded by the first cascade and
             // comes out red, the floor 23 m away by the last one and comes out yellow.

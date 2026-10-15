@@ -470,6 +470,8 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
         material.color = source.base_color;
         material.alpha_cutoff = source.alpha_cutoff;
         material.double_sided = source.double_sided;
+        material.back_faces_keep_normal = source.back_faces_keep_normal;
+        material.casts_ambient_occlusion = source.casts_ambient_occlusion;
         material.metallic = source.metallic;
         material.roughness = source.roughness;
         material.occlusion_in_orm = source.occlusion_in_orm;

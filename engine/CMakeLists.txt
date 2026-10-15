@@ -40,6 +40,7 @@ add_library(poligon_engine STATIC
   src/level.cpp
   src/plant_rules.cpp
   src/procedural_plants.cpp
+  src/procedural_grass.cpp
   src/trample.cpp
   src/sky_occlusion.cpp
   src/cloud_noise.cpp
