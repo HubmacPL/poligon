@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     const poligon::HeightMap map = poligon::MakeNoiseHeightMap(101, 101, 4.0f, 11u, 60.0f, 6.0f);
     poligon::TerrainConfig terrain_config;
     terrain_config.origin = {-200.0f, 0.0f, -200.0f};
-    terrain_config.material.layers[0].tile_size = 4.0f;
+    terrain_config.material.tile_sizes[0] = 4.0f;
     poligon::Terrain terrain(renderer, map, terrain_config);
 
     // A grass tuft: two crossed upright cards, 0.5 m tall, foot at the origin.

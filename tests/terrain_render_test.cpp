@@ -1,6 +1,7 @@
 // Checks terrain drawing: that land appears where the height map has it and nowhere else,
-// that steep slopes get the steep color, that heights can be asked for, and that patches
-// are fine near the camera and coarse far from it.
+// that steep slopes get the steep color, that ground layers cover the land as their weight
+// images say, that heights can be asked for, and that patches are fine near the camera and
+// coarse far from it.
 // Usage: terrain_render_test d3d12|vulkan
 #include <cmath>
 #include <cstdio>
@@ -124,6 +125,40 @@ int main(int argc, char** argv) {
         std::printf("  in shadow %d, in sun %d\n", in_shadow, in_sun);
     }
     Expect(in_shadow < 110 && in_sun > 150, "high land casts a shadow on low land");
+
+    // Ground layers: green in the west half, blue in the east half, from two texture arrays
+    // and a weight image stretched over the map.
+    {
+        const poligon::Image colors[2] = {poligon::MakeSolidImage(8, 8, 0, 255, 0), poligon::MakeSolidImage(8, 8, 0, 0, 255)};
+        const poligon::Image normals[2] = {poligon::MakeSolidImage(8, 8, 128, 128, 255), poligon::MakeSolidImage(8, 8, 128, 128, 255)};
+        poligon::TextureOptions data;
+        data.is_color = false;
+        poligon::TerrainMaterial material = terrain_config.material;
+        material.colors = renderer.CreateTextureArray(colors, 2);
+        material.normals = renderer.CreateTextureArray(normals, 2, data);
+        material.layer_count = 2;
+        poligon::Image weights = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
+        for (int iz = 0; iz < map.depth; ++iz) {
+            for (int ix = 0; ix < map.width; ++ix) {
+                weights.pixels[static_cast<size_t>(iz * map.width + ix) * 4 + (ix < 128 ? 0 : 1)] = 255;
+            }
+        }
+        data.generate_mipmaps = false;
+        material.weights[0] = renderer.CreateTexture(weights, data);
+        terrain.SetMaterial(material);
+        renderer.BeginFrame(camera, light);
+        terrain.Draw(camera);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const std::uint8_t* west = PixelAt(frame, -60.0f, 20.0f);
+        const std::uint8_t* east = PixelAt(frame, 50.0f, -30.0f);
+        if (!(west[1] > 240 && west[0] < 10 && east[2] > 240 && east[1] < 10)) {
+            std::printf("  west %d %d %d, east %d %d %d\n", west[0], west[1], west[2], east[0], east[1], east[2]);
+        }
+        Expect(west[1] > 240 && west[0] < 10 && west[2] < 10, "layer 0 covers the land its weight gives it");
+        Expect(east[2] > 240 && east[0] < 10 && east[1] < 10, "layer 1 covers the other half");
+        terrain.SetMaterial(terrain_config.material);
+    }
 
     // Detail: from close to the ground, patches near the camera are the smallest size and
     // far ones larger; seen from far away, one patch covers all the land.

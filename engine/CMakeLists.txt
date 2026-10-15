@@ -31,6 +31,7 @@ add_library(poligon_engine STATIC
   src/model.cpp
   src/stb_image_impl.cpp
   src/terrain.cpp
+  src/terrain_generator.cpp
   src/physics.cpp
   src/platform.cpp
   src/render_settings.cpp

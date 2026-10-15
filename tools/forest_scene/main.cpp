@@ -1,11 +1,13 @@
-// Showcase: real land (6 x 6 km around Batorz, from poligon-assets/terrain) with a piece of
-// forest on a hilltop, put together from the models in the poligon-assets folder, to walk
-// through and look at. Without the land's file, hills from noise are used. It exists to judge the renderer on a real scene and to
-// measure how long a frame takes.
+// Showcase: 6 x 6 km of land made by the engine's terrain generator, with a piece of
+// forest above a lake, put together from the models in the poligon-assets folder, to walk
+// through and look at. It exists to judge the renderer on a whole scene and to measure how
+// long a frame takes. The land is generated on the first run (about two minutes) and then
+// loaded from build/terrain_cache.
 //
 // Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
-//   X Z         where to stand, in meters from the middle of the forest (default 0 0)
-//   TURN TILT   where to look, in degrees (default: towards the sun, level)
+//   X Z         where to stand, in meters from the start (default 0 0): a slope above
+//               the largest lake, chosen so that the lake is in view
+//   TURN TILT   where to look, in degrees (default: towards the lake, slightly down)
 //   collision   the word itself: start with the collision shapes shown
 //   --render-settings FILE   the look to start with, as saved from the settings window
 //
@@ -56,10 +58,6 @@ constexpr float kForestHalfSize = 250.0f;  // plants stand within this distance 
 constexpr float kFarForestHalfSize = 1200.0f;
 // Collisions exist within this distance of the start; fences stand at its edge.
 constexpr float kPlayHalfSize = 500.0f;
-// Where the player starts on the Batorz map, in meters from its north-west corner: the top
-// of the nearest hill west of the village, 70 m above the valley.
-constexpr float kStartOnMapX = 2120.0f;
-constexpr float kStartOnMapZ = 3120.0f;
 constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
 // How far each kind of thing is drawn (meters). Trees have simpler meshes for the two
@@ -256,14 +254,14 @@ struct Box {
 
 class ForestGame : public poligon::Game {
 public:
-    ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const poligon::Input& input,
-               const ForestActions& actions, const float view[4], const poligon::RenderSettings& settings,
-               const std::string& settings_path)
-        : renderer_(renderer), assets_(assets), input_(input), actions_(actions), settings_(settings),
-          settings_path_(settings_path) {
+    ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const std::filesystem::path& terrain_cache,
+               const poligon::Input& input, const ForestActions& actions, const float view[4], bool turn_given,
+               const poligon::RenderSettings& settings, const std::string& settings_path)
+        : renderer_(renderer), assets_(assets), terrain_cache_(terrain_cache), input_(input), actions_(actions),
+          settings_(settings), settings_path_(settings_path) {
         CreateGround();
         camera_.position = {view[0], Ground(view[0], view[1]) + kEyeHeight, view[1]};
-        camera_.yaw_degrees = view[2];
+        camera_.yaw_degrees = turn_given ? view[2] : start_yaw_;
         camera_.pitch_degrees = view[3];
         camera_.vertical_fov_degrees = 65.0f;
         LoadKinds();
@@ -476,29 +474,181 @@ private:
         return renderer_.CreateTexture(image, options);
     }
 
-    // The land: the Batorz height map if it is there, otherwise hills from noise. The world's
-    // origin is put at the player's start on the map, at the land's height there.
-    void CreateGround() {
-        poligon::HeightMap map;
+    // An image for a terrain layer at 1024 x 1024 (texture arrays need one size; until
+    // textures are compressed, 2048 would cost too much memory). A missing file gives a
+    // plain stand-in.
+    poligon::Image LoadLayerImage(const std::filesystem::path& path, bool is_color) {
+        poligon::Image image;
         std::string error;
-        const std::filesystem::path file = assets_ / "terrain" / "batorz" / "batorz_6km_1m.heights";
-        glm::vec2 start{kStartOnMapX, kStartOnMapZ};
-        if (!poligon::LoadHeightMap(file.string().c_str(), map, error)) {
-            std::printf("forest_scene: %s; using hills made from noise\n", error.c_str());
-            map = poligon::MakeNoiseHeightMap(2049, 2049, 1.0f, 3, 350.0f, 60.0f);
-            start = {1024.0f, 1024.0f};
+        if (!poligon::LoadImageFromFile(path.string().c_str(), image, error)) {
+            std::printf("forest_scene: %s\n", error.c_str());
+            return is_color ? poligon::MakeSolidImage(1024, 1024, 110, 100, 80) : poligon::MakeSolidImage(1024, 1024, 128, 128, 255);
         }
+        while (image.width > 1024) {
+            image = poligon::MakeHalfSizeImage(image, is_color);
+        }
+        return image;
+    }
+
+    // Where the player starts: on gentle ground 150 to 500 m from the largest lake, as high
+    // above it as possible (up to 40 m) while the lake's middle stays in view. Sets
+    // start_yaw_ to face the lake. Positions are meters on the map.
+    glm::vec2 ChooseStart() {
+        const poligon::HeightMap& map = maps_.height;
+        glm::vec2 best(map.GetSizeX() * 0.5f, map.GetSizeZ() * 0.5f);
+        start_yaw_ = 270.0f;
+        const poligon::Lake* lake = nullptr;
+        for (const poligon::Lake& candidate : maps_.lakes) {
+            if (lake == nullptr || candidate.area > lake->area) {
+                lake = &candidate;
+            }
+        }
+        if (lake == nullptr) {
+            return best;
+        }
+        float best_score = -1.0e30f;
+        const float margin = 300.0f;
+        for (float radius = 150.0f; radius <= 500.0f; radius += 50.0f) {
+            for (int step = 0; step < 72; ++step) {
+                const float angle = static_cast<float>(step) * 0.0872665f;
+                const glm::vec2 place = lake->center + radius * glm::vec2(std::cos(angle), std::sin(angle));
+                if (place.x < margin || place.y < margin || place.x > map.GetSizeX() - margin || place.y > map.GetSizeZ() - margin) {
+                    continue;
+                }
+                if (maps_.Sample(maps_.water_distance, place.x, place.y) < 30.0f || map.GetSlopeDegrees(place.x, place.y) > 12.0f) {
+                    continue;
+                }
+                const float above = map.GetHeight(place.x, place.y) - lake->level;
+                if (above < 6.0f) {
+                    continue;
+                }
+                // The line from the eye to the lake's middle must stay above the ground.
+                const glm::vec3 eye(place.x, map.GetHeight(place.x, place.y) + kEyeHeight, place.y);
+                const glm::vec3 target(lake->center.x, lake->level, lake->center.y);
+                bool seen = true;
+                for (int sample = 1; sample < 64 && seen; ++sample) {
+                    const glm::vec3 point = glm::mix(eye, target, static_cast<float>(sample) / 64.0f);
+                    seen = map.GetHeight(point.x, point.z) < point.y - 0.3f;
+                }
+                if (!seen) {
+                    continue;
+                }
+                const float score = std::min(above, 40.0f) - radius * 0.02f;
+                if (score > best_score) {
+                    best_score = score;
+                    best = place;
+                }
+            }
+        }
+        const glm::vec2 to_lake = glm::normalize(lake->center - best);
+        start_yaw_ = glm::degrees(std::atan2(-to_lake.x, -to_lake.y));
+        start_lake_level_ = lake->level;
+        lake_direction_ = to_lake;
+        lake_distance_ = glm::length(lake->center - best);
+        return best;
+    }
+
+    // Whether there is lake water (or its very edge) at a world position.
+    bool IsWater(float x, float z) const {
+        const float map_x = x + map_offset_.x;
+        const float map_z = z + map_offset_.y;
+        return maps_.GetWaterDepth(map_x, map_z) > 0.0f || maps_.Sample(maps_.water_distance, map_x, map_z) < 1.5f;
+    }
+
+    // The land: generated by the engine (poligon/terrain_generator.h) on the first run, then
+    // loaded from the cache. Its ground textures follow the generator's maps. The world's
+    // origin is put at the player's start, at the land's height there.
+    void CreateGround() {
+        const poligon::TerrainGeneratorSettings generator;  // the defaults: 6 x 6 km, seed 1
+        std::string error;
+        bool generated = false;
+        const auto started = std::chrono::steady_clock::now();
+        if (!poligon::LoadOrGenerateTerrain(generator, terrain_cache_.string().c_str(), maps_, generated, error)) {
+            std::printf("forest_scene: %s (the land is used without being kept)\n", error.c_str());
+        }
+        std::printf("forest_scene: land %s in %.1f s\n", generated ? "generated" : "loaded from the cache",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+        const poligon::HeightMap& map = maps_.height;
+        const glm::vec2 start = ChooseStart();
+        map_offset_ = start;
         poligon::TerrainConfig config;
         config.detail = kTerrainDetail;
         config.origin = {-start.x, -map.GetHeight(start.x, start.y), -start.y};
+        world_height_offset_ = config.origin.y;
+
+        // Ground layers and where each covers the land, from the generator's maps.
         const std::filesystem::path textures = assets_ / "polyhaven" / "textures";
-        // Mossy forest floor and dry pine litter, mixed in patches.
-        config.material.layers[0].color = LoadTexture(textures / "forrest_ground_01" / "forrest_ground_01_diff_2k.jpg", true);
-        config.material.layers[0].normal = LoadTexture(textures / "forrest_ground_01" / "forrest_ground_01_nor_gl_2k.jpg", false);
-        config.material.layers[0].tile_size = 3.0f;
-        config.material.layers[1].color = LoadTexture(textures / "forest_leaves_04" / "forest_leaves_04_diff_2k.jpg", true);
-        config.material.layers[1].normal = LoadTexture(textures / "forest_leaves_04" / "forest_leaves_04_nor_gl_2k.jpg", false);
-        config.material.layers[1].tile_size = 2.5f;
+        struct LayerSource {
+            const char* name;
+            float tile_size;
+        };
+        const LayerSource sources[] = {{"forrest_ground_01", 3.0f}, {"forest_leaves_04", 2.5f}, {"grass_ground", 3.0f},
+                                       {"brown_mud_02", 3.0f},      {"gravelly_sand", 2.5f},    {"river_small_rocks", 2.0f},
+                                       {"aerial_rocks_02", 6.0f}};
+        constexpr int kLayers = 7;
+        std::vector<poligon::Image> colors;
+        std::vector<poligon::Image> normals;
+        for (int i = 0; i < kLayers; ++i) {
+            const std::string name = sources[i].name;
+            colors.push_back(LoadLayerImage(textures / name / (name + "_diff_2k.jpg"), true));
+            normals.push_back(LoadLayerImage(textures / name / (name + "_nor_gl_2k.jpg"), false));
+            config.material.tile_sizes[i] = sources[i].tile_size;
+        }
+        poligon::TextureOptions data;
+        data.is_color = false;
+        config.material.colors = renderer_.CreateTextureArray(colors.data(), kLayers);
+        config.material.normals = renderer_.CreateTextureArray(normals.data(), kLayers, data);
+        config.material.layer_count = kLayers;
+        config.material.steep_start_degrees = 90.0f;  // the rock layer covers steep ground
+
+        poligon::TerrainLayerRule rules[kLayers];
+        // 0: mossy forest floor, wherever nothing else fits.
+        rules[0].strength = 0.35f;
+        // 1: dry litter in patches on drier ground.
+        rules[1].moisture = {0.0f, 0.45f, 0.15f};
+        rules[1].patch_size = 45.0f;
+        rules[1].patch_cover = 0.45f;
+        // 2: grass in clearings on gentle, moderately moist ground.
+        rules[2].slope_degrees = {0.0f, 18.0f, 6.0f};
+        rules[2].moisture = {0.3f, 0.85f, 0.15f};
+        rules[2].patch_size = 120.0f;
+        rules[2].patch_cover = 0.4f;
+        // 3: mud where water gathers: wet ground, the bottoms of drainage lines, a band along
+        // the shore.
+        rules[3].moisture = {0.82f, 1.0f, 0.1f};
+        rules[3].water_depth = {0.0f, 0.05f, 0.05f};
+        rules[3].strength = 1.2f;
+        // 4: sand and gravel on the shore line and in shallow water.
+        rules[4].water_distance = {0.0f, 2.0f, 2.0f};
+        rules[4].water_depth = {0.0f, 0.5f, 0.4f};
+        rules[4].strength = 1.6f;
+        // 5: small stones on the lake bed and in stream beds.
+        rules[5].water_depth = {0.6f, 1000.0f, 0.4f};
+        rules[5].strength = 2.0f;
+        // 6: rock on steep ground and where the generator found bare rock.
+        rules[6].slope_degrees = {32.0f, 90.0f, 8.0f};
+        rules[6].strength = 2.0f;
+        poligon::Image weights[2];
+        const auto weights_started = std::chrono::steady_clock::now();
+        poligon::MakeTerrainLayerWeights(maps_, rules, kLayers, 1u, weights);
+        config.material.weights[0] = renderer_.CreateTexture(weights[0], [] {
+            poligon::TextureOptions options;
+            options.is_color = false;
+            options.generate_mipmaps = false;
+            return options;
+        }());
+        config.material.weights[1] = renderer_.CreateTexture(weights[1], [] {
+            poligon::TextureOptions options;
+            options.is_color = false;
+            options.generate_mipmaps = false;
+            return options;
+        }());
+        std::printf("forest_scene: ground layer weights in %.1f s; %d lakes; start at %.0f, %.0f on the map, %.0f m above "
+                    "the largest lake, %.0f m from its middle, which lies at turn %.0f\n",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - weights_started).count(),
+                    static_cast<int>(maps_.lakes.size()), static_cast<double>(start.x), static_cast<double>(start.y),
+                    static_cast<double>(map.GetHeight(start.x, start.y) - start_lake_level_), static_cast<double>(lake_distance_),
+                    static_cast<double>(start_yaw_));
         terrain_ = std::make_unique<poligon::Terrain>(renderer_, map, config);
         std::printf("forest_scene: land %.0f x %.0f m, a point every %.0f m\n", static_cast<double>(map.GetSizeX()),
                     static_cast<double>(map.GetSizeZ()), static_cast<double>(map.spacing));
@@ -887,9 +1037,19 @@ private:
         const size_t index = std::min(static_cast<size_t>(random.Next() * static_cast<float>(kind.variants.size())),
                                       kind.variants.size() - 1);
         const Variant& variant = kind.variants[index];
-        // Nothing grows or lies on slopes this steep; in Batorz those are the walls of gullies.
-        if (terrain_->GetSlopeDegrees(x, z) > 33.0f) {
+        // Nothing grows or lies on slopes this steep (the walls of gullies), or in a lake.
+        if (terrain_->GetSlopeDegrees(x, z) > 33.0f || IsWater(x, z)) {
             return;
+        }
+        // A clearing opens from the start towards the lake, so that the lake is in view:
+        // no trees or large things within 22 degrees of that direction.
+        if (!kind.is_small && lake_distance_ > 0.0f) {
+            const glm::vec2 offset(x, z);
+            const float along = glm::dot(offset, lake_direction_);
+            const float across = std::fabs(lake_direction_.x * offset.y - lake_direction_.y * offset.x);
+            if (along > -8.0f && along < lake_distance_ && across < 8.0f + along * 0.4f) {
+                return;
+            }
         }
         Placement placement;
         placement.variant = &variant;
@@ -1008,6 +1168,9 @@ private:
                 layer.max_slope_degrees = max_slope;
                 layer.align_to_ground = align;
                 layer.sink_meters = sink;
+                // Nothing grows under the start lake's surface. (Rules that read the
+                // generator's maps replace this in the planting step.)
+                layer.min_height = start_lake_level_ + world_height_offset_ + 0.1f;
                 layer.seed = seed * 100 + static_cast<int>(i);
                 ground_cover_->AddLayer(layer);
             }
@@ -1024,6 +1187,17 @@ private:
     const poligon::Input& input_;
     ForestActions actions_;
 
+    std::filesystem::path terrain_cache_;
+    // The generated land and its maps; map position = world position + map_offset_.
+    poligon::TerrainMaps maps_;
+    glm::vec2 map_offset_{0.0f};
+    // World height = map height + world_height_offset_.
+    float world_height_offset_ = 0.0f;
+    float start_yaw_ = 270.0f;
+    float start_lake_level_ = -1.0e30f;
+    // Direction (map x, z) and distance from the start to the largest lake's middle.
+    glm::vec2 lake_direction_{0.0f};
+    float lake_distance_ = 0.0f;
     std::unique_ptr<poligon::Terrain> terrain_;
     std::vector<poligon::RenderModel> render_models_;
     Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
@@ -1117,8 +1291,8 @@ int main(int argc, char** argv) {
 
     poligon::CommandLineOptions options;
     std::string error;
-    // Default: on the hilltop, looking east over the valley.
-    float view[4] = {0.0f, 0.0f, 270.0f, -6.0f};
+    // Default: at the start, looking towards the lake, slightly down.
+    float view[4] = {0.0f, 0.0f, 0.0f, -6.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
         if (options.positional.size() > 5 || (options.positional.size() == 5 && options.positional[4] != "collision")) {
             error = "expected at most X Z TURN TILT and the word collision";
@@ -1191,7 +1365,11 @@ int main(int argc, char** argv) {
     }
 
     const auto load_start = std::chrono::steady_clock::now();
-    ForestGame game(renderer, assets, input, actions, view, settings, settings_path);
+    // Generated land is kept in build/terrain_cache (the program runs from build/PRESET/bin).
+    std::error_code path_error;
+    const std::filesystem::path terrain_cache =
+        std::filesystem::absolute(argv[0], path_error).parent_path().parent_path().parent_path() / "terrain_cache";
+    ForestGame game(renderer, assets, terrain_cache, input, actions, view, options.positional.size() >= 3, settings, settings_path);
     game.ShowCollision(options.positional.size() == 5);
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s; quality %s, %d x %d\n", load_seconds,

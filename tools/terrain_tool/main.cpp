@@ -14,13 +14,23 @@
 //       Writes a picture of the map as if lit from the north-west, at most 1024 pixels wide.
 //   terrain_tool info IN.heights
 //       Prints size, height range and how steep the land is.
+//   terrain_tool generate CACHE_FOLDER PREVIEW_FOLDER [NAME=VALUE ...]
+//       Generates land (poligon/terrain_generator.h), or loads it from CACHE_FOLDER when
+//       these settings were generated before, and writes pictures of it and its maps to
+//       PREVIEW_FOLDER: relief.png (lit from the north-west, lakes blue), detail.png (the
+//       middle 1024 x 1024 points, one pixel each), flow.png, moisture.png, sediment.png,
+//       rock.png. NAME=VALUE changes a setting, for example
+//       seed=7 size=2048 erosion_steps=100 (names as in TerrainGeneratorSettings).
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 #include "poligon/height_map.h"
 #include "poligon/image.h"
+#include "poligon/terrain_generator.h"
 
 namespace {
 
@@ -52,6 +62,76 @@ void PrintInfo(const poligon::HeightMap& map) {
     const double total = samples * samples / 100.0;
     std::printf("slopes: %.1f%% under 10 degrees, %.1f%% 10 to 25, %.1f%% 25 to 45, %.1f%% over 45; steepest found %.0f\n",
                 counts[0] / total, counts[1] / total, counts[2] / total, counts[3] / total, static_cast<double>(steepest));
+}
+
+// Sets one generator setting from "name=value"; false for an unknown name.
+bool SetGeneratorSetting(poligon::TerrainGeneratorSettings& s, const char* text) {
+    const char* equals = std::strchr(text, '=');
+    if (equals == nullptr) {
+        return false;
+    }
+    const std::string name(text, equals);
+    const char* value = equals + 1;
+    struct FloatSetting {
+        const char* name;
+        float* value;
+    };
+    const FloatSetting floats[] = {{"size", &s.size}, {"spacing", &s.spacing}, {"coarse_spacing", &s.coarse_spacing},
+                                   {"map_spacing", &s.map_spacing}, {"relief", &s.relief}, {"initial_relief", &s.initial_relief},
+                                   {"initial_hill_size", &s.initial_hill_size},
+                                   {"years_per_step", &s.years_per_step}, {"uplift", &s.uplift},
+                                   {"erodibility", &s.erodibility}, {"area_exponent", &s.area_exponent},
+                                   {"hillslope_diffusion", &s.hillslope_diffusion}, {"basin_radius", &s.basin_radius},
+                                   {"basin_start", &s.basin_start}, {"basin_sinking", &s.basin_sinking},
+                                   {"detail_height", &s.detail_height}, {"talus_degrees", &s.talus_degrees},
+                                   {"droplets_per_square_meter", &s.droplets_per_square_meter},
+                                   {"droplet_strength", &s.droplet_strength}, {"min_lake_area", &s.min_lake_area},
+                                   {"min_lake_depth", &s.min_lake_depth}};
+    for (const FloatSetting& setting : floats) {
+        if (name == setting.name) {
+            *setting.value = std::strtof(value, nullptr);
+            return true;
+        }
+    }
+    struct IntSetting {
+        const char* name;
+        int* value;
+    };
+    const IntSetting ints[] = {{"erosion_steps", &s.erosion_steps}, {"basin_count", &s.basin_count},
+                               {"outlet_edges", &s.outlet_edges}, {"thermal_iterations", &s.thermal_iterations},
+                               {"droplet_steps", &s.droplet_steps}};
+    for (const IntSetting& setting : ints) {
+        if (name == setting.name) {
+            *setting.value = std::atoi(value);
+            return true;
+        }
+    }
+    if (name == "seed") {
+        s.seed = std::strtoull(value, nullptr, 10);
+        return true;
+    }
+    return false;
+}
+
+// A picture of one map: black (low) to a color (high), `to_unit` turning a value into 0..1.
+template <typename ToUnit>
+bool SaveMapPicture(const std::string& path, const poligon::TerrainMaps& maps, const std::vector<float>& map, glm::vec3 color,
+                    ToUnit to_unit) {
+    const int size = maps.map_width < 1024 ? maps.map_width : 1024;
+    poligon::Image image = poligon::MakeSolidImage(size, size, 0, 0, 0);
+    const float extent = static_cast<float>(maps.map_width - 1) * maps.map_spacing;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const float value = glm::clamp(to_unit(maps.Sample(map, extent * (static_cast<float>(x) + 0.5f) / static_cast<float>(size),
+                                                               extent * (static_cast<float>(y) + 0.5f) / static_cast<float>(size))),
+                                           0.0f, 1.0f);
+            std::uint8_t* pixel = &image.pixels[static_cast<size_t>(y * size + x) * 4];
+            for (int c = 0; c < 3; ++c) {
+                pixel[c] = static_cast<std::uint8_t>(255.0f * value * color[c]);
+            }
+        }
+    }
+    return poligon::SaveImageToPng(path.c_str(), image);
 }
 
 } // namespace
@@ -186,10 +266,85 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (command == "generate" && argc >= 4) {
+        poligon::TerrainGeneratorSettings settings;
+        for (int i = 4; i < argc; ++i) {
+            if (!SetGeneratorSetting(settings, argv[i])) {
+                return Fail(std::string("unknown setting ") + argv[i]);
+            }
+        }
+        const auto start = std::chrono::steady_clock::now();
+        poligon::TerrainMaps maps;
+        bool generated = false;
+        if (!poligon::LoadOrGenerateTerrain(settings, argv[2], maps, generated, error)) {
+            return Fail(error);
+        }
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        std::printf("%s in %.1f s, hash %016llx\n", generated ? "generated" : "loaded", seconds,
+                    static_cast<unsigned long long>(poligon::HashTerrainMaps(maps)));
+        PrintInfo(maps.height);
+        for (const poligon::Lake& lake : maps.lakes) {
+            std::printf("lake at %.0f, %.0f: level %.2f m, %.0f m2, %.1f m deep\n", static_cast<double>(lake.center.x),
+                        static_cast<double>(lake.center.y), static_cast<double>(lake.level), static_cast<double>(lake.area),
+                        static_cast<double>(lake.max_depth));
+        }
+
+        const std::string folder = argv[3];
+        const poligon::HeightMap& map = maps.height;
+        float lowest = 0.0f;
+        float highest = 0.0f;
+        map.GetHeightRange(lowest, highest);
+        const glm::vec3 to_light = glm::normalize(glm::vec3(-1.0f, 1.2f, -1.0f));
+        // A lit picture of the square from (start_x, start_z), `extent` meters wide.
+        const auto draw_relief = [&](float start_x, float start_z, float extent, int width, float exaggeration) {
+        poligon::Image image = poligon::MakeSolidImage(width, width, 0, 0, 0);
+        for (int y = 0; y < width; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const float map_x = start_x + extent * (static_cast<float>(x) + 0.5f) / static_cast<float>(width);
+                const float map_z = start_z + extent * (static_cast<float>(y) + 0.5f) / static_cast<float>(width);
+                glm::vec3 normal = map.GetNormal(map_x, map_z);
+                normal = glm::normalize(glm::vec3(normal.x * exaggeration, normal.y, normal.z * exaggeration));
+                const float light = glm::clamp(glm::dot(normal, to_light), 0.0f, 1.0f);
+                const float level = (map.GetHeight(map_x, map_z) - lowest) / (highest - lowest + 0.001f);
+                glm::vec3 color = glm::vec3(0.55f + 0.45f * level, 0.6f + 0.35f * level, 0.4f + 0.4f * level) * (0.25f + 0.75f * light);
+                const float water = maps.GetWaterDepth(map_x, map_z);
+                if (water > 0.0f) {
+                    color = glm::mix(glm::vec3(0.35f, 0.55f, 0.75f), glm::vec3(0.05f, 0.15f, 0.35f), glm::clamp(water / 6.0f, 0.0f, 1.0f));
+                }
+                std::uint8_t* pixel = &image.pixels[static_cast<size_t>(y * width + x) * 4];
+                for (int c = 0; c < 3; ++c) {
+                    pixel[c] = static_cast<std::uint8_t>(255.0f * glm::clamp(color[c], 0.0f, 1.0f));
+                }
+            }
+        }
+        return image;
+        };
+        const int overview = map.width < 1024 ? map.width : 1024;
+        bool saved = poligon::SaveImageToPng((folder + "/relief.png").c_str(), draw_relief(0.0f, 0.0f, map.GetSizeX(), overview, 3.0f));
+        const float detail_extent = std::fmin(1024.0f * map.spacing, map.GetSizeX());
+        saved = saved && poligon::SaveImageToPng((folder + "/detail.png").c_str(),
+                                                 draw_relief((map.GetSizeX() - detail_extent) * 0.5f, (map.GetSizeZ() - detail_extent) * 0.5f,
+                                                             detail_extent, 1024, 1.0f));
+        saved = saved && SaveMapPicture(folder + "/flow.png", maps, maps.flow, glm::vec3(0.5f, 0.8f, 1.0f),
+                                        [](float v) { return (std::log10(v) - 1.5f) / 5.0f; });
+        saved = saved && SaveMapPicture(folder + "/moisture.png", maps, maps.moisture, glm::vec3(0.3f, 0.7f, 1.0f),
+                                        [](float v) { return v; });
+        saved = saved && SaveMapPicture(folder + "/sediment.png", maps, maps.sediment, glm::vec3(1.0f, 0.85f, 0.5f),
+                                        [](float v) { return std::sqrt(v / 3.0f); });
+        saved = saved && SaveMapPicture(folder + "/rock.png", maps, maps.rock, glm::vec3(1.0f, 1.0f, 1.0f),
+                                        [](float v) { return v; });
+        if (!saved) {
+            return Fail("cannot write the pictures to " + folder);
+        }
+        std::printf("pictures saved to %s\n", folder.c_str());
+        return 0;
+    }
+
     std::fprintf(stderr, "usage: terrain_tool join OUT.heights SPACING COLUMNS ROWS FOLDER PREFIX\n"
                          "       terrain_tool rescale IN.heights OUT.heights HORIZONTAL VERTICAL\n"
                          "       terrain_tool crop IN.heights OUT.heights CENTER_X CENTER_Z SIZE\n"
                          "       terrain_tool preview IN.heights OUT.png\n"
-                         "       terrain_tool info IN.heights\n");
+                         "       terrain_tool info IN.heights\n"
+                         "       terrain_tool generate CACHE_FOLDER PREVIEW_FOLDER [NAME=VALUE ...]\n");
     return 2;
 }

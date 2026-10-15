@@ -246,21 +246,32 @@ struct TerrainHandle {
     std::uint32_t id = 0;
 };
 
-// One of the ground textures of a terrain.
-struct TerrainLayer {
-    TextureHandle color;
-    // Create it with TextureOptions::is_color = false.
-    TextureHandle normal;
-    // The texture repeats after this many meters.
-    float tile_size = 3.0f;
-};
+// Most ground textures a terrain can mix.
+constexpr int kMaxTerrainLayers = 8;
 
-// How a terrain looks: two ground textures mixed in large irregular patches, and a plain
-// color on slopes too steep for plants.
+// How a terrain looks: up to eight ground textures (layers), each covering the land as two
+// weight images say, and a plain color on slopes too steep for anything to grow.
+//
+// The layers' textures are two texture arrays of equal-sized images
+// (Renderer::CreateTextureArray): image i of `colors` and of `normals` is layer i. The
+// weights come from `weights`: two images (is_color = false) stretched over the whole height
+// map, the first corner pixel on its first point, the last on its last; red, green, blue and
+// alpha of the first hold the weights of layers 0 to 3, of the second layers 4 to 7.
+// MakeTerrainLayerWeights (poligon/terrain.h) makes them from the generator's maps and
+// rules. Where layers meet, the brighter (higher) texture wins over a short distance, as
+// stones poke out of sand.
+//
+// Without weights layer 0 covers everything; without textures the ground is white.
 struct TerrainMaterial {
-    TerrainLayer layers[2];
+    TextureHandle colors;
+    TextureHandle normals;  // created with TextureOptions::is_color = false
+    int layer_count = 0;
+    // Meters after which each layer's texture repeats.
+    float tile_sizes[kMaxTerrainLayers] = {3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f};
+    TextureHandle weights[2];
     Color steep_color{0.42f, 0.34f, 0.22f, 1.0f};
-    // The steep color starts to show at the first slope and is all there is at the second.
+    // The steep color starts to show at the first slope and is all there is at the second;
+    // a start of 90 turns it off (when a rock layer covers steep ground instead).
     float steep_start_degrees = 30.0f;
     float steep_end_degrees = 42.0f;
     float roughness = 0.95f;
@@ -433,6 +444,9 @@ public:
 
     // Copies the image to the graphics card. Textures repeat outside the 0..1 coordinate range.
     TextureHandle CreateTexture(const Image& image, const TextureOptions& options = TextureOptions{});
+    // Copies `count` images of the same size into one texture array (used for the layers of a
+    // terrain, TerrainMaterial). A shader picks the image by number.
+    TextureHandle CreateTextureArray(const Image* images, int count, const TextureOptions& options = TextureOptions{});
 
     // Free a mesh or texture before the renderer is destroyed, to release graphics memory.
     // The handle must not be used afterwards; its number is not given out again.

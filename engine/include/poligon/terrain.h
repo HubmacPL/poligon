@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "poligon/height_map.h"
+#include "poligon/image.h"
 #include "poligon/renderer.h"
+#include "poligon/terrain_generator.h"
 
 namespace poligon {
 
@@ -61,5 +64,42 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+// --- Ground layers from the generator's maps ---
+
+// A range of values with soft ends: full weight from `low` to `high`, falling to nothing
+// over `fade` beyond each end. The default range takes everything.
+struct TerrainRange {
+    float low = -1.0e30f;
+    float high = 1.0e30f;
+    float fade = 1.0f;
+};
+
+// Where one ground layer covers the land, judged from the generator's maps
+// (poligon/terrain_generator.h). Each condition gives 0 to 1 and they are multiplied.
+struct TerrainLayerRule {
+    TerrainRange slope_degrees;
+    TerrainRange height;          // meters
+    TerrainRange moisture;        // 0 = dry, 1 = wet
+    TerrainRange sediment;        // meters of loose material
+    TerrainRange rock;            // 0 = soil, 1 = bare rock
+    TerrainRange flow;            // log10 of the square meters that drain through
+    TerrainRange water_distance;  // meters to lake water
+    TerrainRange water_depth;     // meters of water above the ground; 0 on land
+    // Irregular patches: with patch_size above 0 the weight is also multiplied by noise of
+    // about that size (meters), cut so that `patch_cover` of the land (0 to 1) is covered.
+    float patch_size = 0.0f;
+    float patch_cover = 0.5f;
+    // Multiplies the result.
+    float strength = 1.0f;
+};
+
+// The weights of up to eight layers at every point of the maps' grid, for
+// TerrainMaterial::weights: two images of map_width x map_depth pixels, red, green, blue
+// and alpha of the first holding layers 0 to 3, of the second 4 to 7. At each point the
+// weights are scaled to add up to 1; where no rule holds at all, layer 0 covers. The same
+// maps, rules and seed give the same images.
+void MakeTerrainLayerWeights(const TerrainMaps& maps, const TerrainLayerRule* rules, int count, std::uint32_t seed,
+                             Image weights[2]);
 
 } // namespace poligon

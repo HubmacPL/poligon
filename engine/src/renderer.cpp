@@ -135,8 +135,10 @@ struct TerrainVertexUniforms {
 struct TerrainMaterialUniforms {
     glm::vec4 map;
     glm::vec4 map_heights;
-    glm::vec4 tiling;
+    glm::vec4 steep;
     glm::vec4 steep_color;
+    glm::vec4 tile_scales[2];
+    glm::vec4 weight_map;
 };
 
 struct TonemapUniforms {
@@ -586,6 +588,15 @@ struct Renderer::Impl {
 
     std::vector<Mesh> meshes;
     std::vector<SDL_GPUTexture*> textures;
+    // Images in each texture: 0 for a plain texture, 1 or more for a texture array.
+    std::vector<int> texture_layers;
+    // Width and height of each texture's (first) image.
+    std::vector<glm::vec2> texture_sizes;
+    // Stand-ins for a terrain without textures or weights.
+    TextureHandle white_array_texture;
+    TextureHandle flat_normal_array_texture;
+    TextureHandle first_layer_weights;  // all weight on layer 0
+    TextureHandle no_weights;
     // Stand-ins for materials without the respective texture, so that one shader serves all.
     TextureHandle white_texture;
     TextureHandle flat_normal_texture;
@@ -1476,21 +1487,35 @@ struct Renderer::Impl {
             material_uniforms.map = vertex_uniforms.map;
             material_uniforms.map_heights = glm::vec4(0.0f, terrain.height_range, 1.0f / static_cast<float>(terrain.width),
                                                       1.0f / static_cast<float>(terrain.depth));
-            material_uniforms.tiling = glm::vec4(look.layers[0].tile_size, look.layers[1].tile_size,
-                                                 std::cos(glm::radians(look.steep_start_degrees)),
-                                                 std::cos(glm::radians(look.steep_end_degrees)));
+            const bool textured = look.colors.id != 0 && look.layer_count > 0;
+            material_uniforms.steep = glm::vec4(std::cos(glm::radians(look.steep_start_degrees)),
+                                                std::cos(glm::radians(look.steep_end_degrees)),
+                                                textured ? static_cast<float>(look.layer_count) : 1.0f, textured ? 1.0f : 0.0f);
             material_uniforms.steep_color = glm::vec4(look.steep_color.r, look.steep_color.g, look.steep_color.b, look.roughness);
+            for (int layer = 0; layer < kMaxTerrainLayers; ++layer) {
+                material_uniforms.tile_scales[layer / 4][layer % 4] = 1.0f / glm::max(look.tile_sizes[layer], 0.01f);
+            }
+            // Height map point -> weight image coordinates: the corner pixels' centers lie on
+            // the map's first and last points.
+            const glm::vec2 weight_size = look.weights[0].id != 0 ? texture_sizes[look.weights[0].id - 1] : glm::vec2(1.0f);
+            material_uniforms.weight_map =
+                glm::vec4((weight_size.x - 1.0f) / (weight_size.x * static_cast<float>(terrain.width - 1)),
+                          (weight_size.y - 1.0f) / (weight_size.y * static_cast<float>(terrain.depth - 1)), 0.5f / weight_size.x,
+                          0.5f / weight_size.y);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
             SDL_GPUTextureSamplerBinding bindings[7]{};
             bindings[0].texture = terrain.height_texture;
             bindings[0].sampler = linear_clamp_sampler;
-            for (int layer = 0; layer < 2; ++layer) {
-                bindings[1 + layer * 2].texture = GetTexture(look.layers[layer].color, white_texture);
-                bindings[1 + layer * 2].sampler = texture_sampler;
-                bindings[2 + layer * 2].texture = GetTexture(look.layers[layer].normal, flat_normal_texture);
-                bindings[2 + layer * 2].sampler = texture_sampler;
-            }
+            bindings[1].texture = GetTexture(textured ? look.colors : white_array_texture, white_array_texture);
+            bindings[1].sampler = texture_sampler;
+            bindings[2].texture = GetTexture(textured && look.normals.id != 0 ? look.normals : flat_normal_array_texture,
+                                             flat_normal_array_texture);
+            bindings[2].sampler = texture_sampler;
+            bindings[3].texture = GetTexture(look.weights[0], first_layer_weights);
+            bindings[3].sampler = linear_clamp_sampler;
+            bindings[4].texture = GetTexture(look.weights[1], no_weights);
+            bindings[4].sampler = linear_clamp_sampler;
             bindings[5].texture = shadow_atlas;
             bindings[5].sampler = shadow_sampler;
             bindings[6].texture = ao_on ? ao_target : textures[white_texture.id - 1];
@@ -1771,6 +1796,12 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     plain_data.is_color = false;
     // A normal pointing straight out of the surface.
     impl_->flat_normal_texture = CreateTexture(MakeSolidImage(1, 1, 128, 128, 255), plain_data);
+    const Image white = MakeSolidImage(1, 1, 255, 255, 255);
+    impl_->white_array_texture = CreateTextureArray(&white, 1, plain_color);
+    const Image flat_normal = MakeSolidImage(1, 1, 128, 128, 255);
+    impl_->flat_normal_array_texture = CreateTextureArray(&flat_normal, 1, plain_data);
+    impl_->first_layer_weights = CreateTexture(MakeSolidImage(1, 1, 255, 0, 0, 0), plain_data);
+    impl_->no_weights = CreateTexture(MakeSolidImage(1, 1, 0, 0, 0, 0), plain_data);
 
     if (config.debug_ui && impl_->window != nullptr) {
         IMGUI_CHECKVERSION();
@@ -2062,6 +2093,82 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
     }
 
     impl_->textures.push_back(texture);
+    impl_->texture_layers.push_back(0);
+    impl_->texture_sizes.emplace_back(static_cast<float>(image.width), static_cast<float>(image.height));
+    TextureHandle handle;
+    handle.id = static_cast<std::uint32_t>(impl_->textures.size());
+    return handle;
+}
+
+TextureHandle Renderer::CreateTextureArray(const Image* images, int count, const TextureOptions& options) {
+    if (images == nullptr || count < 1 || count > 256) {
+        FatalError("Renderer::CreateTextureArray: needs between 1 and 256 images");
+    }
+    for (int i = 0; i < count; ++i) {
+        if (images[i].width != images[0].width || images[i].height != images[0].height || images[i].width < 1 ||
+            images[i].pixels.size() != static_cast<size_t>(images[i].width) * static_cast<size_t>(images[i].height) * 4) {
+            FatalError("Renderer::CreateTextureArray: the images must be non-empty and all of one size");
+        }
+    }
+    if (impl_->in_frame) {
+        FatalError("Renderer::CreateTextureArray: do not create textures between BeginFrame and EndFrame");
+    }
+    const Uint32 level_count = options.generate_mipmaps ? CountMipLevels(images[0].width, images[0].height) : 1;
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D_ARRAY;
+    info.format = options.is_color ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = static_cast<Uint32>(images[0].width);
+    info.height = static_cast<Uint32>(images[0].height);
+    info.layer_count_or_depth = static_cast<Uint32>(count);
+    info.num_levels = level_count;
+    info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    SDL_GPUTexture* texture = SDL_CreateGPUTexture(impl_->device, &info);
+    if (texture == nullptr) {
+        FatalSdlError("cannot create texture array");
+    }
+    // One image at a time, with its mipmaps computed on the CPU as for CreateTexture.
+    for (int layer = 0; layer < count; ++layer) {
+        SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(impl_->device);
+        if (commands == nullptr) {
+            FatalSdlError("cannot acquire command buffer");
+        }
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
+        std::vector<SDL_GPUTransferBuffer*> transfers;
+        Image smaller_level;
+        const Image* level_image = &images[layer];
+        for (Uint32 level = 0; level < level_count; ++level) {
+            if (level > 0) {
+                smaller_level = MakeHalfSizeImage(*level_image, options.is_color);
+                level_image = &smaller_level;
+            }
+            SDL_GPUTransferBuffer* transfer =
+                impl_->CreateFilledTransferBuffer(level_image->pixels.data(), static_cast<Uint32>(level_image->pixels.size()));
+            transfers.push_back(transfer);
+            SDL_GPUTextureTransferInfo source{};
+            source.transfer_buffer = transfer;
+            source.pixels_per_row = static_cast<Uint32>(level_image->width);
+            source.rows_per_layer = static_cast<Uint32>(level_image->height);
+            SDL_GPUTextureRegion destination{};
+            destination.texture = texture;
+            destination.mip_level = level;
+            destination.layer = static_cast<Uint32>(layer);
+            destination.w = static_cast<Uint32>(level_image->width);
+            destination.h = static_cast<Uint32>(level_image->height);
+            destination.d = 1;
+            SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
+        }
+        SDL_EndGPUCopyPass(copy_pass);
+        if (!SDL_SubmitGPUCommandBuffer(commands)) {
+            FatalSdlError("cannot submit texture array upload");
+        }
+        for (SDL_GPUTransferBuffer* transfer : transfers) {
+            SDL_ReleaseGPUTransferBuffer(impl_->device, transfer);
+        }
+    }
+    impl_->textures.push_back(texture);
+    impl_->texture_layers.push_back(count);
+    impl_->texture_sizes.emplace_back(static_cast<float>(images[0].width), static_cast<float>(images[0].height));
     TextureHandle handle;
     handle.id = static_cast<std::uint32_t>(impl_->textures.size());
     return handle;
@@ -2609,12 +2716,23 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     if (count < 0 || (count > 0 && patches == nullptr)) {
         FatalError("Renderer::DrawTerrain: needs the patches to draw");
     }
-    for (const TerrainLayer& layer : material.layers) {
-        for (const TextureHandle texture : {layer.color, layer.normal}) {
-            if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
-                FatalError("Renderer::DrawTerrain: invalid or destroyed texture handle");
-            }
+    for (const TextureHandle texture : {material.colors, material.normals, material.weights[0], material.weights[1]}) {
+        if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
+            FatalError("Renderer::DrawTerrain: invalid or destroyed texture handle");
         }
+    }
+    for (const TextureHandle texture : {material.colors, material.normals}) {
+        if (texture.id != 0 && impl_->texture_layers[texture.id - 1] < material.layer_count) {
+            FatalError("Renderer::DrawTerrain: the layer textures must be texture arrays with at least layer_count images");
+        }
+    }
+    for (const TextureHandle texture : {material.weights[0], material.weights[1]}) {
+        if (texture.id != 0 && impl_->texture_layers[texture.id - 1] != 0) {
+            FatalError("Renderer::DrawTerrain: the weights must be plain textures, not texture arrays");
+        }
+    }
+    if (material.layer_count < 0 || material.layer_count > kMaxTerrainLayers) {
+        FatalError("Renderer::DrawTerrain: layer_count must be between 0 and 8");
     }
     if (count == 0) {
         return;
