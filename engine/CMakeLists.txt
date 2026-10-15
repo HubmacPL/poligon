@@ -122,3 +122,4 @@ poligon_embed_shader(shaders/impostor.vert.hlsl vertex kImpostorVert impostor_ve
 poligon_embed_shader(shaders/impostor.frag.hlsl fragment kImpostorFrag impostor_frag)
 poligon_embed_shader(shaders/impostor_depth.frag.hlsl fragment kImpostorDepthFrag impostor_depth_frag)
 poligon_embed_shader(shaders/impostor_bake.frag.hlsl fragment kImpostorBakeFrag impostor_bake_frag)
+poligon_embed_shader(shaders/taa.frag.hlsl fragment kTaaFrag taa_frag)

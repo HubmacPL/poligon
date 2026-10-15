@@ -1062,6 +1062,16 @@ poligon::RenderSettings MakeForestSettings() {
     settings.post.bloom = true;
     settings.post.auto_exposure = true;
     settings.post.auto_exposure_target = 0.22f;
+    // Temporal anti-aliasing instead of multisampling (see main): smooths leaves and dithered
+    // fades, which multisampling cannot; a little sharpening gives back its softness.
+    settings.post.temporal_aa = true;
+    settings.post.sharpen = 0.4f;
+    // A slightly warm, a little more saturated and contrasty picture with a soft vignette:
+    // a late-summer afternoon rather than a technical render.
+    settings.post.temperature = 0.15f;
+    settings.post.saturation = 1.08f;
+    settings.post.contrast = 1.06f;
+    settings.post.vignette = 0.18f;
     return settings;
 }
 
@@ -1130,6 +1140,8 @@ int main(int argc, char** argv) {
     // images. At 1024 instead of the default 2048 pixels they cost less than half, which
     // brings the frame under 17 ms on a GTX 980; the price is softer shadow edges.
     renderer_config.shadow_map_size = 1024;
+    // Edges are smoothed by temporal anti-aliasing; multisampling would cost 3 ms on top.
+    renderer_config.msaa_samples = settings.post.temporal_aa ? 1 : 4;
     poligon::Renderer renderer(renderer_config);
 
     poligon::Input input;

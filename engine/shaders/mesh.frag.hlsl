@@ -31,7 +31,7 @@ Texture2D<float4> orm_texture : register(t2, space2);
 SamplerState orm_sampler : register(s2, space2);
 
 cbuffer MaterialUniforms : register(b1, space3) {
-    float4 material_factors;  // x: metallic, y: roughness, z: alpha cutoff, w: unused
+    float4 material_factors;  // x: metallic, y: roughness, z: alpha cutoff, w: the frame's noise offset
     float4 material_flags;    // x: has normal map, y: has ORM texture, z: ORM red is occlusion, w: thin foliage
 };
 
@@ -46,7 +46,7 @@ struct FragmentInput {
 };
 
 float4 main(FragmentInput input) : SV_Target0 {
-    if (!KeptByFade(input.fade, input.clip_position.xy)) {
+    if (!KeptByFade(input.fade, input.clip_position.xy + float2(material_factors.w, 0.0))) {
         discard;
     }
     // Color textures are stored sRGB-encoded; the texture format makes this sample linear.

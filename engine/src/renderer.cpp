@@ -49,6 +49,8 @@
 #include "poligon_shaders/mesh_vert_spirv.h"
 #include "poligon_shaders/shadow_frag_dxil.h"
 #include "poligon_shaders/shadow_frag_spirv.h"
+#include "poligon_shaders/taa_frag_dxil.h"
+#include "poligon_shaders/taa_frag_spirv.h"
 #include "poligon_shaders/sky_frag_dxil.h"
 #include "poligon_shaders/sky_frag_spirv.h"
 #include "poligon_shaders/terrain_frag_dxil.h"
@@ -135,7 +137,31 @@ struct TerrainMaterialUniforms {
 struct TonemapUniforms {
     glm::vec4 parameters;
     glm::vec4 auto_exposure;
+    glm::vec4 white_balance;
+    glm::vec4 grading;
 };
+
+struct TaaUniforms {
+    glm::mat4 inverse_view_projection;
+    glm::mat4 previous_view_projection;
+    glm::vec4 parameters;
+};
+
+// Sub-pixel camera shifts for temporal anti-aliasing: the first 8 points of the Halton
+// sequence in bases 2 and 3, which cover a pixel evenly whatever prefix is used.
+float Halton(int index, int base) {
+    float result = 0.0f;
+    float fraction = 1.0f;
+    for (int i = index + 1; i > 0; i /= base) {
+        fraction /= static_cast<float>(base);
+        result += fraction * static_cast<float>(i % base);
+    }
+    return result;
+}
+constexpr int kTaaSequenceLength = 8;
+// A camera that moves further than this between two frames has jumped (a cut); the
+// history then no longer fits and is dropped.
+constexpr float kTaaCutDistance = 25.0f;
 
 struct AoUniforms {
     glm::vec4 projection_info;
@@ -479,6 +505,21 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* bloom_down_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* bloom_up_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* luminance_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* taa_pipeline = nullptr;
+
+    // Temporal anti-aliasing: two images written in turn, each frame reading the other as
+    // its history, the previous frame's camera (without its shift), and the frame count
+    // that picks the shift and moves the noise patterns from frame to frame.
+    SDL_GPUTexture* taa_targets[2] = {nullptr, nullptr};
+    int taa_index = 0;
+    bool has_taa_history = false;
+    glm::mat4 previous_view_projection{1.0f};
+    glm::vec3 previous_camera_position{0.0f};
+    std::uint64_t frame_index = 0;
+    // Added to the pixel position of every noise pattern (dithered fades, ambient
+    // occlusion, fog steps) while TAA is on, so that the patterns change every frame and
+    // TAA averages them out. 0 with TAA off, so single frames stay as they were.
+    float temporal_noise_offset = 0.0f;
 
     // Indexed by pass, by "is the mesh skinned" and by "is the material double-sided".
     SDL_GPUGraphicsPipeline* mesh_pipelines[kMeshPassCount][kMeshKindCount][2] = {};
@@ -652,6 +693,10 @@ struct Renderer::Impl {
         fog_height = (config.height + 1) / 2;
         fog_target = CreateTarget(kSceneFormat, drawn_and_read, fog_width, fog_height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                   "fog image");
+        for (SDL_GPUTexture*& target : taa_targets) {
+            target = CreateTarget(kSceneFormat, drawn_and_read, config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                  "temporal anti-aliasing image");
+        }
 
         // Bloom chain: each image half the size of the one before, down to a few pixels.
         int level_width = config.width;
@@ -1055,6 +1100,8 @@ struct Renderer::Impl {
              sizeof(kBloomUpFragSpirv), kSceneFormat, FullscreenBlend::Mix},
             {&luminance_pipeline, 2, kLuminanceFragDxil, sizeof(kLuminanceFragDxil), kLuminanceFragSpirv,
              sizeof(kLuminanceFragSpirv), kLuminanceFormat, FullscreenBlend::Replace},
+            {&taa_pipeline, 3, kTaaFragDxil, sizeof(kTaaFragDxil), kTaaFragSpirv, sizeof(kTaaFragSpirv), kSceneFormat,
+             FullscreenBlend::Replace},
         };
         for (const FullscreenPass& pass : passes) {
             SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, pass.sampler_count, 1, pass.dxil,
@@ -1299,7 +1346,7 @@ struct Renderer::Impl {
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
 
             if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
-                const MaterialUniforms material_uniforms = MakeMaterialUniforms(material);
+                const MaterialUniforms material_uniforms = MakeMaterialUniforms(material, temporal_noise_offset);
                 SDL_GPUTextureSamplerBinding bindings[5]{};
                 bindings[0].texture = GetTexture(material.texture, white_texture);
                 bindings[0].sampler = texture_sampler;
@@ -1425,7 +1472,7 @@ struct Renderer::Impl {
         vertex_uniforms.batch = glm::vec4(static_cast<float>(batch.list_first[list]), 0.0f, 0.0f, 0.0f);
         SDL_PushGPUVertexUniformData(commands, 1, &vertex_uniforms, sizeof(vertex_uniforms));
         ImpostorMaterial material;
-        material.material = glm::vec4(kImpostorAlphaCutoff, kImpostorRoughness, 0.0f, 0.0f);
+        material.material = glm::vec4(kImpostorAlphaCutoff, kImpostorRoughness, temporal_noise_offset, 0.0f);
 
         SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = textures[impostor.color.id - 1];
@@ -1570,9 +1617,10 @@ struct Renderer::Impl {
         SDL_EndGPUCopyPass(copy_pass);
     }
 
-    static MaterialUniforms MakeMaterialUniforms(const Material& material) {
+    // factors.w carries the frame's noise offset (see temporal_noise_offset).
+    static MaterialUniforms MakeMaterialUniforms(const Material& material, float noise_offset = 0.0f) {
         MaterialUniforms uniforms;
-        uniforms.factors = glm::vec4(material.metallic, material.roughness, material.alpha_cutoff, 0.0f);
+        uniforms.factors = glm::vec4(material.metallic, material.roughness, material.alpha_cutoff, noise_offset);
         uniforms.flags = glm::vec4(material.normal_texture.id != 0 ? 1.0f : 0.0f, material.orm_texture.id != 0 ? 1.0f : 0.0f,
                                    material.occlusion_in_orm ? 1.0f : 0.0f, material.double_sided ? 1.0f : 0.0f);
         return uniforms;
@@ -1698,11 +1746,12 @@ Renderer::~Renderer() {
         for (SDL_GPUGraphicsPipeline* pipeline :
              {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
-              impl_->luminance_pipeline}) {
+              impl_->luminance_pipeline, impl_->taa_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
         }
         for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
-                                        impl_->luminance_targets[0], impl_->luminance_targets[1]}) {
+                                        impl_->luminance_targets[0], impl_->luminance_targets[1], impl_->taa_targets[0],
+                                        impl_->taa_targets[1]}) {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
         for (const BloomLevel& level : impl_->bloom_levels) {
@@ -2572,8 +2621,28 @@ void Renderer::EndFrame() {
     const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
     // Near and far swapped: depth 1 at the near plane, 0 at the far one (reversed depth, see
     // CreateTargets). Everything that reads depth (common.hlsli, ao, fog) follows this.
-    const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
-                                                  camera.far_plane, camera.near_plane);
+    const glm::mat4 unshifted_projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
+                                                            camera.far_plane, camera.near_plane);
+    const glm::mat4 unshifted_view_projection = unshifted_projection * view;
+    // Temporal anti-aliasing: shift the whole picture by a fraction of a pixel, a different
+    // one every frame (see TaaUniforms). Everything that renders the scene uses the shifted
+    // camera; reprojection uses the unshifted one.
+    const bool taa_on = impl.post.temporal_aa;
+    if (taa_on && impl.has_taa_history && glm::distance(camera.position, impl.previous_camera_position) > kTaaCutDistance) {
+        impl.has_taa_history = false;
+    }
+    if (!taa_on) {
+        impl.has_taa_history = false;
+    }
+    glm::mat4 projection = unshifted_projection;
+    if (taa_on) {
+        const int step = static_cast<int>(impl.frame_index % kTaaSequenceLength);
+        projection[2][0] += (Halton(step, 2) - 0.5f) * 2.0f / static_cast<float>(impl.config.width);
+        projection[2][1] += (Halton(step, 3) - 0.5f) * 2.0f / static_cast<float>(impl.config.height);
+        impl.temporal_noise_offset = static_cast<float>(impl.frame_index % 16) * 5.588238f;
+    } else {
+        impl.temporal_noise_offset = 0.0f;
+    }
     const glm::mat4 view_projection = projection * view;
     const glm::vec3 light_direction = glm::normalize(light.direction);
     const bool sun_is_on = light.color.r > 0.0f || light.color.g > 0.0f || light.color.b > 0.0f;
@@ -2655,7 +2724,8 @@ void Renderer::EndFrame() {
                 impl.BindMeshPipeline(pass, kShadowPass, command, bound_pipeline);
                 const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
                 SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
-                const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
+                const MaterialUniforms material_uniforms =
+                    Impl::MakeMaterialUniforms(command.material, impl.temporal_noise_offset);
                 SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
 
                 SDL_GPUTextureSamplerBinding binding{};
@@ -2676,8 +2746,8 @@ void Renderer::EndFrame() {
     const bool ao_on = environment.ambient_occlusion && !impl.draw_commands.empty();
     const bool fog_on = environment.volumetric_fog && environment.fog_density > 0.0f;
 
-    // --- Pass 2: depth of the scene, for ambient occlusion and fog. ---
-    if (ao_on || fog_on) {
+    // --- Pass 2: depth of the scene, for ambient occlusion, fog and temporal anti-aliasing. ---
+    if (ao_on || fog_on || taa_on) {
         SDL_GPUDepthStencilTargetInfo depth_info{};
         depth_info.texture = impl.prepass_depth;
         depth_info.clear_depth = 0.0f;  // reversed depth
@@ -2699,7 +2769,7 @@ void Renderer::EndFrame() {
             impl.BindMeshPipeline(pass, kDepthPass, command, bound_pipeline);
             const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
-            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material);
+            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(command.material, impl.temporal_noise_offset);
             SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
             SDL_GPUTextureSamplerBinding binding{};
             binding.texture = impl.GetTexture(command.material.texture, impl.white_texture);
@@ -2717,7 +2787,7 @@ void Renderer::EndFrame() {
         ao_uniforms.projection_info = projection_info;
         ao_uniforms.screen = glm::vec4(width, height, 0.0f, 0.0f);
         ao_uniforms.ao = glm::vec4(environment.ambient_occlusion_radius, environment.ambient_occlusion_strength,
-                                   0.5f * height * projection[1][1], 0.0f);
+                                   0.5f * height * projection[1][1], impl.temporal_noise_offset);
         SDL_GPUTextureSamplerBinding bindings[2]{};
         bindings[0].texture = impl.prepass_depth;
         bindings[0].sampler = impl.clamp_sampler;
@@ -2825,7 +2895,7 @@ void Renderer::EndFrame() {
 
             const ObjectUniforms object_uniforms = Impl::MakeObjectUniforms(command);
             SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
-            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material);
+            const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material, impl.temporal_noise_offset);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
             SDL_GPUTextureSamplerBinding bindings[5]{};
@@ -2847,7 +2917,7 @@ void Renderer::EndFrame() {
     }
 
     // The finished scene with one sample per pixel; the remaining passes work on it.
-    SDL_GPUTexture* scene_image = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;
+    SDL_GPUTexture* scene_image = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;  // replaced by TAA's result
     SDL_GPUTexture* white = impl.textures[impl.white_texture.id - 1];
 
     // --- Pass 5: volumetric fog at half resolution, then laid over the scene. ---
@@ -2859,7 +2929,9 @@ void Renderer::EndFrame() {
         }
         fog_uniforms.cascade_far = cascades.far_distance;
         fog_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
-        fog_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
+        // w: the frame's noise offset for the step pattern (see temporal_noise_offset).
+        fog_uniforms.camera_forward =
+            glm::vec4(glm::normalize(camera.target - camera.position), impl.temporal_noise_offset);
         fog_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
         fog_uniforms.light_color = ToVec4(light.color);
         fog_uniforms.fog = glm::vec4(environment.fog_color.r, environment.fog_color.g, environment.fog_color.b,
@@ -2887,6 +2959,32 @@ void Renderer::EndFrame() {
         impl.DrawFullscreenPass(commands, scene_image, true, impl.fog_composite_pipeline, bindings, 2,
                                 &composite_uniforms, sizeof(composite_uniforms));
     }
+
+    // --- Pass 5b: temporal anti-aliasing. The new frame is blended into the previous
+    // result; from here on the result stands for the scene. ---
+    if (taa_on) {
+        const int write = 1 - impl.taa_index;
+        TaaUniforms taa_uniforms;
+        taa_uniforms.inverse_view_projection = glm::inverse(view_projection);
+        taa_uniforms.previous_view_projection = impl.previous_view_projection;
+        taa_uniforms.parameters = glm::vec4(glm::clamp(impl.post.temporal_aa_blend, 0.01f, 1.0f),
+                                            impl.has_taa_history ? 1.0f : 0.0f, width, height);
+        SDL_GPUTextureSamplerBinding bindings[3]{};
+        bindings[0].texture = scene_image;
+        bindings[0].sampler = impl.clamp_sampler;
+        bindings[1].texture = impl.taa_targets[impl.taa_index];
+        bindings[1].sampler = impl.linear_clamp_sampler;
+        bindings[2].texture = impl.prepass_depth;
+        bindings[2].sampler = impl.clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.taa_targets[write], false, impl.taa_pipeline, bindings, 3, &taa_uniforms,
+                                sizeof(taa_uniforms));
+        impl.taa_index = write;
+        impl.has_taa_history = true;
+        scene_image = impl.taa_targets[write];
+    }
+    impl.previous_view_projection = unshifted_view_projection;
+    impl.previous_camera_position = camera.position;
+    ++impl.frame_index;
 
     // --- Pass 6: bloom. A chain of ever smaller blurred copies of the scene, then mixed
     // back together from the smallest up. Automatic exposure reads the smallest copy. ---
@@ -2977,6 +3075,15 @@ void Renderer::EndFrame() {
                                         impl.post.auto_exposure ? 1.0f : 0.0f);
         uniforms.auto_exposure = glm::vec4(impl.post.auto_exposure_target, impl.post.auto_exposure_min,
                                            impl.post.auto_exposure_max, debug_mode);
+        // White balance: warm raises red and lowers blue, tint trades green for magenta;
+        // divided by its own brightness, so that it changes color and not exposure.
+        const float temperature = glm::clamp(impl.post.temperature, -1.0f, 1.0f);
+        const float tint = glm::clamp(impl.post.tint, -1.0f, 1.0f);
+        glm::vec3 balance(1.0f + 0.2f * temperature, 1.0f - 0.15f * tint, 1.0f - 0.2f * temperature);
+        balance /= glm::dot(balance, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+        uniforms.white_balance = glm::vec4(balance, 0.0f);
+        uniforms.grading = glm::vec4(glm::max(impl.post.saturation, 0.0f), glm::max(impl.post.contrast, 0.0f),
+                                     glm::clamp(impl.post.vignette, 0.0f, 1.0f), glm::clamp(impl.post.sharpen, 0.0f, 2.0f));
         impl.DrawFullscreenPass(commands, impl.output_target, false, impl.tonemap_pipeline, bindings, 4, &uniforms,
                                 sizeof(uniforms));
     }
@@ -3101,6 +3208,10 @@ const PostSettings& Renderer::GetPostSettings() const {
 
 void Renderer::SetPostSettings(const PostSettings& settings) {
     impl_->post = settings;
+}
+
+void Renderer::ResetTemporalHistory() {
+    impl_->has_taa_history = false;
 }
 
 bool Renderer::IsDebugUiActive() const {

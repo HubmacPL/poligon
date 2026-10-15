@@ -21,7 +21,7 @@ cbuffer FogUniforms : register(b0, space3) {
     float4x4 shadow_matrices[4];
     float4 cascade_far;
     float4 camera_position;
-    float4 camera_forward;
+    float4 camera_forward;   // w: the frame's noise offset (moves the step pattern for TAA)
     float4 light_direction;  // xyz: direction the light travels
     float4 light_color;
     float4 fog;              // rgb: color of sunlit fog, a: density per meter at the base height
@@ -77,7 +77,7 @@ float4 main(FragmentInput input) : SV_Target0 {
 
     // The start of each step is shifted by a per-pixel amount; the resulting noise is
     // removed when the fog is put over the scene.
-    float jitter = InterleavedGradientNoise(input.clip_position.xy);
+    float jitter = InterleavedGradientNoise(input.clip_position.xy + float2(camera_forward.w, 0.0));
     float3 added_light = float3(0.0, 0.0, 0.0);
     float let_through = 1.0;
     for (int i = 0; i < kStepCount; ++i) {

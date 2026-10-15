@@ -52,3 +52,7 @@ Reguły z [ecs.md](ecs.md), [input.md](input.md) i [game_loop.md](game_loop.md) 
 - systemy tworzone po usunięciu jakiegokolwiek obiektu;
 - niezainicjalizowane pola komponentów;
 - funkcje matematyczne zależne od biblioteki (np. `sin`, `cos`) są powtarzalne na tym samym pliku wykonywalnym, ale mogą różnić się między budowami.
+
+## Renderowanie z efektami czasowymi
+
+Obrazy porównuje się z tolerancją, ale uruchomienie bez okna na jednej maszynie daje za każdym razem te same piksele, także z czasowym wygładzaniem krawędzi, które miesza każdą klatkę z poprzednimi: przesunięcie kamery i wzory szumu idą za licznikiem klatek renderera, nie za zegarem, a historia mieszka w rendererze. Zob. „Powtarzalne klatki przy efektach czasowych” w [rendering.md](rendering.md).

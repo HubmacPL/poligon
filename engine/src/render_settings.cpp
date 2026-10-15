@@ -65,6 +65,16 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Bool("post.bloom", post.bloom);
     visitor.Float("post.bloom_strength", post.bloom_strength, 0.0f, 0.5f);
 
+    visitor.Section("anti-aliasing and grading");
+    visitor.Bool("post.temporal_aa", post.temporal_aa);
+    visitor.Float("post.temporal_aa_blend", post.temporal_aa_blend, 0.02f, 1.0f);
+    visitor.Float("post.sharpen", post.sharpen, 0.0f, 1.5f);
+    visitor.Float("post.temperature", post.temperature, -1.0f, 1.0f);
+    visitor.Float("post.tint", post.tint, -1.0f, 1.0f);
+    visitor.Float("post.saturation", post.saturation, 0.0f, 2.0f);
+    visitor.Float("post.contrast", post.contrast, 0.5f, 1.5f);
+    visitor.Float("post.vignette", post.vignette, 0.0f, 1.0f);
+
     visitor.Section("debug view");
     static const char* const kDebugViews[] = {"none", "ambient_occlusion", "fog", "bloom"};
     int debug_view = static_cast<int>(post.debug_view);

@@ -13,7 +13,7 @@
 #include "impostor.hlsli"
 
 cbuffer ImpostorMaterial : register(b1, space3) {
-    float4 impostor_material;  // x: alpha cutoff, y: roughness
+    float4 impostor_material;  // x: alpha cutoff, y: roughness, z: the frame's noise offset
 };
 
 struct FragmentInput {
@@ -30,7 +30,7 @@ struct FragmentInput {
 };
 
 float4 main(FragmentInput input) : SV_Target0 {
-    if (!KeptByFade(input.blend_fade.z, input.clip_position.xy)) {
+    if (!KeptByFade(input.blend_fade.z, input.clip_position.xy + float2(impostor_material.z, 0.0))) {
         discard;
     }
     float2 atlas_uv[4] = {input.atlas_uv01.xy, input.atlas_uv01.zw, input.atlas_uv23.xy, input.atlas_uv23.zw};

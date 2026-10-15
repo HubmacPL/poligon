@@ -15,7 +15,7 @@ SamplerState depth_sampler : register(s0, space2);
 cbuffer AoUniforms : register(b0, space3) {
     float4 projection_info;  // see ViewPosition in common.hlsli
     float4 screen;           // xy: size in pixels
-    float4 ao;               // x: radius in meters, y: strength, z: pixels per meter at 1 m distance
+    float4 ao;               // x: radius in meters, y: strength, z: pixels per meter at 1 m distance, w: the frame's noise offset
 };
 
 struct FragmentInput {
@@ -59,7 +59,7 @@ float main(FragmentInput input) : SV_Target0 {
         return 1.0;  // too far away for the effect to cover even a pixel
     }
 
-    float start_angle = InterleavedGradientNoise(input.clip_position.xy) * 6.2831853;
+    float start_angle = InterleavedGradientNoise(input.clip_position.xy + float2(ao.w, 0.0)) * 6.2831853;
     // Depth precision falls with distance; the bias keeps flat distant surfaces from darkening themselves.
     float bias = 0.03 * radius + 0.002 * distance_to_camera;
     float radius_squared = radius * radius;

@@ -62,6 +62,29 @@ struct PostSettings {
     float auto_exposure_speed = 0.05f;
 
     DebugView debug_view = DebugView::None;
+
+    // Temporal anti-aliasing (TAA): the camera shifts by a different fraction of a pixel
+    // every frame and each frame is blended into the result of the previous ones, which
+    // smooths edges, thin leaves, shimmering highlights and dithered fades. The first frame
+    // after turning it on, after ResetTemporalHistory and after a camera jump of more than
+    // 25 m has no history and is shown as rendered. Off by default, so that a single frame
+    // (tests, examples) looks the same however many frames came before.
+    bool temporal_aa = false;
+    // Share of the new frame in each blend: smaller is smoother and more stable, larger
+    // reacts faster to change. 0.1 means about the last ten frames count.
+    float temporal_aa_blend = 0.1f;
+    // Undoes some of the softness of TAA: 0 = none, 0.5 = moderate.
+    float sharpen = 0.0f;
+
+    // Color grading, applied around tone mapping. temperature: -1 cold (blue) to 1 warm
+    // (orange); tint: -1 green to 1 magenta; saturation: 0 gray, 1 unchanged, above 1
+    // stronger; contrast: 1 unchanged, around middle gray; vignette: how much the corners
+    // darken (0 = none, 0.3 = noticeable).
+    float temperature = 0.0f;
+    float tint = 0.0f;
+    float saturation = 1.0f;
+    float contrast = 1.0f;
+    float vignette = 0.0f;
 };
 
 struct RendererConfig {
@@ -452,6 +475,10 @@ public:
     // Tone mapping, exposure, bloom and the debug view can be changed between frames.
     const PostSettings& GetPostSettings() const;
     void SetPostSettings(const PostSettings& settings);
+    // Forgets the frames temporal anti-aliasing has collected, so that the next frame starts
+    // fresh. Call it on a cut (teleport, switch of camera); camera jumps of more than 25 m
+    // are detected on their own.
+    void ResetTemporalHistory();
 
     // True when debug windows can be drawn: RendererConfig::debug_ui was set and there is a
     // window. Dear ImGui calls are only allowed between BeginFrame and EndFrame, and only

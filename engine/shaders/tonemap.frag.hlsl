@@ -1,5 +1,7 @@
 // Last pass: turns the wide-range linear image into displayable colors. Also adds bloom
-// (the glow around bright areas) and applies automatic exposure.
+// (the glow around bright areas), applies automatic exposure, and grades the colors:
+// white balance, saturation, contrast, a vignette and sharpening (which gives back the
+// fine detail temporal anti-aliasing softens).
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
 Texture2D<float4> scene_texture : register(t0, space2);
@@ -27,6 +29,8 @@ SamplerState debug_sampler : register(s3, space2);
 cbuffer TonemapUniforms : register(b0, space3) {
     float4 parameters;     // x: exposure (brightness multiplier), y: 0 = none, 1 = ACES filmic curve, z: bloom share, w: automatic exposure on
     float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier, w: debug view (0 = off, 1 = show red as gray, 2 = show color)
+    float4 white_balance;  // rgb: multipliers from temperature and tint (1 = neutral)
+    float4 grading;        // x: saturation, y: contrast, z: vignette strength, w: sharpening
 };
 
 struct FragmentInput {
@@ -41,8 +45,25 @@ float3 AcesFilmic(float3 x) {
     return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
 }
 
+float Luminance(float3 c) {
+    return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
 float4 main(FragmentInput input) : SV_Target0 {
-    float3 color = scene_texture.Sample(scene_sampler, input.uv).rgb;
+    int2 pixel = int2(input.clip_position.xy);
+    float3 color = scene_texture.Load(int3(pixel, 0)).rgb;
+    // Sharpening: the pixel minus a share of its four neighbors' difference from it,
+    // limited so that bright edges do not ring.
+    if (grading.w > 0.0) {
+        float3 north = scene_texture.Load(int3(pixel + int2(0, -1), 0)).rgb;
+        float3 south = scene_texture.Load(int3(pixel + int2(0, 1), 0)).rgb;
+        float3 west = scene_texture.Load(int3(pixel + int2(-1, 0), 0)).rgb;
+        float3 east = scene_texture.Load(int3(pixel + int2(1, 0), 0)).rgb;
+        float3 neighbors = (north + south + west + east) * 0.25;
+        float3 lowest = min(color, min(min(north, south), min(west, east)));
+        float3 highest = max(color, max(max(north, south), max(west, east)));
+        color = clamp(color + (color - neighbors) * grading.w, lowest, highest);
+    }
     if (auto_exposure.w > 0.5) {
         float4 debug = debug_texture.SampleLevel(debug_sampler, input.uv, 0.0);
         if (auto_exposure.w < 1.5) {
@@ -62,8 +83,23 @@ float4 main(FragmentInput input) : SV_Target0 {
     }
     color *= exposure;
 
+    // Grading in linear light, before the curve: white balance, then saturation around
+    // the pixel's own brightness.
+    color *= white_balance.rgb;
+    color = max(lerp(Luminance(color).xxx, color, grading.x), 0.0);
+
     if (parameters.y > 0.5) {
         color = AcesFilmic(color);
+    }
+    // Contrast around middle gray, in a perceptual (square root) scale so that it acts on
+    // shadows and lights evenly.
+    float3 perceptual = sqrt(saturate(color));
+    perceptual = saturate((perceptual - 0.5) * grading.y + 0.5);
+    color = perceptual * perceptual;
+    // Vignette: corners darken gently, as through a camera lens.
+    if (grading.z > 0.0) {
+        float2 from_center = input.uv * 2.0 - 1.0;
+        color *= 1.0 - grading.z * saturate(dot(from_center, from_center) * 0.5);
     }
     // The target has an sRGB format: the GPU encodes this linear value when storing it.
     return float4(saturate(color), 1.0);

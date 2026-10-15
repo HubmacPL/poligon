@@ -52,3 +52,7 @@ The rules from [ecs.md](ecs.md), [input.md](input.md) and [game_loop.md](game_lo
 - systems created after any entity was deleted;
 - uninitialized component members;
 - library math functions (such as `sin`, `cos`) are repeatable on the same executable but may differ between builds.
+
+## Rendering with temporal effects
+
+Pictures are compared with a tolerance, but a headless run on one machine gives the same pixels every time, also with temporal anti-aliasing, which blends each frame with the previous ones: the camera shift and noise patterns follow the renderer's frame counter, not the clock, and the history lives inside the renderer. See "Repeatable frames with temporal effects" in [rendering.md](rendering.md).

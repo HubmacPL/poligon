@@ -9,7 +9,7 @@ Texture2D<float4> base_texture : register(t0, space2);
 SamplerState base_sampler : register(s0, space2);
 
 cbuffer MaterialUniforms : register(b0, space3) {
-    float4 material_factors;  // z: alpha cutoff
+    float4 material_factors;  // z: alpha cutoff, w: the frame's noise offset
     float4 material_flags;
 };
 
@@ -23,7 +23,7 @@ struct FragmentInput {
 };
 
 void main(FragmentInput input) {
-    if (!KeptByFade(input.fade, input.clip_position.xy)) {
+    if (!KeptByFade(input.fade, input.clip_position.xy + float2(material_factors.w, 0.0))) {
         discard;
     }
     if (material_factors.z > 0.0) {
