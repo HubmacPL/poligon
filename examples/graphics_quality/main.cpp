@@ -5,8 +5,8 @@
 // Usage: example_graphics_quality OUTPUT.png [low|medium|high|ultra]
 #include <cstdio>
 
-#include "poligon/graphics_quality.h"
-#include "poligon/renderer.h"
+#include "poligon/render/graphics_quality.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) {

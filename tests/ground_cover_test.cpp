@@ -6,10 +6,10 @@
 #include <cstring>
 #include <vector>
 
-#include "poligon/ground_cover.h"
-#include "poligon/height_map.h"
-#include "poligon/renderer.h"
-#include "poligon/terrain.h"
+#include "poligon/world/ground_cover.h"
+#include "poligon/world/height_map.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/terrain.h"
 #include "test_support.h"
 
 namespace {

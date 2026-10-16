@@ -4,7 +4,7 @@
 // Usage: example_environment OUTPUT.png
 #include <cstdio>
 
-#include "poligon/renderer.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

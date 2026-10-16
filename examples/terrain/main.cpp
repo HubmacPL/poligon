@@ -2,10 +2,10 @@
 // Usage: example_terrain OUTPUT.png
 #include <cstdio>
 
-#include "poligon/height_map.h"
-#include "poligon/physics.h"
-#include "poligon/renderer.h"
-#include "poligon/terrain.h"
+#include "poligon/world/height_map.h"
+#include "poligon/physics/physics.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/terrain.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

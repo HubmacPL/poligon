@@ -15,8 +15,8 @@
 #include <string>
 #include <vector>
 
-#include "poligon/ecs.h"
-#include "poligon/state_dump.h"
+#include "poligon/ecs/ecs.h"
+#include "poligon/ecs/state_dump.h"
 
 namespace {
 

@@ -1,6 +1,6 @@
 # ECS (flecs) and the state dump
 
-Headers: `poligon/ecs.h`, `poligon/state_dump.h`.
+Headers: `poligon/ecs/ecs.h`, `poligon/ecs/state_dump.h`.
 Example: `examples/state_dump`. Pattern for a larger game: `game/src/toy_world.cpp`.
 
 ## Terms

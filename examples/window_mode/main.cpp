@@ -5,7 +5,7 @@
 // Usage: example_window_mode OUTPUT.png
 #include <cstdio>
 
-#include "poligon/renderer.h"
+#include "poligon/render/renderer.h"
 
 namespace {
 

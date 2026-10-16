@@ -9,10 +9,10 @@
 #include <set>
 #include <string>
 
-#include "poligon/plant_rules.h"
-#include "poligon/plants.h"
-#include "poligon/procedural_plants.h"
-#include "poligon/trample.h"
+#include "poligon/world/plant_rules.h"
+#include "poligon/world/plants.h"
+#include "poligon/world/procedural_plants.h"
+#include "poligon/world/trample.h"
 #include "test_support.h"
 
 namespace {

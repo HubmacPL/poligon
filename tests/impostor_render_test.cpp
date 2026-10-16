@@ -8,8 +8,8 @@
 #include <filesystem>
 #include <string>
 
-#include "poligon/impostor.h"
-#include "poligon/renderer.h"
+#include "poligon/render/impostor.h"
+#include "poligon/render/renderer.h"
 #include "test_support.h"
 
 namespace {

@@ -1,9 +1,9 @@
 // Example: components, a system, three fixed ticks and a complete state dump.
 #include <cstdio>
 
-#include "poligon/ecs.h"
-#include "poligon/math.h"
-#include "poligon/state_dump.h"
+#include "poligon/ecs/ecs.h"
+#include "poligon/core/math.h"
+#include "poligon/ecs/state_dump.h"
 
 struct Position {
     glm::vec3 value;

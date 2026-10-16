@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "poligon/height_map.h"
+#include "poligon/world/height_map.h"
 #include "test_support.h"
 
 namespace {

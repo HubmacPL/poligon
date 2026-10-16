@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "poligon/image.h"
+#include "poligon/core/image.h"
 
 namespace {
 

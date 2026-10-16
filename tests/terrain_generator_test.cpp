@@ -6,8 +6,8 @@
 #include <cstdlib>
 #include <string>
 
-#include "poligon/terrain.h"
-#include "poligon/terrain_generator.h"
+#include "poligon/world/terrain.h"
+#include "poligon/world/terrain_generator.h"
 #include "test_support.h"
 
 namespace {

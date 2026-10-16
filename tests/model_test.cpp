@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "poligon/image.h"
-#include "poligon/model.h"
+#include "poligon/core/image.h"
+#include "poligon/assets/model.h"
 #include "test_support.h"
 
 namespace {

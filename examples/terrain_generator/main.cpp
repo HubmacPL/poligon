@@ -6,9 +6,9 @@
 // Usage: example_terrain_generator OUTPUT.png
 #include <cstdio>
 
-#include "poligon/renderer.h"
-#include "poligon/terrain.h"
-#include "poligon/terrain_generator.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/terrain.h"
+#include "poligon/world/terrain_generator.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

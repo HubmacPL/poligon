@@ -4,8 +4,8 @@
 #include <cstdio>
 #include <string>
 
-#include "poligon/model.h"
-#include "poligon/renderer.h"
+#include "poligon/assets/model.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

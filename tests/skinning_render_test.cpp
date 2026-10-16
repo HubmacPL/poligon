@@ -1,4 +1,4 @@
-// Checks skinned meshes: the pose math of poligon/animation.h, and that the renderer bends
+// Checks skinned meshes: the pose math of poligon/animation/animation.h, and that the renderer bends
 // a mesh by joint matrices, by looking at single pixels.
 // Usage: skinning_render_test d3d12|vulkan
 #include <cmath>
@@ -6,8 +6,8 @@
 #include <cstring>
 #include <vector>
 
-#include "poligon/animation.h"
-#include "poligon/renderer.h"
+#include "poligon/animation/animation.h"
+#include "poligon/render/renderer.h"
 #include "test_support.h"
 
 namespace {

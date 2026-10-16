@@ -1,6 +1,6 @@
 # Input, recording and replay
 
-Header: `poligon/input.h`. Example: `examples/input`. Pattern in a game: `SetUpToyInput` and `UpdatePlayerInput` in `game/src/toy_world.cpp`.
+Header: `poligon/core/input.h`. Example: `examples/input`. Pattern in a game: `SetUpToyInput` and `UpdatePlayerInput` in `game/src/toy_world.cpp`.
 
 ## Model
 

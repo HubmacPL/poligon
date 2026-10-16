@@ -2,8 +2,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include "poligon/crash_handler.h"
-#include "poligon/fatal_error.h"
+#include "poligon/core/crash_handler.h"
+#include "poligon/core/fatal_error.h"
 
 int main(int argc, char** argv) {
     // First line of main. Without arguments the report file is "<program>_crash.txt" next to the executable.

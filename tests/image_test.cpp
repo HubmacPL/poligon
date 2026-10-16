@@ -5,7 +5,7 @@
 
 #include <stb_image_write.h>  // only to produce a JPEG file for the loading test
 
-#include "poligon/image.h"
+#include "poligon/core/image.h"
 #include "test_support.h"
 
 namespace {

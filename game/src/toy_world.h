@@ -2,11 +2,11 @@
 
 #include <cstdint>
 
-#include "poligon/ecs.h"
-#include "poligon/input.h"
-#include "poligon/math.h"
-#include "poligon/physics.h"
-#include "poligon/renderer.h"
+#include "poligon/ecs/ecs.h"
+#include "poligon/core/input.h"
+#include "poligon/core/math.h"
+#include "poligon/physics/physics.h"
+#include "poligon/render/renderer.h"
 
 // Components and systems of the toy game: boxes that fall, tumble, pile up and expire.
 //

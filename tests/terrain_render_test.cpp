@@ -7,8 +7,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include "poligon/renderer.h"
-#include "poligon/terrain.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/terrain.h"
 #include "test_support.h"
 
 namespace {

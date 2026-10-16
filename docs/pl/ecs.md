@@ -1,6 +1,6 @@
 # ECS (flecs) i zrzut stanu
 
-Nagłówki: `poligon/ecs.h`, `poligon/state_dump.h`.
+Nagłówki: `poligon/ecs/ecs.h`, `poligon/ecs/state_dump.h`.
 Przykład: `examples/state_dump`. Wzorzec większej gry: `game/src/toy_world.cpp`.
 
 ## Pojęcia

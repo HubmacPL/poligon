@@ -1,6 +1,6 @@
 # Wejście, nagrywanie i odtwarzanie
 
-Nagłówek: `poligon/input.h`. Przykład: `examples/input`. Wzorzec w grze: `SetUpToyInput` i `UpdatePlayerInput` w `game/src/toy_world.cpp`.
+Nagłówek: `poligon/core/input.h`. Przykład: `examples/input`. Wzorzec w grze: `SetUpToyInput` i `UpdatePlayerInput` w `game/src/toy_world.cpp`.
 
 ## Model
 

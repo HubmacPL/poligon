@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "poligon/physics.h"
+#include "poligon/physics/physics.h"
 #include "test_support.h"
 
 namespace {

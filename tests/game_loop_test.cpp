@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <string>
 
-#include "poligon/game_loop.h"
+#include "poligon/core/game_loop.h"
 #include "test_support.h"
 
 namespace {

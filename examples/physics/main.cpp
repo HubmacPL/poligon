@@ -4,8 +4,8 @@
 #include <cstdio>
 #include <vector>
 
-#include "poligon/physics.h"
-#include "poligon/renderer.h"
+#include "poligon/physics/physics.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

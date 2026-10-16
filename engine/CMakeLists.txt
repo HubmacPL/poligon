@@ -1,8 +1,21 @@
+# The engine is a set of libraries, one per area, each in its own folder under src/ with its
+# public headers under include/poligon/<area>/. A library may use only those below it:
+#
+#   core       game loop, clock, command line, platform, errors and crash reports, input, images
+#   ecs        flecs world setup, state dump and hash                            (core)
+#   render     the renderer, its shaders, graphics presets, render settings      (core)
+#   animation  skeletons and clips on ozz-animation                              (core)
+#   physics    bodies, characters and rays on Jolt Physics                       (core)
+#   assets     model files, the asset list, cooking, loading by name              (render, animation)
+#   world      terrain, vegetation, water, the level file                         (assets, physics, render)
+#   debug      debug windows and the free camera                                  (render, ecs)
+#
+# poligon_engine links them all; games, tools, tests and examples use that.
+
 find_package(SDL3 CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 # Provides DIRECTX_DXC_TOOL, the HLSL compiler. Build-time tool only; nothing from it is linked or shipped.
 find_package(directx-dxc CONFIG REQUIRED)
-
 find_package(flecs CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
@@ -10,138 +23,17 @@ find_package(imgui CONFIG REQUIRED)
 find_package(ozz-animation CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 
-add_library(poligon_engine STATIC
-  src/animation.cpp
-  src/command_line.cpp
-  src/crash_handler.cpp
-  src/debug_ui.cpp
-  src/ecs.cpp
-  src/state_dump.cpp
-  src/vegetation.cpp
-  src/fatal_error.cpp
-  src/fixed_step_clock.cpp
-  src/free_camera.cpp
-  src/game_loop.cpp
-  src/graphics_quality.cpp
-  src/ground_cover.cpp
-  src/height_map.cpp
-  src/image.cpp
-  src/impostor.cpp
-  src/input.cpp
-  src/model.cpp
-  src/stb_image_impl.cpp
-  src/terrain.cpp
-  src/terrain_generator.cpp
-  src/water.cpp
-  src/texture_compression.cpp
-  src/stb_dxt_impl.cpp
-  src/assets.cpp
-  src/plants.cpp
-  src/level.cpp
-  src/plant_rules.cpp
-  src/procedural_plants.cpp
-  src/procedural_grass.cpp
-  src/trample.cpp
-  src/sky_occlusion.cpp
-  src/cloud_noise.cpp
-  src/physics.cpp
-  src/platform.cpp
-  src/render_settings.cpp
-  src/renderer.cpp
-  src/stb_image_write_impl.cpp
-  src/version.cpp
-)
-target_include_directories(poligon_engine PUBLIC include)
-target_include_directories(poligon_engine SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
-# dbghelp is a Windows system library: turns addresses into function names for crash reports.
-target_link_libraries(poligon_engine PRIVATE poligon_build_options SDL3::SDL3 dbghelp)
-# Assimp reads 3D model files in many formats (poligon/model.h). Its types stay inside model.cpp.
-target_link_libraries(poligon_engine PRIVATE assimp::assimp)
-# flecs is PUBLIC: game code uses the flecs API directly through poligon/ecs.h.
-target_link_libraries(poligon_engine PUBLIC $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
-# ozz-animation samples and blends animation clips (poligon/animation.h). Its types stay inside animation.cpp.
-target_link_libraries(poligon_engine PRIVATE ozz::animation_offline ozz::animation ozz::base)
-# Jolt Physics simulates bodies and characters (poligon/physics.h). Its types stay inside physics.cpp.
-target_link_libraries(poligon_engine PRIVATE Jolt::Jolt)
-# Dear ImGui draws the debug windows (poligon/debug_ui.h). PUBLIC: games and tools call ImGui:: directly.
-target_link_libraries(poligon_engine PUBLIC imgui::imgui)
-# GLM is PUBLIC for the same reason (poligon/math.h). Its configuration must be identical in
-# every file of a program, so it is set here and nowhere else:
-#   DEPTH_ZERO_TO_ONE  projection matrices produce depth 0..1, as Direct3D 12 and Vulkan expect
-#   CTOR_INIT          default-constructed vectors are zero and matrices identity, never garbage
-#   XYZW_ONLY          vectors have plain x, y, z, w members (no aliases such as .r or .s)
-target_link_libraries(poligon_engine PUBLIC glm::glm)
-target_compile_definitions(poligon_engine PUBLIC
-  GLM_FORCE_DEPTH_ZERO_TO_ONE
-  GLM_FORCE_CTOR_INIT
-  GLM_FORCE_XYZW_ONLY)
+set(POLIGON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Compiles one HLSL file to DXIL (Direct3D 12) and SPIR-V (Vulkan) and embeds both in the
-# engine as byte arrays, so there are no shader files to find at run time.
-#   source: path relative to this directory, for example shaders/mesh.vert.hlsl
-#   stage:  vertex or fragment
-#   symbol: array name prefix, for example kMeshVert -> kMeshVertDxil, kMeshVertSpirv
-#   header: header name prefix, for example mesh_vert -> mesh_vert_dxil.h, mesh_vert_spirv.h
-function(poligon_embed_shader source stage symbol header)
-  if(stage STREQUAL "vertex")
-    set(profile vs_6_0)
-  elseif(stage STREQUAL "fragment")
-    set(profile ps_6_0)
-  else()
-    message(FATAL_ERROR "Unknown shader stage: ${stage}")
-  endif()
+add_subdirectory(src/core)
+add_subdirectory(src/ecs)
+add_subdirectory(src/render)
+add_subdirectory(src/animation)
+add_subdirectory(src/physics)
+add_subdirectory(src/assets)
+add_subdirectory(src/world)
+add_subdirectory(src/debug)
 
-  set(input ${CMAKE_CURRENT_SOURCE_DIR}/${source})
-  set(output_dir ${CMAKE_CURRENT_BINARY_DIR}/generated/poligon_shaders)
-  set(dxil ${output_dir}/${header}.dxil)
-  set(spirv ${output_dir}/${header}.spv)
-  set(embed ${PROJECT_SOURCE_DIR}/cmake/EmbedBinary.cmake)
-
-  add_custom_command(
-    OUTPUT ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${output_dir}
-    # Shaders carry [[vk::...]] attributes that only matter for SPIR-V; the DXIL compile would
-    # report them as ignored, so that one warning is off here.
-    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -Wno-ignored-attributes -I ${CMAKE_CURRENT_SOURCE_DIR}/shaders -T ${profile} -E main -Fo ${dxil} ${input}
-    COMMAND ${DIRECTX_DXC_TOOL} -nologo -WX -spirv -I ${CMAKE_CURRENT_SOURCE_DIR}/shaders -T ${profile} -E main -Fo ${spirv} ${input}
-    COMMAND ${CMAKE_COMMAND} -DINPUT=${dxil} -DOUTPUT=${output_dir}/${header}_dxil.h -DSYMBOL=${symbol}Dxil -P ${embed}
-    COMMAND ${CMAKE_COMMAND} -DINPUT=${spirv} -DOUTPUT=${output_dir}/${header}_spirv.h -DSYMBOL=${symbol}Spirv -P ${embed}
-    # Every shader may include the shared .hlsli files, so a change there rebuilds all of them.
-    DEPENDS ${input} ${embed} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting.hlsli
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.hlsli ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh.frag.hlsl
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/impostor.frag.hlsl ${CMAKE_CURRENT_SOURCE_DIR}/shaders/clouds.hlsli
-    COMMENT "Compiling shader ${source}"
-    VERBATIM)
-  target_sources(poligon_engine PRIVATE ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h)
-endfunction()
-
-target_include_directories(poligon_engine PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-poligon_embed_shader(shaders/mesh.vert.hlsl vertex kMeshVert mesh_vert)
-poligon_embed_shader(shaders/mesh_skinned.vert.hlsl vertex kMeshSkinnedVert mesh_skinned_vert)
-poligon_embed_shader(shaders/mesh_instanced.vert.hlsl vertex kMeshInstancedVert mesh_instanced_vert)
-poligon_embed_shader(shaders/terrain.vert.hlsl vertex kTerrainVert terrain_vert)
-poligon_embed_shader(shaders/terrain.frag.hlsl fragment kTerrainFrag terrain_frag)
-poligon_embed_shader(shaders/water.frag.hlsl fragment kWaterFrag water_frag)
-poligon_embed_shader(shaders/depth_copy.frag.hlsl fragment kDepthCopyFrag depth_copy_frag)
-poligon_embed_shader(shaders/clouds.frag.hlsl fragment kCloudsFrag clouds_frag)
-poligon_embed_shader(shaders/cloud_shadow.frag.hlsl fragment kCloudShadowFrag cloud_shadow_frag)
-poligon_embed_shader(shaders/clouds_composite.frag.hlsl fragment kCloudsCompositeFrag clouds_composite_frag)
-poligon_embed_shader(shaders/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
-poligon_embed_shader(shaders/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
-poligon_embed_shader(shaders/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)
-poligon_embed_shader(shaders/sky.frag.hlsl fragment kSkyFrag sky_frag)
-poligon_embed_shader(shaders/tonemap.frag.hlsl fragment kTonemapFrag tonemap_frag)
-poligon_embed_shader(shaders/ao.frag.hlsl fragment kAoFrag ao_frag)
-poligon_embed_shader(shaders/ao_blur.frag.hlsl fragment kAoBlurFrag ao_blur_frag)
-poligon_embed_shader(shaders/fog.frag.hlsl fragment kFogFrag fog_frag)
-poligon_embed_shader(shaders/fog_composite.frag.hlsl fragment kFogCompositeFrag fog_composite_frag)
-poligon_embed_shader(shaders/bloom_down.frag.hlsl fragment kBloomDownFrag bloom_down_frag)
-poligon_embed_shader(shaders/bloom_up.frag.hlsl fragment kBloomUpFrag bloom_up_frag)
-poligon_embed_shader(shaders/luminance.frag.hlsl fragment kLuminanceFrag luminance_frag)
-poligon_embed_shader(shaders/impostor.vert.hlsl vertex kImpostorVert impostor_vert)
-poligon_embed_shader(shaders/impostor.frag.hlsl fragment kImpostorFrag impostor_frag)
-poligon_embed_shader(shaders/impostor_depth.frag.hlsl fragment kImpostorDepthFrag impostor_depth_frag)
-poligon_embed_shader(shaders/impostor_bake.frag.hlsl fragment kImpostorBakeFrag impostor_bake_frag)
-poligon_embed_shader(shaders/taa.frag.hlsl fragment kTaaFrag taa_frag)
-poligon_embed_shader(shaders/mesh_after_depth.frag.hlsl fragment kMeshAfterDepthFrag mesh_after_depth_frag)
-poligon_embed_shader(shaders/impostor_after_depth.frag.hlsl fragment kImpostorAfterDepthFrag impostor_after_depth_frag)
+add_library(poligon_engine INTERFACE)
+target_link_libraries(poligon_engine INTERFACE poligon_core poligon_ecs poligon_render poligon_animation poligon_physics
+                      poligon_assets poligon_world poligon_debug)

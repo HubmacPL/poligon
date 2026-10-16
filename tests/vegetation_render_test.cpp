@@ -5,9 +5,9 @@
 #include <cstdio>
 #include <cstring>
 
-#include "poligon/renderer.h"
-#include "poligon/trample.h"
-#include "poligon/vegetation.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/trample.h"
+#include "poligon/world/vegetation.h"
 #include "test_support.h"
 
 namespace {

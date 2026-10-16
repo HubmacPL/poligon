@@ -8,8 +8,8 @@
 #include <cstdio>
 #include <vector>
 
-#include "poligon/renderer.h"
-#include "poligon/vegetation.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/vegetation.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
 
     // Photograph the tree: 8 x 8 directions over the half sphere, 64 pixels each. A real
     // game does this once with tools/impostor_baker and keeps the result in files
-    // (poligon/impostor.h); here it is quick enough to do on every run.
+    // (poligon/render/impostor.h); here it is quick enough to do on every run.
     std::vector<poligon::ImpostorPart> parts;
     for (const poligon::VegetationPart& part : tree_meshes.parts) {
         parts.push_back({part.mesh, part.material, part.local});

@@ -1,7 +1,7 @@
 // Example: read the engine version.
 #include <cstdio>
 
-#include "poligon/version.h"
+#include "poligon/core/version.h"
 
 int main() {
     const poligon::Version version = poligon::GetEngineVersion();

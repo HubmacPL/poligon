@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 
-#include "poligon/command_line.h"
+#include "poligon/core/command_line.h"
 
 int main(int argc, char** argv) {
     poligon::CommandLineOptions options;

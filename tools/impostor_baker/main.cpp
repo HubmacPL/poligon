@@ -1,10 +1,10 @@
 // Bakes an impostor of a model: pictures from many directions over the half sphere above
-// it, for drawing it far away as one card (see Impostor in poligon/renderer.h).
+// it, for drawing it far away as one card (see Impostor in poligon/render/renderer.h).
 //
 // Usage: impostor_baker MODEL OUT.impostor [--frames N] [--size PIXELS] [--keep-origin]
 //
-// MODEL          any model file the engine loads (poligon/model.h)
-// OUT.impostor   written with OUT_color.png and OUT_normal.png next to it (poligon/impostor.h)
+// MODEL          any model file the engine loads (poligon/assets/model.h)
+// OUT.impostor   written with OUT_color.png and OUT_normal.png next to it (poligon/render/impostor.h)
 // --frames N     pictures per side of the grid, N x N in all (default 8)
 // --size PIXELS  width and height of each picture (default 128)
 // --keep-origin  keep the model where its file puts it sideways; otherwise the middle of
@@ -19,9 +19,9 @@
 #include <string>
 #include <vector>
 
-#include "poligon/impostor.h"
-#include "poligon/model.h"
-#include "poligon/renderer.h"
+#include "poligon/render/impostor.h"
+#include "poligon/assets/model.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     const char* model_path = nullptr;

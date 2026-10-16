@@ -1,6 +1,6 @@
 # Awarie i błędy krytyczne
 
-Nagłówki: `poligon/crash_handler.h`, `poligon/fatal_error.h`. Przykład: `examples/crash_handler`. Testy: `tests/crash_test.cpp`.
+Nagłówki: `poligon/core/crash_handler.h`, `poligon/core/fatal_error.h`. Przykład: `examples/crash_handler`. Testy: `tests/crash_test.cpp`.
 
 ## Co robi
 

@@ -2,7 +2,7 @@
 
 How a game names, prepares and loads its textures and models, how plants are made from models, and the level file.
 
-Headers: `poligon/assets.h`, `poligon/texture_compression.h`, `poligon/plants.h`, `poligon/level.h`. Tool: `asset_cooker`. Example: `examples/assets`. Test: `tests/assets_test.cpp`.
+Headers: `poligon/assets/assets.h`, `poligon/core/texture_compression.h`, `poligon/world/plants.h`, `poligon/world/level.h`. Tool: `asset_cooker`. Example: `examples/assets`. Test: `tests/assets_test.cpp`.
 
 **State (decided on 2026-10-14, built on 2026-10-15):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start, things put by hand and the plant rules ([vegetation.md](vegetation.md)). Not yet: animations cooked as ozz archives (clips are stored as keys and turned into ozz animations on load). The data folder was split into its source and cooked halves on 2026-10-16 (see below).
 
@@ -63,14 +63,14 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 
 ## Plants from models
 
-`MakePlantKind(model, settings, vegetation)` (`poligon/plants.h`) turns a loaded model into a kind of plant, rock or dead wood and adds its variants to a `Vegetation`:
+`MakePlantKind(model, settings, vegetation)` (`poligon/world/plants.h`) turns a loaded model into a kind of plant, rock or dead wood and adds its variants to a `Vegetation`:
 
 - `split_variants`: a file that holds a row of different plants gives one variant per group of meshes whose boxes overlap seen from above (trunk and leaves of one tree stay together); each is moved so that the middle of its foot is at the origin, unless `keep_origin`.
 - Levels: the full model, each simpler level (meshes of nodes named like the variant's), then the impostor, at `level_distances`; a level the asset lacks is skipped and the one before it reaches its distance; without an impostor the last mesh level reaches `distance_without_impostor`.
 - `wind_bend` and `wind_flutter` go to the materials (flutter to cut-out ones only); `shadow_distance` and `shadow_level_bias` to the species.
 - `AddPlantCollider(physics, kind, variant, foot, turn, scale)` adds what blocks the player: `PlantCollider::Trunk` (an upright cylinder of `trunk_radius`, at most 8 m tall), `Block` (a box a little smaller than the variant) or nothing.
 
-This moved the variant grouping, the search for simpler levels and impostors by folder, and the choice of collider out of `forest_scene`; the planting loop became the plant rules (`poligon/plant_rules.h`).
+This moved the variant grouping, the search for simpler levels and impostors by folder, and the choice of collider out of `forest_scene`; the planting loop became the plant rules (`poligon/world/plant_rules.h`).
 
 ## The level file
 
@@ -84,7 +84,7 @@ player_start lake            # or: player_start X Z TURN (meters on the map, deg
 object rocks/boulder 3538 5112 40 2.2    # asset, map x, z, turn, scale
 ```
 
-- `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/level.h`). Unknown words and bad values are errors that name the line; lines whose first word another reader takes (for example the plant rules) are kept in `Level::other_lines`.
-- `player_start lake` uses `FindLakeViewpoint` (`poligon/terrain_generator.h`): gentle ground 150 to 500 m from the largest lake, as high above it as possible with its middle in view.
+- `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/world/level.h`). Unknown words and bad values are errors that name the line; lines whose first word another reader takes (for example the plant rules) are kept in `Level::other_lines`.
+- `player_start lake` uses `FindLakeViewpoint` (`poligon/world/terrain_generator.h`): gentle ground 150 to 500 m from the largest lake, as high above it as possible with its middle in view.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` read and write generator settings by name; `terrain_tool generate` uses the same names.
 - `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake, three boulders put by hand and 18 plant rules.

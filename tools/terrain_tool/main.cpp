@@ -15,7 +15,7 @@
 //   terrain_tool info IN.heights
 //       Prints size, height range and how steep the land is.
 //   terrain_tool generate CACHE_FOLDER PREVIEW_FOLDER [NAME=VALUE ...]
-//       Generates land (poligon/terrain_generator.h), or loads it from CACHE_FOLDER when
+//       Generates land (poligon/world/terrain_generator.h), or loads it from CACHE_FOLDER when
 //       these settings were generated before, and writes pictures of it and its maps to
 //       PREVIEW_FOLDER: relief.png (lit from the north-west, lakes blue), detail.png (the
 //       middle 1024 x 1024 points, one pixel each), flow.png, moisture.png, sediment.png,
@@ -28,9 +28,9 @@
 #include <cstring>
 #include <string>
 
-#include "poligon/height_map.h"
-#include "poligon/image.h"
-#include "poligon/terrain_generator.h"
+#include "poligon/world/height_map.h"
+#include "poligon/core/image.h"
+#include "poligon/world/terrain_generator.h"
 
 namespace {
 

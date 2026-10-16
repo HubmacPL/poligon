@@ -6,10 +6,10 @@
 // Usage: example_ground_cover OUTPUT.png
 #include <cstdio>
 
-#include "poligon/ground_cover.h"
-#include "poligon/height_map.h"
-#include "poligon/renderer.h"
-#include "poligon/terrain.h"
+#include "poligon/world/ground_cover.h"
+#include "poligon/world/height_map.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/terrain.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

@@ -4,16 +4,16 @@
 #include <filesystem>
 #include <string>
 
-#include "poligon/command_line.h"
-#include "poligon/crash_handler.h"
-#include "poligon/debug_ui.h"
-#include "poligon/ecs.h"
-#include "poligon/game_loop.h"
-#include "poligon/input.h"
-#include "poligon/platform.h"
-#include "poligon/renderer.h"
-#include "poligon/state_dump.h"
-#include "poligon/version.h"
+#include "poligon/core/command_line.h"
+#include "poligon/core/crash_handler.h"
+#include "poligon/debug/debug_ui.h"
+#include "poligon/ecs/ecs.h"
+#include "poligon/core/game_loop.h"
+#include "poligon/core/input.h"
+#include "poligon/core/platform.h"
+#include "poligon/render/renderer.h"
+#include "poligon/ecs/state_dump.h"
+#include "poligon/core/version.h"
 #include "toy_world.h"
 
 namespace {

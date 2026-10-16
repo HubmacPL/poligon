@@ -1,6 +1,6 @@
 # Crashes and fatal errors
 
-Headers: `poligon/crash_handler.h`, `poligon/fatal_error.h`. Example: `examples/crash_handler`. Tests: `tests/crash_test.cpp`.
+Headers: `poligon/core/crash_handler.h`, `poligon/core/fatal_error.h`. Example: `examples/crash_handler`. Tests: `tests/crash_test.cpp`.
 
 ## What it does
 

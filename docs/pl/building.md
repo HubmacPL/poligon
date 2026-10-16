@@ -47,7 +47,28 @@ Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<prese
 - `flecs` (MIT; w środku fragmenty na BSD-2, MIT i jeden w domenie publicznej).
 - Obecne poza tym: `sdl3` z cechą `vulkan` (zlib, z częściami na MIT, Apache 2.0 i BSD-3), `stb` (MIT lub domena publiczna), `directx-dxc` jako narzędzie budowania (NCSA; nic z niego nie jest linkowane ani dołączane do gry).
 
+## Układ silnika
+
+Silnik to zestaw bibliotek statycznych, po jednej na obszar. Każdy obszar ma nagłówki publiczne w `engine/include/poligon/<obszar>/` (dołączane jako `poligon/<obszar>/<nazwa>.h`), źródła w `engine/src/<obszar>/`, z osobnym folderem na każdy moduł tam, gdzie obszar ma ich kilka, i własny `CMakeLists.txt`.
+
+| Biblioteka | Obszar | Moduły (foldery w `engine/src/<obszar>/`) | Może używać |
+|---|---|---|---|
+| `poligon_core` | `core` | `app` (pętla gry, zegar, wiersz poleceń, wersja), `platform` (zdarzenia, błędy, raporty awarii), `input`, `image` (obrazy, kompresja blokowa) | niczego naszego |
+| `poligon_ecs` | `ecs` | ustawienia flecs, zrzut i hash stanu | core |
+| `poligon_render` | `render` | `renderer`, `settings` (presety, plik ustawień obrazu), `impostor`, `shaders/<grupa>` | core |
+| `poligon_animation` | `animation` | szkielety, klipy, odtwarzacze | core |
+| `poligon_physics` | `physics` | ciała, postacie, promienie | core |
+| `poligon_assets` | `assets` | pliki modeli, lista assetów, wypiekanie, wczytywanie po nazwie | core, render, animation |
+| `poligon_world` | `world` | `terrain` (z generatorem i przesłanianiem nieba), `vegetation` (z regułami sadzenia, roślinami z kodu, wydeptywaniem), `water`, `level` | core, render, animation, assets, physics |
+| `poligon_debug` | `debug` | okna debug, swobodna kamera | core, render, ecs |
+
+- `poligon_engine` łączy je wszystkie; gry, narzędzia, testy i przykłady linkują właśnie ją.
+- Kolumnę „może używać” sprawdza przy każdym `tools/check.ps1` skrypt `tools/check_layers.ps1`, który czyta każde dołączenie (wszystkie nagłówki leżą w jednym folderze, więc złe dołączenie i tak by się skompilowało). Renderer na przykład nic nie wie o świecie: wydeptana ziemia i przesłanianie nieba docierają do niego jako `GroundMap` przez interfejs `GroundMapSource`.
+- Shadery są pogrupowane według tego, co rysują: `mesh`, `terrain`, `vegetation` (impostory), `sky` (niebo i chmury), `water`, `post` (przebiegi pełnoekranowe); `shaders/common` trzyma pliki dołączane przez kilka shaderów.
+
 ## Dodawanie rzeczy
+
+- Kod silnika: plik w folderze obszaru (`engine/src/<obszar>/<moduł>/`), wpisany do `CMakeLists.txt` tego obszaru; nagłówek publiczny w `engine/include/poligon/<obszar>/`. Nowy obszar wymaga wpisu w `engine/CMakeLists.txt` i w `tools/check_layers.ps1`.
 
 - Test: plik `tests/<nazwa>.cpp`, w nim `test::Expect(warunek, "opis")` z `tests/test_support.h` i `return test::ExitCode();` na końcu `main`, oraz wpis `poligon_add_test(<nazwa>)` w `tests/CMakeLists.txt`.
 - Przykład: `examples/<nazwa>/main.cpp` i wpis `poligon_add_example(<nazwa>)` w `examples/CMakeLists.txt`. Każdy przykład jest też testem; argumenty po nazwie są przekazywane przy uruchomieniu.

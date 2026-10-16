@@ -24,6 +24,7 @@ function Invoke-Step([string]$title, [scriptblock]$command) {
 
 Push-Location $root
 try {
+    Invoke-Step "engine layers" { powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check_layers.ps1') }
     foreach ($preset in $Presets) {
         Invoke-Step "$preset configure" { cmake --preset $preset }
         Invoke-Step "$preset build" { cmake --build --preset $preset }

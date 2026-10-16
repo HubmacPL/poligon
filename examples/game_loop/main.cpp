@@ -1,7 +1,7 @@
 // Example: the smallest game. Runs headless for at most 100 ticks and quits itself after 5.
 #include <cstdio>
 
-#include "poligon/game_loop.h"
+#include "poligon/core/game_loop.h"
 
 class CounterGame : public poligon::Game {
 public:

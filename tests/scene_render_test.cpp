@@ -6,7 +6,7 @@
 #include <cstring>
 #include <vector>
 
-#include "poligon/renderer.h"
+#include "poligon/render/renderer.h"
 #include "test_support.h"
 
 namespace {

@@ -1,6 +1,6 @@
 #include <string>
 
-#include "poligon/command_line.h"
+#include "poligon/core/command_line.h"
 #include "test_support.h"
 
 namespace {

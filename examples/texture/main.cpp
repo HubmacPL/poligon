@@ -3,8 +3,8 @@
 #include <cstdio>
 #include <string>
 
-#include "poligon/image.h"
-#include "poligon/renderer.h"
+#include "poligon/core/image.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

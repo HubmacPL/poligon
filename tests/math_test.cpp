@@ -1,9 +1,9 @@
-// Checks that GLM is configured to Poligon's conventions (see poligon/math.h).
+// Checks that GLM is configured to Poligon's conventions (see poligon/core/math.h).
 // These are properties of configuration, not of our code: if one fails, a GLM_FORCE_*
 // setting changed or is missing, and rendering would silently break.
 #include <cmath>
 
-#include "poligon/math.h"
+#include "poligon/core/math.h"
 #include "test_support.h"
 
 namespace {

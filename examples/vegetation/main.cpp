@@ -7,8 +7,8 @@
 #include <cstdio>
 #include <vector>
 
-#include "poligon/renderer.h"
-#include "poligon/vegetation.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/vegetation.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

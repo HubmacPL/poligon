@@ -10,11 +10,11 @@
 #include <fstream>
 #include <string>
 
-#include "poligon/assets.h"
-#include "poligon/level.h"
-#include "poligon/plants.h"
-#include "poligon/renderer.h"
-#include "poligon/texture_compression.h"
+#include "poligon/assets/assets.h"
+#include "poligon/world/level.h"
+#include "poligon/world/plants.h"
+#include "poligon/render/renderer.h"
+#include "poligon/core/texture_compression.h"
 #include "test_support.h"
 
 namespace {

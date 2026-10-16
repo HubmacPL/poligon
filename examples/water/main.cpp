@@ -1,11 +1,11 @@
 // Example: a water surface. A pond 3 m deep with a sloping sandy bottom, a red post and a
 // white wall behind it, seen from the shore at a low angle: the water is clear at the edge,
 // darker and greener where it is deep, mirrors the post and the wall, and ripples in the
-// wind. Lakes of generated land get their surfaces from poligon/water.h.
+// wind. Lakes of generated land get their surfaces from poligon/world/water.h.
 // Usage: example_water OUTPUT.png
 #include <cstdio>
 
-#include "poligon/renderer.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

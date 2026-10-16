@@ -1,4 +1,4 @@
-// Turns the sources named in an asset list into files that load fast (poligon/assets.h).
+// Turns the sources named in an asset list into files that load fast (poligon/assets/assets.h).
 //
 //   asset_cooker LIST SOURCE_FOLDER COOKED_FOLDER [--pack ARCHIVE]
 //
@@ -11,7 +11,7 @@
 #include <cstring>
 #include <string>
 
-#include "poligon/assets.h"
+#include "poligon/assets/assets.h"
 
 int main(int argc, char** argv) {
     if (argc != 4 && !(argc == 6 && std::strcmp(argv[4], "--pack") == 0)) {

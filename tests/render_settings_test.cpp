@@ -5,10 +5,10 @@
 #include <fstream>
 #include <string>
 
-#include "poligon/command_line.h"
-#include "poligon/free_camera.h"
-#include "poligon/graphics_quality.h"
-#include "poligon/render_settings.h"
+#include "poligon/core/command_line.h"
+#include "poligon/debug/free_camera.h"
+#include "poligon/render/graphics_quality.h"
+#include "poligon/render/render_settings.h"
 #include "test_support.h"
 
 namespace {

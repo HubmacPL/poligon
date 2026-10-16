@@ -19,13 +19,13 @@
 #include <string>
 #include <vector>
 
-#include "poligon/command_line.h"
-#include "poligon/crash_handler.h"
-#include "poligon/game_loop.h"
-#include "poligon/input.h"
-#include "poligon/model.h"
-#include "poligon/platform.h"
-#include "poligon/renderer.h"
+#include "poligon/core/command_line.h"
+#include "poligon/core/crash_handler.h"
+#include "poligon/core/game_loop.h"
+#include "poligon/core/input.h"
+#include "poligon/assets/model.h"
+#include "poligon/core/platform.h"
+#include "poligon/render/renderer.h"
 
 namespace {
 

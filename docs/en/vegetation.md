@@ -2,7 +2,7 @@
 
 Drawing plants, rocks and other things that stand around in great numbers: instancing, levels of detail, cells.
 
-Headers: `poligon/vegetation.h`, `poligon/ground_cover.h`, `poligon/plant_rules.h`, `poligon/procedural_plants.h`, `poligon/trample.h`, `poligon/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/impostor.h`. Tool: `impostor_baker`. Examples: `examples/vegetation`, `examples/impostor`. Tests: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
+Headers: `poligon/world/vegetation.h`, `poligon/world/ground_cover.h`, `poligon/world/plant_rules.h`, `poligon/world/procedural_plants.h`, `poligon/world/trample.h`, `poligon/render/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/render/impostor.h`. Tool: `impostor_baker`. Examples: `examples/vegetation`, `examples/impostor`. Tests: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
 
 **State:** instancing, levels of detail chosen by distance, cells, separate handling of shadows, impostors for the farthest level, fading between levels, tools for simpler levels of trees and for impostors. Not yet: wind, placing plants by rules of the terrain, plants made on the fly around the player.
 
@@ -51,7 +51,7 @@ vegetation.Draw(renderer, camera);
 
 ## Ground cover
 
-Grass, ferns, nettles, litter, small plants and pebbles: too many to store for a map, so they are made on the fly around the camera (`poligon/ground_cover.h`). Example: `examples/ground_cover`; test: `tests/ground_cover_test.cpp`.
+Grass, ferns, nettles, litter, small plants and pebbles: too many to store for a map, so they are made on the fly around the camera (`poligon/world/ground_cover.h`). Example: `examples/ground_cover`; test: `tests/ground_cover_test.cpp`.
 
 ```cpp
 poligon::GroundCoverLayer grass;
@@ -75,16 +75,16 @@ cover.Draw(renderer, camera);           // between BeginFrame and EndFrame
 
 ## Plant rules
 
-Header: `poligon/plant_rules.h`. Example: `examples/plant_rules`. Test: `tests/plant_rules_test.cpp`.
+Header: `poligon/world/plant_rules.h`. Example: `examples/plant_rules`. Test: `tests/plant_rules_test.cpp`.
 
-- Where plants grow is data: rules in the level file (`poligon/level.h`) that read the terrain generator's maps. A rule names a kind and gives a density (plants per square meter where every condition holds fully), a spacing, a range of sizes, conditions on the maps (`slope`, `height`, `moisture`, `sediment`, `rock`, `flow`, `water_distance`, `water_depth`, each low, high and fade, see `MapConditions`), clumps (`patch SIZE COVER`), an area around the player's start, `sink`, `align`, `on_water` and a `seed`. `ParsePlantRules` reads them from the lines `LoadLevel` keeps for other readers (pass `GetPlantRuleWords()`); bad lines are errors that name the line.
+- Where plants grow is data: rules in the level file (`poligon/world/level.h`) that read the terrain generator's maps. A rule names a kind and gives a density (plants per square meter where every condition holds fully), a spacing, a range of sizes, conditions on the maps (`slope`, `height`, `moisture`, `sediment`, `rock`, `flow`, `water_distance`, `water_depth`, each low, high and fade, see `MapConditions`), clumps (`patch SIZE COVER`), an area around the player's start, `sink`, `align`, `on_water` and a `seed`. `ParsePlantRules` reads them from the lines `LoadLevel` keeps for other readers (pass `GetPlantRuleWords()`); bad lines are errors that name the line.
 - `plant` rules place things once, over an area (`PlacePlants`): a jittered grid of the spacing, one candidate per cell, kept with the probability density x spacing squared x the conditions' weight x the clumps. Each cell decides from its own coordinates and the seed, so placements do not depend on the order of anything. Rules of one `group` share a grid (`PlacePlantGroup`): in each cell at most one of them grows, chosen with the probabilities each would have alone, so trees of different kinds never stand in each other.
 - `cover` rules become ground cover layers: `GroundCoverLayer::conditions` takes the rule's conditions, and `GroundCover::SetMaps(maps, world_to_map)` gives the layers the maps; a plant is then kept with the probability of the conditions' weight (an extra random number is drawn only when maps are set, so cover without maps is placed exactly as before).
 - In `forest_scene` (`tools/forest_scene/forest.level`): pines on dry ground, spruces and birches where it is wetter, oaks on gentle slopes, in one group on a 9 m grid out to 1200 m, none on gully walls, in water or at the shore; young trees, shrubs, boulders, stumps and fallen trunks within 250 m; reeds, cattails and water lilies at every lake within 1500 m; grass, ferns, nettles, low shrubs and small rocks as cover. About 71000 things are placed in under a second. The clearing towards the lake is the scene's own filter (the `keep` argument), not a rule.
 
 ## Water and shore plants
 
-Header: `poligon/procedural_plants.h`. No free (CC0) models of reeds, cattails or water lilies were found, so the engine makes them: `MakeReedModel`, `MakeCattailModel`, `MakeWaterLilyModel` each return a model with three different clumps side by side and their own small textures (made in code too), which `MakePlantKind` with `split_variants` turns into three variants; `UploadLoadedModel` puts such a model on the graphics card as the asset library would.
+Header: `poligon/world/procedural_plants.h`. No free (CC0) models of reeds, cattails or water lilies were found, so the engine makes them: `MakeReedModel`, `MakeCattailModel`, `MakeWaterLilyModel` each return a model with three different clumps side by side and their own small textures (made in code too), which `MakePlantKind` with `split_variants` turns into three variants; `UploadLoadedModel` puts such a model on the graphics card as the asset library would.
 
 - Reeds: 18 to 31 stems a clump, 2 or 3 strap leaves each, 1.6 to 2.6 m, bending outwards, and a feathery brown plume on about half of the stems (crossed cards). Cattails: stiffer, wider leaves and 3 to 6 stems with a brown head. Water lilies: 6 to 13 round leaves with a notch, lying on the water, and up to 2 white flowers.
 - Rules put them by water depth and distance to the shore: reeds in water up to half a meter and on the shore line, cattails between 8 and 40 cm, lilies floating (`on_water 1`) from 0.7 to 2.5 m.
@@ -92,7 +92,7 @@ Header: `poligon/procedural_plants.h`. No free (CC0) models of reeds, cattails o
 
 ## Grass and flowers made by code
 
-- `MakeGrassModel(seed, tufts, height_min, height_max, blades_min, blades_max)` (`poligon/procedural_plants.h`) makes tufts of real blades: narrow strips of three pieces narrowing to a point, leaning and curving outwards, in eight slightly different greens with dry tips (a 64 x 128 picture made in code). About 65 triangles a tuft. Unlike pictures of grass on cards, they look right from every side and from above, bend blade by blade in the wind and lie down on trampled ground.
+- `MakeGrassModel(seed, tufts, height_min, height_max, blades_min, blades_max)` (`poligon/world/procedural_plants.h`) makes tufts of real blades: narrow strips of three pieces narrowing to a point, leaning and curving outwards, in eight slightly different greens with dry tips (a 64 x 128 picture made in code). About 65 triangles a tuft. Unlike pictures of grass on cards, they look right from every side and from above, bend blade by blade in the wind and lie down on trampled ground.
 - `MakeFlowerModel(seed)`: three clumps of thin stems with two leaves each and a five-petaled flower, white, yellow and purple.
 - Their materials set two `Material` fields made for grass (see rendering.md): `back_faces_keep_normal`, because blade normals point mostly up so that grass is lit like the ground it grows from, and `casts_ambient_occlusion = false`, because screen-space ambient occlusion takes a thin blade for a solid wall and blackened the blades and the ground around every tuft.
 - In `forest_scene` they are ground cover: short grass (0.12 to 0.3 m, 8 tufts per square meter, drawn to 30 m) over most open ground, meadow grass (0.4 to 0.8 m) and flowers in moister patches, with the downloaded tufts at a lower density for variety. Cost: within the measurement noise in every preset.
@@ -102,7 +102,7 @@ Header: `poligon/procedural_plants.h`. No free (CC0) models of reeds, cattails o
 
 ## Trampled paths
 
-Header: `poligon/trample.h`. Test: the trample part of `tests/vegetation_render_test.cpp` and of `tests/plant_rules_test.cpp`.
+Header: `poligon/world/trample.h`. Test: the trample part of `tests/vegetation_render_test.cpp` and of `tests/plant_rules_test.cpp`.
 
 - A `TrampleMap` is a square grid (128 m, 256 cells by default) of values 0 (untouched) to 1 (flat) around the player. The game presses plants down where something walks (`Trample(position, radius, amount)`), lets them stand up slowly (`Recover`), and moves the grid with the player in whole cells (`Recenter`), so values stay put on the land. It is plain arithmetic on the game's ticks, so replays leave the same paths.
 - `Renderer::SetTrampleMap(&map)` copies it to the graphics card when it changed; the instanced vertex shader reads it at each plant's foot, and a plant whose material bends in the wind (`wind_bend` above 0) leans over in a direction of its own and gets lower, down to 15% of its height, in every pass (its shadow follows).
@@ -122,7 +122,7 @@ pine.levels.back().impostor = pine_card;                    // ... as the impost
 - `BakeImpostor` photographs the model with our own renderer, without perspective, from 8 x 8 directions spread over the half sphere above it ("hemi-octahedral" layout: the middle of the grid looks straight down, its edge from the horizon). Each picture holds what the surface is, not how it is lit: the base color with coverage, and the direction each pixel faces. In the game the impostor is lit by `lighting.hlsli` like everything else, so it follows the sun, the sky and the fog.
 - Drawing: one card per instance, the size of the model, turned to the camera. For each pixel the four frames nearest to the direction of view are read (each at the point where the card pixel falls on that frame's picture plane) and blended by how near each direction is. Viewed from the side or from a hill the picture changes smoothly as the camera moves around.
 - The instance may turn about the vertical and be scaled evenly; the baked normals turn with it.
-- Files: `NAME.impostor` (frames, center, radius as text), `NAME_color.png`, `NAME_normal.png` (`poligon/impostor.h`).
+- Files: `NAME.impostor` (frames, center, radius as text), `NAME_color.png`, `NAME_normal.png` (`poligon/render/impostor.h`).
 - `impostor_baker MODEL OUT.impostor [--frames N] [--size PIXELS] [--keep-origin]` bakes one model file. The foot of the model is put at the origin as `forest_scene` does; `--keep-origin` keeps it where the file has it sideways (generated trees have their trunk there).
 - One impostor of 8 x 8 frames of 128 px is two 1024 x 1024 images, 11 MB on the graphics card with mipmaps; compressed textures will cut that later.
 - Limits: a card is flat, so its outline does not change when the camera moves only a little closer or sideways, and it does not hide the ground behind it as a solid crown would; meant for 100 m and more. The model's sphere is pictured at its full size in every frame, so a tall thin tree fills only part of each frame.

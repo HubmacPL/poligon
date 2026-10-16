@@ -1,7 +1,7 @@
 // Tests the toy game's simulation without a renderer.
 #include <string>
 
-#include "poligon/state_dump.h"
+#include "poligon/ecs/state_dump.h"
 #include "test_support.h"
 #include "toy_world.h"
 

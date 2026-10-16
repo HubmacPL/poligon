@@ -1,6 +1,6 @@
 # Game loop and headless mode
 
-Headers: `poligon/game_loop.h`, `poligon/fixed_step_clock.h`, `poligon/command_line.h`, `poligon/fatal_error.h`.
+Headers: `poligon/core/game_loop.h`, `poligon/core/fixed_step_clock.h`, `poligon/core/command_line.h`, `poligon/core/fatal_error.h`.
 Examples: `examples/game_loop`, `examples/fixed_step_clock`, `examples/command_line`.
 
 ## Terms

@@ -1,5 +1,5 @@
 // Passes when an invalid configuration ends the process with a FATAL line instead of a dialog box.
-#include "poligon/game_loop.h"
+#include "poligon/core/game_loop.h"
 
 int main() {
     poligon::GameLoopConfig config;

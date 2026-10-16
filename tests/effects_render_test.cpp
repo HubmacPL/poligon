@@ -5,8 +5,8 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "poligon/renderer.h"
-#include "poligon/sky_occlusion.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/sky_occlusion.h"
 #include "test_support.h"
 
 namespace {

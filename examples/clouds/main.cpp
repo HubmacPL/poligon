@@ -4,8 +4,8 @@
 // Usage: example_clouds OUTPUT.png
 #include <cstdio>
 
-#include "poligon/renderer.h"
-#include "poligon/sky_occlusion.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/sky_occlusion.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

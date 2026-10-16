@@ -6,12 +6,12 @@
 #include <cstdio>
 #include <string>
 
-#include "poligon/command_line.h"
-#include "poligon/debug_ui.h"
-#include "poligon/free_camera.h"
-#include "poligon/platform.h"
-#include "poligon/render_settings.h"
-#include "poligon/renderer.h"
+#include "poligon/core/command_line.h"
+#include "poligon/debug/debug_ui.h"
+#include "poligon/debug/free_camera.h"
+#include "poligon/core/platform.h"
+#include "poligon/render/render_settings.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     poligon::CommandLineOptions options;

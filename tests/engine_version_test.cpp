@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include "poligon/version.h"
+#include "poligon/core/version.h"
 
 int main() {
     const poligon::Version version = poligon::GetEngineVersion();

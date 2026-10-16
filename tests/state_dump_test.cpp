@@ -4,9 +4,9 @@
 #include <limits>
 #include <string>
 
-#include "poligon/ecs.h"
-#include "poligon/math.h"
-#include "poligon/state_dump.h"
+#include "poligon/ecs/ecs.h"
+#include "poligon/core/math.h"
+#include "poligon/ecs/state_dump.h"
 #include "test_support.h"
 
 namespace {

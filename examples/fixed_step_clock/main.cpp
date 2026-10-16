@@ -2,7 +2,7 @@
 // GameLoop does this for you; use FixedStepClock directly only when writing your own loop.
 #include <cstdio>
 
-#include "poligon/fixed_step_clock.h"
+#include "poligon/core/fixed_step_clock.h"
 
 int main() {
     // 60 ticks per second, at most 5 ticks per call.

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "poligon/input.h"
+#include "poligon/core/input.h"
 #include "test_support.h"
 
 namespace {

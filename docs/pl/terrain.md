@@ -2,9 +2,9 @@
 
 Kształt terenu jako mapa wysokości, skąd się bierze i jak prawdziwe dane wysokościowe stają się terenem gry.
 
-Nagłówki: `poligon/height_map.h`, `poligon/terrain.h`, `poligon/terrain_generator.h`. Narzędzie: `terrain_tool`. Przykłady: `examples/terrain`, `examples/terrain_generator`. Testy: `tests/height_map_test.cpp`, `tests/terrain_render_test.cpp`, `tests/terrain_generator_test.cpp`.
+Nagłówki: `poligon/world/height_map.h`, `poligon/world/terrain.h`, `poligon/world/terrain_generator.h`. Narzędzie: `terrain_tool`. Przykłady: `examples/terrain`, `examples/terrain_generator`. Testy: `tests/height_map_test.cpp`, `tests/terrain_render_test.cpp`, `tests/terrain_generator_test.cpp`.
 
-**Stan:** teren jest generowany przez symulację wypiętrzania, erozji rzecznej i zboczowej, kropli deszczu i jezior, razem z mapami wody, przepływu, wilgotności, osadów i skały; jest rysowany po horyzont z poziomami szczegółowości, z maksymalnie ośmioma warstwami podłoża wybieranymi według tych map, oświetlany i cieniowany jak wszystko inne, a fizyka się z nim zderza. Jeziora są powierzchniami wody (`poligon/water.h`). Jeszcze nie: strumienie jako woda, wygładzanie zmiany między rozmiarami kafli, rośliny rozmieszczane regułami.
+**Stan:** teren jest generowany przez symulację wypiętrzania, erozji rzecznej i zboczowej, kropli deszczu i jezior, razem z mapami wody, przepływu, wilgotności, osadów i skały; jest rysowany po horyzont z poziomami szczegółowości, z maksymalnie ośmioma warstwami podłoża wybieranymi według tych map, oświetlany i cieniowany jak wszystko inne, a fizyka się z nim zderza. Jeziora są powierzchniami wody (`poligon/world/water.h`). Jeszcze nie: strumienie jako woda, wygładzanie zmiany między rozmiarami kafli, rośliny rozmieszczane regułami.
 
 ## Rysowanie
 
@@ -40,7 +40,7 @@ terrain.Draw(camera);
 
 ## Teren generowany
 
-Nagłówek: `poligon/terrain_generator.h`. Przykład: `examples/terrain_generator`. Test: `tests/terrain_generator_test.cpp`. Od 2026-10-15 `forest_scene` stoi na terenie generowanym; dane Batorza i czytnik TIFF zostają.
+Nagłówek: `poligon/world/terrain_generator.h`. Przykład: `examples/terrain_generator`. Test: `tests/terrain_generator_test.cpp`. Od 2026-10-15 `forest_scene` stoi na terenie generowanym; dane Batorza i czytnik TIFF zostają.
 
 Generator symuluje procesy, które kształtują prawdziwy teren, zamiast dodawać szum. Żadna biblioteka nie pasowała (sprawdzone 2026-10-15: fastscapelib ma GPL-3, RichDEM nie ma licencji, SimpleHydrology ma MIT, ale nie robi jezior, FastNoise2 ma MIT, ale jego ścieżki SIMD nie są powtarzalne co do bitu), więc to nasz kod według tych publikacji:
 

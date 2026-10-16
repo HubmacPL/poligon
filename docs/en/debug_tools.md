@@ -2,7 +2,7 @@
 
 Windows with sliders and readouts drawn over the running game, a camera that flies freely, and views of single stages of the frame. They are for a person at the screen; everything they change can also be given to a headless run through a file.
 
-Headers: `poligon/debug_ui.h`, `poligon/render_settings.h`, `poligon/free_camera.h`. Example: `examples/debug_ui`.
+Headers: `poligon/debug/debug_ui.h`, `poligon/render/render_settings.h`, `poligon/debug/free_camera.h`. Example: `examples/debug_ui`.
 
 ## Debug windows
 

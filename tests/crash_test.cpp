@@ -6,8 +6,8 @@
 #include <stdexcept>
 #include <vector>
 
-#include "poligon/crash_handler.h"
-#include "poligon/fatal_error.h"
+#include "poligon/core/crash_handler.h"
+#include "poligon/core/fatal_error.h"
 
 // The functions below must stay real, separate functions, so that their names show up in the stack.
 #define NOINLINE __declspec(noinline)

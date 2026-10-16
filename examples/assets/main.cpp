@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <fstream>
 
-#include "poligon/assets.h"
-#include "poligon/renderer.h"
+#include "poligon/assets/assets.h"
+#include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {

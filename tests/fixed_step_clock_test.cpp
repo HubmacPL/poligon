@@ -1,6 +1,6 @@
 #include <cstdint>
 
-#include "poligon/fixed_step_clock.h"
+#include "poligon/core/fixed_step_clock.h"
 #include "test_support.h"
 
 namespace {

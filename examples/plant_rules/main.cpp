@@ -6,13 +6,13 @@
 // Usage: example_plant_rules OUTPUT.png
 #include <cstdio>
 
-#include "poligon/plant_rules.h"
-#include "poligon/plants.h"
-#include "poligon/procedural_plants.h"
-#include "poligon/renderer.h"
-#include "poligon/terrain.h"
-#include "poligon/trample.h"
-#include "poligon/water.h"
+#include "poligon/world/plant_rules.h"
+#include "poligon/world/plants.h"
+#include "poligon/world/procedural_plants.h"
+#include "poligon/render/renderer.h"
+#include "poligon/world/terrain.h"
+#include "poligon/world/trample.h"
+#include "poligon/world/water.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {
