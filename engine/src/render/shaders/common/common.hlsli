@@ -91,7 +91,7 @@ float3 ApplyNormalMapSample(float3 map, float3 normal, float3 world_position, fl
     // Normal maps follow the OpenGL convention: red tilts the surface along u, green towards
     // the top of the image. The frame built below comes out mirrored in our screen space
     // (y runs down the screen), and v runs down the image; together that means the red
-    // direction must be negated and the green one kept. tests/scene_render_test.cpp checks both.
+    // direction must be negated and the green one kept. tests/render/scene_render_test.cpp checks both.
     map.x = -map.x;
 
     float3 dp1 = ddx(world_position);

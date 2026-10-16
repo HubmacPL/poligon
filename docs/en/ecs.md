@@ -1,7 +1,7 @@
 # ECS (flecs) and the state dump
 
 Headers: `poligon/ecs/ecs.h`, `poligon/ecs/state_dump.h`.
-Example: `examples/state_dump`. Pattern for a larger game: `game/src/toy_world.cpp`.
+Example: `examples/ecs/state_dump`. Pattern for a larger game: `game/src/toy_world.cpp`.
 
 ## Terms
 
@@ -34,12 +34,12 @@ Creating and deleting entities and adding and removing components inside a syste
 - A component without registered members appears as `{"unreflected_bytes": N}` and is listed under `unreflected_components`. The game's tests require that list to be empty.
 - Supported member types: bool, integers, float, double, `flecs::entity_t` (through `.member(flecs::Entity, "name")`), enums, nested structs, fixed-size arrays. Other types (strings, vectors) end the process with a `FATAL` error naming the component; `state_dump.cpp` must then be extended.
 
-Why our own dump instead of flecs' `world.to_json()`: the built-in writer truncates floating-point numbers to 10 decimal places, so two different states can give the same text. `tests/state_dump_test.cpp` prints, for information, whether that is still the case.
+Why our own dump instead of flecs' `world.to_json()`: the built-in writer truncates floating-point numbers to 10 decimal places, so two different states can give the same text. `tests/ecs/state_dump_test.cpp` prints, for information, whether that is still the case.
 
 ## Repeatability
 
 - The flecs documentation guarantees the order of systems (given rule 3), but does not say outright that the same history of operations gives the same data layout in two runs.
-- `tests/ecs_order_probe.cpp` checks it: a fixed pseudo-random script of creation, deletion from the middle, adding and removing components, deleting parents with children, and systems that change entities while iterating. Systems fold the visiting order into a hash. The test requires an identical result twice in one process and between two processes.
+- `tests/ecs/ecs_order_probe.cpp` checks it: a fixed pseudo-random script of creation, deletion from the middle, adding and removing components, deleting parents with children, and systems that change entities while iterating. Systems fold the visiting order into a hash. The test requires an identical result twice in one process and between two processes.
 - `game/tests/toy_world_test.cpp` does the same for the toy's simulation: two worlds after 600 ticks must give an identical dump.
 
 ## Not there yet

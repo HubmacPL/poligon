@@ -1,0 +1,1 @@
+poligon_add_test(physics_test)

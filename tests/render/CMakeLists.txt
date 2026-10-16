@@ -1,0 +1,10 @@
+add_executable(render_settings_test render_settings_test.cpp)
+target_link_libraries(render_settings_test PRIVATE poligon_engine poligon_build_options)
+add_test(NAME render_settings_test COMMAND render_settings_test ${CMAKE_BINARY_DIR}/test_output)
+
+# Pixel-level checks on both graphics backends, with the debug layer on.
+poligon_add_render_test(texture_render_test)
+poligon_add_render_test(scene_render_test)
+poligon_add_render_test(effects_render_test)
+poligon_add_render_test(impostor_render_test)
+poligon_add_render_test(temporal_aa_test)

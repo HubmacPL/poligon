@@ -70,5 +70,5 @@ Silnik to zestaw bibliotek statycznych, po jednej na obszar. Każdy obszar ma na
 
 - Kod silnika: plik w folderze obszaru (`engine/src/<obszar>/<moduł>/`), wpisany do `CMakeLists.txt` tego obszaru; nagłówek publiczny w `engine/include/poligon/<obszar>/`. Nowy obszar wymaga wpisu w `engine/CMakeLists.txt` i w `tools/check_layers.ps1`.
 
-- Test: plik `tests/<nazwa>.cpp`, w nim `test::Expect(warunek, "opis")` z `tests/test_support.h` i `return test::ExitCode();` na końcu `main`, oraz wpis `poligon_add_test(<nazwa>)` w `tests/CMakeLists.txt`.
-- Przykład: `examples/<nazwa>/main.cpp` i wpis `poligon_add_example(<nazwa>)` w `examples/CMakeLists.txt`. Każdy przykład jest też testem; argumenty po nazwie są przekazywane przy uruchomieniu.
+- Test: plik `tests/<obszar>/<nazwa>.cpp` (obszar silnika, który sprawdza), w nim `test::Expect(warunek, "opis")` z `tests/test_support.h` i `return test::ExitCode();` na końcu `main`, oraz wpis w `tests/<obszar>/CMakeLists.txt`: `poligon_add_test(<nazwa>)` albo `poligon_add_render_test(<nazwa>)` dla testu, który renderuje (uruchamia się wtedy raz na backend z warstwą diagnostyczną i dostaje backend jako pierwszy argument).
+- Przykład: `examples/<obszar>/<nazwa>/main.cpp` i wpis `poligon_add_example(<nazwa>)` w `examples/<obszar>/CMakeLists.txt`. Każdy przykład jest też testem; argumenty po nazwie są przekazywane przy uruchomieniu.

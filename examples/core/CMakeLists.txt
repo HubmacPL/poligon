@@ -1,0 +1,6 @@
+poligon_add_example(engine_version)
+poligon_add_example(command_line --headless --ticks 3)
+poligon_add_example(fixed_step_clock)
+poligon_add_example(game_loop)
+poligon_add_example(crash_handler)
+poligon_add_example(input ${CMAKE_BINARY_DIR}/test_output/example_input_recording.txt)

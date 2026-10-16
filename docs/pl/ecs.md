@@ -1,7 +1,7 @@
 # ECS (flecs) i zrzut stanu
 
 Nagłówki: `poligon/ecs/ecs.h`, `poligon/ecs/state_dump.h`.
-Przykład: `examples/state_dump`. Wzorzec większej gry: `game/src/toy_world.cpp`.
+Przykład: `examples/ecs/state_dump`. Wzorzec większej gry: `game/src/toy_world.cpp`.
 
 ## Pojęcia
 
@@ -34,12 +34,12 @@ Tworzenie i usuwanie obiektów oraz dodawanie i usuwanie komponentów wewnątrz 
 - Komponent bez zarejestrowanych pól pojawia się jako `{"unreflected_bytes": N}` i trafia na listę `unreflected_components`. Testy gry wymagają, żeby ta lista była pusta.
 - Obsługiwane typy pól: bool, liczby całkowite, float, double, `flecs::entity_t` (przez `.member(flecs::Entity, "nazwa")`), wyliczenia, zagnieżdżone struktury, tablice o stałym rozmiarze. Inne typy (napisy, wektory) kończą proces błędem `FATAL` z nazwą komponentu; wtedy trzeba rozszerzyć `state_dump.cpp`.
 
-Dlaczego własny zrzut zamiast `world.to_json()` z flecs: wbudowany zapis obcina liczby zmiennoprzecinkowe do 10 cyfr po przecinku, więc dwa różne stany mogą dać ten sam tekst. `tests/state_dump_test.cpp` wypisuje informacyjnie, czy tak nadal jest.
+Dlaczego własny zrzut zamiast `world.to_json()` z flecs: wbudowany zapis obcina liczby zmiennoprzecinkowe do 10 cyfr po przecinku, więc dwa różne stany mogą dać ten sam tekst. `tests/ecs/state_dump_test.cpp` wypisuje informacyjnie, czy tak nadal jest.
 
 ## Powtarzalność
 
 - Dokumentacja flecs gwarantuje kolejność systemów (pod warunkiem reguły 3), ale nie mówi wprost, że ta sama historia operacji daje to samo ułożenie danych w dwóch uruchomieniach.
-- Sprawdza to `tests/ecs_order_probe.cpp`: stały pseudolosowy scenariusz tworzenia, usuwania ze środka, doczepiania i zdejmowania komponentów, usuwania rodziców z dziećmi oraz systemów zmieniających skład obiektów w trakcie iteracji. Systemy wliczają do skrótu kolejność odwiedzin. Test wymaga identycznego wyniku dwa razy w jednym procesie i między dwoma procesami.
+- Sprawdza to `tests/ecs/ecs_order_probe.cpp`: stały pseudolosowy scenariusz tworzenia, usuwania ze środka, doczepiania i zdejmowania komponentów, usuwania rodziców z dziećmi oraz systemów zmieniających skład obiektów w trakcie iteracji. Systemy wliczają do skrótu kolejność odwiedzin. Test wymaga identycznego wyniku dwa razy w jednym procesie i między dwoma procesami.
 - `game/tests/toy_world_test.cpp` robi to samo dla symulacji zabawki: dwa światy po 600 tickach muszą dać identyczny zrzut.
 
 ## Czego jeszcze nie ma

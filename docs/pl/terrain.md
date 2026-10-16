@@ -2,7 +2,7 @@
 
 Kształt terenu jako mapa wysokości, skąd się bierze i jak prawdziwe dane wysokościowe stają się terenem gry.
 
-Nagłówki: `poligon/world/height_map.h`, `poligon/world/terrain.h`, `poligon/world/terrain_generator.h`. Narzędzie: `terrain_tool`. Przykłady: `examples/terrain`, `examples/terrain_generator`. Testy: `tests/height_map_test.cpp`, `tests/terrain_render_test.cpp`, `tests/terrain_generator_test.cpp`.
+Nagłówki: `poligon/world/height_map.h`, `poligon/world/terrain.h`, `poligon/world/terrain_generator.h`. Narzędzie: `terrain_tool`. Przykłady: `examples/world/terrain`, `examples/world/terrain_generator`. Testy: `tests/world/height_map_test.cpp`, `tests/world/terrain_render_test.cpp`, `tests/world/terrain_generator_test.cpp`.
 
 **Stan:** teren jest generowany przez symulację wypiętrzania, erozji rzecznej i zboczowej, kropli deszczu i jezior, razem z mapami wody, przepływu, wilgotności, osadów i skały; jest rysowany po horyzont z poziomami szczegółowości, z maksymalnie ośmioma warstwami podłoża wybieranymi według tych map, oświetlany i cieniowany jak wszystko inne, a fizyka się z nim zderza. Jeziora są powierzchniami wody (`poligon/world/water.h`). Jeszcze nie: strumienie jako woda, wygładzanie zmiany między rozmiarami kafli, rośliny rozmieszczane regułami.
 
@@ -40,7 +40,7 @@ terrain.Draw(camera);
 
 ## Teren generowany
 
-Nagłówek: `poligon/world/terrain_generator.h`. Przykład: `examples/terrain_generator`. Test: `tests/terrain_generator_test.cpp`. Od 2026-10-15 `forest_scene` stoi na terenie generowanym; dane Batorza i czytnik TIFF zostają.
+Nagłówek: `poligon/world/terrain_generator.h`. Przykład: `examples/world/terrain_generator`. Test: `tests/world/terrain_generator_test.cpp`. Od 2026-10-15 `forest_scene` stoi na terenie generowanym; dane Batorza i czytnik TIFF zostają.
 
 Generator symuluje procesy, które kształtują prawdziwy teren, zamiast dodawać szum. Żadna biblioteka nie pasowała (sprawdzone 2026-10-15: fastscapelib ma GPL-3, RichDEM nie ma licencji, SimpleHydrology ma MIT, ale nie robi jezior, FastNoise2 ma MIT, ale jego ścieżki SIMD nie są powtarzalne co do bitu), więc to nasz kod według tych publikacji:
 
@@ -61,7 +61,7 @@ Generator symuluje procesy, które kształtują prawdziwy teren, zamiast dodawa�
 - Shader (`terrain.frag.hlsl`) czyta każdą warstwę z wagą w pikselu, z bliska i siedem razy większą jak dotąd, i miesza je **wysokością**: każda warstwa stoi tak wysoko, jak jej waga plus jasność jej tekstury w tym miejscu, i widać tylko warstwy w krótkim kroku od najwyższej. Granice wyglądają wtedy jak kamienie wystające z piasku, a nie jak przenikanie. Odczyty tekstur używają gradientów policzonych przed rozgałęzieniami, więc mipmapy są poprawne tam, gdzie warstwy zmieniają się z piksela na piksel.
 - Bez tekstur grunt jest biały, bez wag leży warstwa 0; kolor stromych zboczy dalej działa (`steep_start_degrees` 90 go wyłącza, gdy strome miejsca pokrywa warstwa skały).
 - Wagi są czytane tylko w najdrobniejszym poziomie; bardzo daleko mogą lekko migotać (TAA ukrywa większość). W `forest_scene` tekstury warstw są wypieczonymi assetami, 2048 × 2048, z kompresją blokową (kolory BC1, mapy normalnych BC5).
-- Test: część o warstwach w `tests/terrain_render_test.cpp` i część o wagach w `tests/terrain_generator_test.cpp`.
+- Test: część o warstwach w `tests/world/terrain_render_test.cpp` i część o wagach w `tests/world/terrain_generator_test.cpp`.
 
 ## Mapy wysokości
 

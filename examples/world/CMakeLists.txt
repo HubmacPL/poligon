@@ -1,0 +1,7 @@
+poligon_add_example(terrain ${CMAKE_BINARY_DIR}/test_output/example_terrain.png)
+poligon_add_example(terrain_generator ${CMAKE_BINARY_DIR}/test_output/example_terrain_generator.png)
+poligon_add_example(water ${CMAKE_BINARY_DIR}/test_output/example_water.png)
+poligon_add_example(plant_rules ${CMAKE_BINARY_DIR}/test_output/example_plant_rules.png)
+poligon_add_example(vegetation ${CMAKE_BINARY_DIR}/test_output/example_vegetation.png)
+poligon_add_example(wind ${CMAKE_BINARY_DIR}/test_output/example_wind.png)
+poligon_add_example(ground_cover ${CMAKE_BINARY_DIR}/test_output/example_ground_cover.png)

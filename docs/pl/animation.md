@@ -2,7 +2,7 @@
 
 Jak model się wygina: szkielet ze stawów, siatka, której wierzchołki za nimi podążają, i klipy mówiące, jak stawy ruszają się w czasie.
 
-Nagłówki: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/render/renderer.h`. Przykład: `examples/animation`. Test: `tests/skinning_render_test.cpp`.
+Nagłówki: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/render/renderer.h`. Przykład: `examples/animation/animation`. Test: `tests/animation/skinning_render_test.cpp`.
 
 ## Pojęcia
 

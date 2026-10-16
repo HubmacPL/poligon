@@ -4,7 +4,7 @@
 // glm::vec3, glm::mat4, glm::quat and GLM functions directly.
 // Include this header instead of GLM headers, so that every file sees the same configuration.
 //
-// Conventions (checked by tests/math_test.cpp):
+// Conventions (checked by tests/core/math_test.cpp):
 //   - Right-handed world, +Y is up, a camera looks down its local -Z axis.
 //   - Matrices are column-major and transform column vectors: world = model * local,
 //     and (a * b) applies b first.

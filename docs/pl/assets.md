@@ -2,7 +2,7 @@
 
 Jak gra nazywa, przygotowuje i wczytuje swoje tekstury i modele, jak z modeli powstają rośliny, oraz plik poziomu.
 
-Nagłówki: `poligon/assets/assets.h`, `poligon/core/texture_compression.h`, `poligon/world/plants.h`, `poligon/world/level.h`. Narzędzie: `asset_cooker`. Przykład: `examples/assets`. Test: `tests/assets_test.cpp`.
+Nagłówki: `poligon/assets/assets.h`, `poligon/core/texture_compression.h`, `poligon/world/plants.h`, `poligon/world/level.h`. Narzędzie: `asset_cooker`. Przykład: `examples/assets/assets`. Test: `tests/assets/assets_test.cpp`.
 
 **Stan (ustalone 2026-10-14, zbudowane 2026-10-15):** jedna lista nazywa każdy asset z jego źródłem i ustawieniami; wypiekacz zamienia źródła w szybko wczytujące się pliki ze skompresowanymi teksturami; gra wczytuje po nazwie przez jedną bibliotekę, z folderu wypieczonego albo z archiwum; rośliny z modeli robi silnik; plik poziomu trzyma ustawienia terenu, start gracza, rzeczy postawione ręcznie i reguły sadzenia ([vegetation.md](vegetation.md)). Jeszcze nie: animacje wypiekane jako archiwa ozz (klipy są zapisane jako klucze i zamieniane w animacje ozz przy wczytaniu). Folder danych został podzielony na połówki źródłową i wypieczoną 2026-10-16 (zob. niżej).
 

@@ -2,7 +2,7 @@
 
 Bodies that fall, collide and come to rest, a character that walks on them, and rays for asking what lies in a direction.
 
-Header: `poligon/physics/physics.h`. Example: `examples/physics`. Test: `tests/physics_test.cpp`.
+Header: `poligon/physics/physics.h`. Example: `examples/physics/physics`. Test: `tests/physics/physics_test.cpp`.
 
 ## How it works
 

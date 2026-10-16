@@ -2,7 +2,7 @@
 
 Rysowanie roślin, kamieni i innych rzeczy, które stoją w wielkich ilościach: instancjonowanie, poziomy szczegółowości, komórki.
 
-Nagłówki: `poligon/world/vegetation.h`, `poligon/world/ground_cover.h`, `poligon/world/plant_rules.h`, `poligon/world/procedural_plants.h`, `poligon/world/trample.h`, `poligon/render/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/render/impostor.h`. Narzędzie: `impostor_baker`. Przykłady: `examples/vegetation`, `examples/impostor`. Testy: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, część o instancjonowaniu w `tests/scene_render_test.cpp`.
+Nagłówki: `poligon/world/vegetation.h`, `poligon/world/ground_cover.h`, `poligon/world/plant_rules.h`, `poligon/world/procedural_plants.h`, `poligon/world/trample.h`, `poligon/render/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/render/impostor.h`. Narzędzie: `impostor_baker`. Przykłady: `examples/world/vegetation`, `examples/render/impostor`. Testy: `tests/world/vegetation_render_test.cpp`, `tests/render/impostor_render_test.cpp`, część o instancjonowaniu w `tests/render/scene_render_test.cpp`.
 
 **Stan:** instancjonowanie, poziomy szczegółowości wybierane według odległości, komórki, osobne traktowanie cieni, impostory jako najdalszy poziom, płynne przejścia między poziomami, narzędzia do prostszych poziomów drzew i do impostorów. Jeszcze nie: wiatr, rozmieszczanie roślin regułami terenu, rośliny tworzone w locie wokół gracza.
 
@@ -51,7 +51,7 @@ vegetation.Draw(renderer, camera);
 
 ## Pokrywa ziemi
 
-Trawa, paprocie, pokrzywy, ściółka, drobne rośliny i kamyki: za dużo, żeby je przechowywać dla mapy, więc powstają w locie wokół kamery (`poligon/world/ground_cover.h`). Przykład: `examples/ground_cover`; test: `tests/ground_cover_test.cpp`.
+Trawa, paprocie, pokrzywy, ściółka, drobne rośliny i kamyki: za dużo, żeby je przechowywać dla mapy, więc powstają w locie wokół kamery (`poligon/world/ground_cover.h`). Przykład: `examples/world/ground_cover`; test: `tests/world/ground_cover_test.cpp`.
 
 ```cpp
 poligon::GroundCoverLayer grass;
@@ -75,7 +75,7 @@ cover.Draw(renderer, camera);           // między BeginFrame a EndFrame
 
 ## Reguły sadzenia
 
-Nagłówek: `poligon/world/plant_rules.h`. Przykład: `examples/plant_rules`. Test: `tests/plant_rules_test.cpp`.
+Nagłówek: `poligon/world/plant_rules.h`. Przykład: `examples/world/plant_rules`. Test: `tests/world/plant_rules_test.cpp`.
 
 - To, gdzie rosną rośliny, to dane: reguły w pliku poziomu (`poligon/world/level.h`), które czytają mapy generatora terenu. Reguła nazywa rodzaj i podaje gęstość (roślin na metr kwadratowy tam, gdzie każdy warunek jest w pełni spełniony), odstęp, zakres rozmiarów, warunki na mapach (`slope`, `height`, `moisture`, `sediment`, `rock`, `flow`, `water_distance`, `water_depth`, każdy jako dół, góra i zanik, patrz `MapConditions`), kępy (`patch ROZMIAR POKRYCIE`), obszar wokół startu gracza, `sink`, `align`, `on_water` i `seed`. `ParsePlantRules` czyta je z wierszy, które `LoadLevel` zostawia innym czytelnikom (podaj `GetPlantRuleWords()`); złe wiersze to błędy z numerem wiersza.
 - Reguły `plant` stawiają rzeczy raz, na obszarze (`PlacePlants`): roztrzęsiona siatka o danym odstępie, jeden kandydat na komórkę, zostawiany z prawdopodobieństwem gęstość × odstęp do kwadratu × waga warunków × kępy. Każda komórka decyduje ze swoich współrzędnych i ziarna, więc rozstawienie nie zależy od kolejności czegokolwiek. Reguły jednej grupy (`group`) dzielą siatkę (`PlacePlantGroup`): w każdej komórce rośnie najwyżej jedna z nich, wybrana z prawdopodobieństwami, jakie miałaby każda osobno, więc drzewa różnych rodzajów nigdy w siebie nie wchodzą.
@@ -102,7 +102,7 @@ Nagłówek: `poligon/world/procedural_plants.h`. Nie znaleziono darmowych (CC0) 
 
 ## Wydeptane ścieżki
 
-Nagłówek: `poligon/world/trample.h`. Test: część o wygniataniu w `tests/vegetation_render_test.cpp` i w `tests/plant_rules_test.cpp`.
+Nagłówek: `poligon/world/trample.h`. Test: część o wygniataniu w `tests/world/vegetation_render_test.cpp` i w `tests/world/plant_rules_test.cpp`.
 
 - `TrampleMap` to kwadratowa siatka (domyślnie 128 m, 256 komórek) wartości od 0 (nietknięte) do 1 (płasko) wokół gracza. Gra przygniata rośliny tam, gdzie coś chodzi (`Trample(position, radius, amount)`), pozwala im powoli się podnosić (`Recover`) i przesuwa siatkę za graczem o całe komórki (`Recenter`), więc wartości zostają na swoim miejscu na terenie. To zwykła arytmetyka na tickach gry, więc powtórki zostawiają te same ścieżki.
 - `Renderer::SetTrampleMap(&map)` kopiuje ją na kartę, gdy się zmieniła; shader wierzchołków instancji czyta ją przy podstawie każdej rośliny, a roślina, której materiał gnie się na wietrze (`wind_bend` powyżej 0), przechyla się w swoją stronę i obniża, do 15% wysokości, w każdym przebiegu (jej cień idzie za nią).

@@ -2,7 +2,7 @@
 
 How a model bends: a skeleton of joints, a mesh whose vertices follow them, and clips that say how the joints move over time.
 
-Headers: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/render/renderer.h`. Example: `examples/animation`. Test: `tests/skinning_render_test.cpp`.
+Headers: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/render/renderer.h`. Example: `examples/animation/animation`. Test: `tests/animation/skinning_render_test.cpp`.
 
 ## Terms
 

@@ -70,5 +70,5 @@ The engine is a set of static libraries, one per area. Each area has its public 
 
 - Engine code: a file in the area's folder (`engine/src/<area>/<module>/`), listed in that area's `CMakeLists.txt`; a public header in `engine/include/poligon/<area>/`. A new area needs a line in `engine/CMakeLists.txt` and in `tools/check_layers.ps1`.
 
-- Test: a file `tests/<name>.cpp` using `test::Expect(condition, "description")` from `tests/test_support.h` and ending `main` with `return test::ExitCode();`, plus an entry `poligon_add_test(<name>)` in `tests/CMakeLists.txt`.
-- Example: `examples/<name>/main.cpp` and an entry `poligon_add_example(<name>)` in `examples/CMakeLists.txt`. Every example is also a test; arguments after the name are passed when it runs.
+- Test: a file `tests/<area>/<name>.cpp` (the engine area it tests) using `test::Expect(condition, "description")` from `tests/test_support.h` and ending `main` with `return test::ExitCode();`, plus an entry in `tests/<area>/CMakeLists.txt`: `poligon_add_test(<name>)`, or `poligon_add_render_test(<name>)` for a test that renders (it then runs once per backend with the debug layer on, and gets the backend as its first argument).
+- Example: `examples/<area>/<name>/main.cpp` and an entry `poligon_add_example(<name>)` in `examples/<area>/CMakeLists.txt`. Every example is also a test; arguments after the name are passed when it runs.

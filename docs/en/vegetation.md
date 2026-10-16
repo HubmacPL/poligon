@@ -2,7 +2,7 @@
 
 Drawing plants, rocks and other things that stand around in great numbers: instancing, levels of detail, cells.
 
-Headers: `poligon/world/vegetation.h`, `poligon/world/ground_cover.h`, `poligon/world/plant_rules.h`, `poligon/world/procedural_plants.h`, `poligon/world/trample.h`, `poligon/render/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/render/impostor.h`. Tool: `impostor_baker`. Examples: `examples/vegetation`, `examples/impostor`. Tests: `tests/vegetation_render_test.cpp`, `tests/impostor_render_test.cpp`, the instancing part of `tests/scene_render_test.cpp`.
+Headers: `poligon/world/vegetation.h`, `poligon/world/ground_cover.h`, `poligon/world/plant_rules.h`, `poligon/world/procedural_plants.h`, `poligon/world/trample.h`, `poligon/render/renderer.h` (`DrawMeshInstances`, `BakeImpostor`, `DrawImpostorInstances`, `SetTrampleMap`), `poligon/render/impostor.h`. Tool: `impostor_baker`. Examples: `examples/world/vegetation`, `examples/render/impostor`. Tests: `tests/world/vegetation_render_test.cpp`, `tests/render/impostor_render_test.cpp`, the instancing part of `tests/render/scene_render_test.cpp`.
 
 **State:** instancing, levels of detail chosen by distance, cells, separate handling of shadows, impostors for the farthest level, fading between levels, tools for simpler levels of trees and for impostors. Not yet: wind, placing plants by rules of the terrain, plants made on the fly around the player.
 
@@ -51,7 +51,7 @@ vegetation.Draw(renderer, camera);
 
 ## Ground cover
 
-Grass, ferns, nettles, litter, small plants and pebbles: too many to store for a map, so they are made on the fly around the camera (`poligon/world/ground_cover.h`). Example: `examples/ground_cover`; test: `tests/ground_cover_test.cpp`.
+Grass, ferns, nettles, litter, small plants and pebbles: too many to store for a map, so they are made on the fly around the camera (`poligon/world/ground_cover.h`). Example: `examples/world/ground_cover`; test: `tests/world/ground_cover_test.cpp`.
 
 ```cpp
 poligon::GroundCoverLayer grass;
@@ -75,7 +75,7 @@ cover.Draw(renderer, camera);           // between BeginFrame and EndFrame
 
 ## Plant rules
 
-Header: `poligon/world/plant_rules.h`. Example: `examples/plant_rules`. Test: `tests/plant_rules_test.cpp`.
+Header: `poligon/world/plant_rules.h`. Example: `examples/world/plant_rules`. Test: `tests/world/plant_rules_test.cpp`.
 
 - Where plants grow is data: rules in the level file (`poligon/world/level.h`) that read the terrain generator's maps. A rule names a kind and gives a density (plants per square meter where every condition holds fully), a spacing, a range of sizes, conditions on the maps (`slope`, `height`, `moisture`, `sediment`, `rock`, `flow`, `water_distance`, `water_depth`, each low, high and fade, see `MapConditions`), clumps (`patch SIZE COVER`), an area around the player's start, `sink`, `align`, `on_water` and a `seed`. `ParsePlantRules` reads them from the lines `LoadLevel` keeps for other readers (pass `GetPlantRuleWords()`); bad lines are errors that name the line.
 - `plant` rules place things once, over an area (`PlacePlants`): a jittered grid of the spacing, one candidate per cell, kept with the probability density x spacing squared x the conditions' weight x the clumps. Each cell decides from its own coordinates and the seed, so placements do not depend on the order of anything. Rules of one `group` share a grid (`PlacePlantGroup`): in each cell at most one of them grows, chosen with the probabilities each would have alone, so trees of different kinds never stand in each other.
@@ -102,7 +102,7 @@ Header: `poligon/world/procedural_plants.h`. No free (CC0) models of reeds, catt
 
 ## Trampled paths
 
-Header: `poligon/world/trample.h`. Test: the trample part of `tests/vegetation_render_test.cpp` and of `tests/plant_rules_test.cpp`.
+Header: `poligon/world/trample.h`. Test: the trample part of `tests/world/vegetation_render_test.cpp` and of `tests/world/plant_rules_test.cpp`.
 
 - A `TrampleMap` is a square grid (128 m, 256 cells by default) of values 0 (untouched) to 1 (flat) around the player. The game presses plants down where something walks (`Trample(position, radius, amount)`), lets them stand up slowly (`Recover`), and moves the grid with the player in whole cells (`Recenter`), so values stay put on the land. It is plain arithmetic on the game's ticks, so replays leave the same paths.
 - `Renderer::SetTrampleMap(&map)` copies it to the graphics card when it changed; the instanced vertex shader reads it at each plant's foot, and a plant whose material bends in the wind (`wind_bend` above 0) leans over in a direction of its own and gets lower, down to 15% of its height, in every pass (its shadow follows).

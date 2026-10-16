@@ -2,7 +2,7 @@
 
 Bryły, które spadają, zderzają się i zatrzymują, postać, która po nich chodzi, i promienie do pytania, co leży w danym kierunku.
 
-Nagłówek: `poligon/physics/physics.h`. Przykład: `examples/physics`. Test: `tests/physics_test.cpp`.
+Nagłówek: `poligon/physics/physics.h`. Przykład: `examples/physics/physics`. Test: `tests/physics/physics_test.cpp`.
 
 ## Jak to działa
 

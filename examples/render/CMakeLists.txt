@@ -1,0 +1,8 @@
+poligon_add_example(renderer ${CMAKE_BINARY_DIR}/test_output/example_renderer.png)
+poligon_add_example(window_mode ${CMAKE_BINARY_DIR}/test_output/example_window_mode.png)
+poligon_add_example(environment ${CMAKE_BINARY_DIR}/test_output/example_environment.png)
+poligon_add_example(texture ${CMAKE_BINARY_DIR}/test_output)
+poligon_add_example(clouds ${CMAKE_BINARY_DIR}/test_output/example_clouds.png)
+poligon_add_example(impostor ${CMAKE_BINARY_DIR}/test_output/example_impostor.png)
+poligon_add_example(temporal_aa ${CMAKE_BINARY_DIR}/test_output/example_temporal_aa.png)
+poligon_add_example(graphics_quality ${CMAKE_BINARY_DIR}/test_output/example_graphics_quality.png medium)

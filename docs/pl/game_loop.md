@@ -1,7 +1,7 @@
 # Pętla gry i tryb bez okna
 
 Nagłówki: `poligon/core/game_loop.h`, `poligon/core/fixed_step_clock.h`, `poligon/core/command_line.h`, `poligon/core/fatal_error.h`.
-Przykłady: `examples/game_loop`, `examples/fixed_step_clock`, `examples/command_line`.
+Przykłady: `examples/core/game_loop`, `examples/core/fixed_step_clock`, `examples/core/command_line`.
 
 ## Pojęcia
 

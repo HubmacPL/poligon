@@ -1,0 +1,1 @@
+poligon_add_example(state_dump)

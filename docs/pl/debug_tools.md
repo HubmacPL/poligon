@@ -2,7 +2,7 @@
 
 Okna z suwakami i odczytami rysowane na działającej grze, kamera latająca swobodnie i podglądy pojedynczych etapów klatki. Są dla człowieka przy ekranie; wszystko, co zmieniają, można też podać uruchomieniu bez okna przez plik.
 
-Nagłówki: `poligon/debug/debug_ui.h`, `poligon/render/render_settings.h`, `poligon/debug/free_camera.h`. Przykład: `examples/debug_ui`.
+Nagłówki: `poligon/debug/debug_ui.h`, `poligon/render/render_settings.h`, `poligon/debug/free_camera.h`. Przykład: `examples/debug/debug_ui`.
 
 ## Okna
 
