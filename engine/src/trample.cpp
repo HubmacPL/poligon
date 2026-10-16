@@ -97,6 +97,16 @@ float TrampleMap::GetValue(const glm::vec2& position) const {
     return values_[static_cast<size_t>(z) * static_cast<size_t>(resolution_) + static_cast<size_t>(x)];
 }
 
+GroundMap TrampleMap::GetGroundMap() const {
+    GroundMap map;
+    map.values = GetBytes().data();
+    map.resolution = resolution_;
+    map.corner = origin_;
+    map.size = size_;
+    map.version = version_;
+    return map;
+}
+
 const std::vector<std::uint8_t>& TrampleMap::GetBytes() const {
     if (bytes_version_ != version_) {
         bytes_.resize(values_.size());

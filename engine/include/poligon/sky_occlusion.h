@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "poligon/math.h"
+#include "poligon/renderer.h"
 
 namespace poligon {
 
@@ -16,7 +17,7 @@ class Terrain;
 // and within a meter or two.
 //
 // The map is a grid over a square of the world (x, z), one byte per point.
-struct SkyOcclusionMap {
+struct SkyOcclusionMap : public GroundMapSource {
     int resolution = 0;        // points along each side
     glm::vec2 origin{0.0f};    // world x and z of the first point
     float spacing = 4.0f;      // meters between points
@@ -25,6 +26,9 @@ struct SkyOcclusionMap {
     std::uint32_t version = 0;
 
     float Get(glm::vec2 position) const;  // 1 outside the map
+    // The map as the renderer reads it (Renderer::SetSkyOcclusion): texel centers lie on the
+    // map's points, so the grid reaches half a spacing beyond the first and last point.
+    GroundMap GetGroundMap() const override;
 };
 
 // The land's part: at every point, the share of the sky above the horizon the land around

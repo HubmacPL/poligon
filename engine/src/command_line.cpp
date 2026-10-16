@@ -2,8 +2,8 @@
 
 #include <charconv>
 #include <cstring>
+#include <string>
 
-#include "poligon/graphics_quality.h"
 
 namespace poligon {
 
@@ -92,8 +92,10 @@ bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& opt
             if (value == nullptr) {
                 return false;
             }
-            GraphicsPreset preset = GraphicsPreset::High;
-            if (!ParseGraphicsPreset(value, preset)) {
+            // The names of GraphicsPreset (poligon/graphics_quality.h); render_settings_test
+            // checks that both lists agree.
+            const std::string name = value;
+            if (name != "low" && name != "medium" && name != "high" && name != "ultra") {
                 error = std::string("--quality needs low, medium, high or ultra, got \"") + value + "\"";
                 return false;
             }

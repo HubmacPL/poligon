@@ -16,7 +16,6 @@
 
 #include "poligon/fatal_error.h"
 #include "poligon/texture_compression.h"
-#include "poligon/sky_occlusion.h"
 #include "poligon/trample.h"
 #include "cloud_noise.h"
 #include "poligon_shaders/ao_blur_frag_dxil.h"
@@ -586,7 +585,7 @@ struct Renderer::Impl {
     std::vector<WaterCommand> water_commands;
     // Trampled plants (Renderer::SetTrampleMap): the map, its copy on the card and which
     // version of it that copy holds; trample_info goes to VertexFrameUniforms::trample.
-    const TrampleMap* trample_map = nullptr;
+    const GroundMapSource* trample_source = nullptr;
     SDL_GPUTexture* trample_texture = nullptr;
     int trample_resolution = 0;
     std::uint32_t trample_version = 0xFFFFFFFFu;
@@ -608,7 +607,8 @@ struct Renderer::Impl {
     SDL_GPUTexture* frame_cloud_shadow = nullptr;
     SDL_GPUTexture* frame_sky_occlusion = nullptr;
     // The sky occlusion map (Renderer::SetSkyOcclusion) and its copy on the card.
-    const SkyOcclusionMap* sky_occlusion_map = nullptr;
+    const GroundMapSource* sky_occlusion_source = nullptr;
+    GroundMap sky_map;  // this frame's
     SDL_GPUTexture* sky_occlusion_texture = nullptr;
     int sky_occlusion_resolution = 0;
     std::uint32_t sky_occlusion_version = 0xFFFFFFFFu;
@@ -2667,8 +2667,9 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->draw_commands.clear();
     impl_->water_commands.clear();
     // The sky occlusion map, copied to the card when it changed.
-    if (impl_->sky_occlusion_map != nullptr && impl_->sky_occlusion_map->resolution >= 2) {
-        const SkyOcclusionMap& map = *impl_->sky_occlusion_map;
+    impl_->sky_map = impl_->sky_occlusion_source != nullptr ? impl_->sky_occlusion_source->GetGroundMap() : GroundMap{};
+    if (impl_->sky_map.resolution >= 2 && impl_->sky_map.values != nullptr) {
+        const GroundMap& map = impl_->sky_map;
         if (impl_->sky_occlusion_texture == nullptr || impl_->sky_occlusion_resolution != map.resolution) {
             if (impl_->sky_occlusion_texture != nullptr) {
                 SDL_ReleaseGPUTexture(impl_->device, impl_->sky_occlusion_texture);
@@ -2689,7 +2690,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
             impl_->sky_occlusion_version = 0xFFFFFFFFu;
         }
         if (impl_->sky_occlusion_version != map.version) {
-            impl_->UploadR8(impl_->sky_occlusion_texture, map.values.data(), map.resolution);
+            impl_->UploadR8(impl_->sky_occlusion_texture, map.values, map.resolution);
             impl_->sky_occlusion_version = map.version;
         }
     }
@@ -2697,11 +2698,12 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
         impl_->CreateCloudTextures();
     }
     // The trample map, copied to the card when it changed.
-    if (impl_->trample_map == nullptr) {
+    const GroundMap trample = impl_->trample_source != nullptr ? impl_->trample_source->GetGroundMap() : GroundMap{};
+    if (trample.resolution < 2 || trample.values == nullptr) {
         impl_->trample_info = glm::vec4(0.0f);
     } else {
-        const TrampleMap& map = *impl_->trample_map;
-        if (impl_->trample_texture == nullptr || impl_->trample_resolution != map.GetResolution()) {
+        const GroundMap& map = trample;
+        if (impl_->trample_texture == nullptr || impl_->trample_resolution != map.resolution) {
             if (impl_->trample_texture != nullptr) {
                 SDL_ReleaseGPUTexture(impl_->device, impl_->trample_texture);
             }
@@ -2709,22 +2711,22 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
             info.type = SDL_GPU_TEXTURETYPE_2D;
             info.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
             info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-            info.width = static_cast<Uint32>(map.GetResolution());
-            info.height = static_cast<Uint32>(map.GetResolution());
+            info.width = static_cast<Uint32>(map.resolution);
+            info.height = static_cast<Uint32>(map.resolution);
             info.layer_count_or_depth = 1;
             info.num_levels = 1;
             impl_->trample_texture = SDL_CreateGPUTexture(impl_->device, &info);
             if (impl_->trample_texture == nullptr) {
                 FatalSdlError("cannot create trample texture");
             }
-            impl_->trample_resolution = map.GetResolution();
+            impl_->trample_resolution = map.resolution;
             impl_->trample_version = 0xFFFFFFFFu;
         }
-        if (impl_->trample_version != map.GetVersion()) {
-            impl_->UploadR8(impl_->trample_texture, map.GetBytes().data(), map.GetResolution());
-            impl_->trample_version = map.GetVersion();
+        if (impl_->trample_version != map.version) {
+            impl_->UploadR8(impl_->trample_texture, map.values, map.resolution);
+            impl_->trample_version = map.version;
         }
-        impl_->trample_info = glm::vec4(map.GetOrigin().x, map.GetOrigin().y, 1.0f / map.GetSize(), 1.0f);
+        impl_->trample_info = glm::vec4(map.corner.x, map.corner.y, 1.0f / map.size, 1.0f);
     }
     impl_->joint_palette.clear();
     impl_->instance_sources.clear();
@@ -3349,13 +3351,13 @@ void Renderer::PrepareClouds() {
     impl_->CreateCloudTextures();
 }
 
-void Renderer::SetSkyOcclusion(const SkyOcclusionMap* map) {
-    impl_->sky_occlusion_map = map;
+void Renderer::SetSkyOcclusion(const GroundMapSource* map) {
+    impl_->sky_occlusion_source = map;
     impl_->sky_occlusion_version = 0xFFFFFFFFu;
 }
 
-void Renderer::SetTrampleMap(const TrampleMap* map) {
-    impl_->trample_map = map;
+void Renderer::SetTrampleMap(const GroundMapSource* map) {
+    impl_->trample_source = map;
     impl_->trample_version = 0xFFFFFFFFu;
 }
 
@@ -3572,7 +3574,7 @@ void Renderer::EndFrame() {
         }
     }
     impl.frame_cloud_shadow = clouds_on && environment.cloud_shadows ? impl.cloud_shadow_target : impl.textures[impl.white_texture.id - 1];
-    impl.frame_sky_occlusion = impl.sky_occlusion_map != nullptr && impl.sky_occlusion_texture != nullptr
+    impl.frame_sky_occlusion = impl.sky_map.resolution >= 2 && impl.sky_occlusion_texture != nullptr
                                    ? impl.sky_occlusion_texture
                                    : impl.textures[impl.white_texture.id - 1];
 
@@ -3716,12 +3718,8 @@ void Renderer::EndFrame() {
         frame_uniforms.cascade_scale = cascades.tile_scale;
         frame_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
                                                      clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
-        if (impl.sky_occlusion_map != nullptr && impl.sky_occlusion_texture != nullptr) {
-            const SkyOcclusionMap& map = *impl.sky_occlusion_map;
-            const float extent = static_cast<float>(map.resolution - 1) * map.spacing;
-            // Texel centers lie on the map's points: shift by half a texel.
-            const float texel = map.spacing;
-            frame_uniforms.sky_occlusion_area = glm::vec4(map.origin - glm::vec2(texel * 0.5f), 1.0f / (extent + texel), 1.0f);
+        if (impl.sky_map.resolution >= 2 && impl.sky_occlusion_texture != nullptr) {
+            frame_uniforms.sky_occlusion_area = glm::vec4(impl.sky_map.corner, 1.0f / impl.sky_map.size, 1.0f);
         }
         frame_uniforms.aerial = glm::vec4(environment.sky_horizon.r * environment.sky_light_intensity,
                                           environment.sky_horizon.g * environment.sky_light_intensity,

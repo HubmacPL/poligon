@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "poligon/math.h"
+#include "poligon/renderer.h"
 
 namespace poligon {
 
@@ -17,7 +18,7 @@ namespace poligon {
 // on the land; what falls outside is forgotten. Everything is plain arithmetic on the game's
 // own ticks, so replays give the same paths.
 
-class TrampleMap {
+class TrampleMap : public GroundMapSource {
 public:
     // size: meters along each side; resolution: cells along each side.
     explicit TrampleMap(float size = 128.0f, int resolution = 256);
@@ -42,6 +43,8 @@ public:
     int GetResolution() const { return resolution_; }
     // Raised by every change, so the renderer uploads only when needed.
     std::uint32_t GetVersion() const { return version_; }
+    // The grid as the renderer reads it (Renderer::SetTrampleMap).
+    GroundMap GetGroundMap() const override;
 
 private:
     float size_;

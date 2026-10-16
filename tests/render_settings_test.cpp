@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 
+#include "poligon/command_line.h"
 #include "poligon/free_camera.h"
 #include "poligon/graphics_quality.h"
 #include "poligon/render_settings.h"
@@ -194,5 +195,16 @@ int main(int argc, char** argv) {
     }
 
     std::printf("render_settings_test finished\n");
+    // --quality takes exactly the names of the graphics presets (the command line checks them
+    // on its own, without the renderer).
+    for (const char* name : {"low", "medium", "high", "ultra", "extreme"}) {
+        const char* arguments[] = {"program", "--quality", name};
+        poligon::CommandLineOptions options;
+        std::string command_error;
+        poligon::GraphicsPreset preset = poligon::GraphicsPreset::High;
+        Expect(poligon::ParseCommandLine(3, arguments, options, command_error) == poligon::ParseGraphicsPreset(name, preset),
+               "--quality and the graphics presets know the same names");
+    }
+
     return test::ExitCode();
 }

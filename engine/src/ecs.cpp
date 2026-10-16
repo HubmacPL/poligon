@@ -1,7 +1,7 @@
 #include "poligon/ecs.h"
 
 #include "poligon/math.h"
-#include "poligon/renderer.h"
+#include "poligon/color.h"
 
 namespace poligon {
 

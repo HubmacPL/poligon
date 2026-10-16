@@ -3,17 +3,12 @@
 #include <cstdint>
 #include <memory>
 
+#include "poligon/color.h"
+#include "poligon/graphics_backend.h"
 #include "poligon/image.h"
 #include "poligon/math.h"
 
 namespace poligon {
-
-// Which graphics API the renderer runs on.
-enum class GraphicsBackend {
-    Default,     // the engine's preferred backend
-    Direct3D12,
-    Vulkan,
-};
 
 // How the wide range of scene brightness is squeezed into what a display can show.
 enum class ToneMapping {
@@ -21,14 +16,6 @@ enum class ToneMapping {
     Aces,  // filmic curve: bright areas roll off smoothly instead of clipping
 };
 
-// Color components. Material and light colors are linear and may exceed 1 for lights;
-// RendererConfig::clear_color is given as it should look on screen.
-struct Color {
-    float r = 1.0f;
-    float g = 1.0f;
-    float b = 1.0f;
-    float a = 1.0f;
-};
 
 // A picture of one stage of the frame instead of the finished frame, for finding out which
 // stage is responsible for something that looks wrong.
@@ -262,8 +249,25 @@ struct MeshHandle {
 };
 
 struct CompressedImage;  // poligon/texture_compression.h
-class TrampleMap;        // poligon/trample.h
-struct SkyOcclusionMap;  // poligon/sky_occlusion.h
+
+// A square grid of bytes laid over the ground (world x and z), as the renderer reads it for
+// trampled plants (Renderer::SetTrampleMap) and sky occlusion (Renderer::SetSkyOcclusion).
+struct GroundMap {
+    const std::uint8_t* values = nullptr;  // resolution x resolution, row by row from `corner`
+    int resolution = 0;
+    glm::vec2 corner{0.0f};  // world x and z of the grid's outer corner with the smallest x and z
+    float size = 0.0f;       // meters from edge to edge
+    std::uint32_t version = 0;  // changes whenever the values change; the renderer copies them only then
+};
+
+// Gives the renderer a GroundMap at the start of every frame. TrampleMap (poligon/trample.h)
+// and SkyOcclusionMap (poligon/sky_occlusion.h) are such sources, so the renderer needs to
+// know nothing of how they are made.
+class GroundMapSource {
+public:
+    virtual ~GroundMapSource() = default;
+    virtual GroundMap GetGroundMap() const = 0;
+};
 
 // Identifies a texture created by Renderer. An id of 0 means "no texture".
 struct TextureHandle {
@@ -521,11 +525,11 @@ public:
     // whose material bends in the wind (wind_bend above 0) read `map` at their foot, lean
     // over and get lower by its value. The map is copied when its version changes; it must
     // live as long as it is set. nullptr turns it off. See poligon/trample.h.
-    void SetTrampleMap(const TrampleMap* map);
+    void SetTrampleMap(const GroundMapSource* map);
     // How much of the sky each place sees (hills, tree crowns): sky light on every surface is
     // darkened by it. Copied when its version changes; it must live as long as it is set.
     // nullptr turns it off. See poligon/sky_occlusion.h.
-    void SetSkyOcclusion(const SkyOcclusionMap* map);
+    void SetSkyOcclusion(const GroundMapSource* map);
     // Makes the noise volumes clouds are shaped from (about a second). Otherwise the first
     // frame with Environment::clouds does it; call this while loading to keep that frame short.
     void PrepareClouds();

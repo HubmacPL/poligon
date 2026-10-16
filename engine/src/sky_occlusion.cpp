@@ -8,6 +8,19 @@
 
 namespace poligon {
 
+GroundMap SkyOcclusionMap::GetGroundMap() const {
+    GroundMap map;
+    if (resolution < 2 || values.size() < static_cast<size_t>(resolution) * static_cast<size_t>(resolution)) {
+        return map;
+    }
+    map.values = values.data();
+    map.resolution = resolution;
+    map.corner = origin - glm::vec2(spacing * 0.5f);
+    map.size = static_cast<float>(resolution) * spacing;
+    map.version = version;
+    return map;
+}
+
 float SkyOcclusionMap::Get(glm::vec2 position) const {
     if (resolution < 2 || values.empty()) {
         return 1.0f;

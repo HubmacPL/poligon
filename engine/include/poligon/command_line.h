@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "poligon/renderer.h"
+#include "poligon/graphics_backend.h"
 
 namespace poligon {
 
