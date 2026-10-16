@@ -95,8 +95,13 @@ bool PackAssets(const char* cooked_folder, const char* archive_path, std::string
 // instances, skeleton, clips; vertices are kept for physics and placement), the simpler
 // levels and the impostor.
 struct LoadedModel {
+    // A cooked model has no clips here (model.animations is empty): they come built, in
+    // `animations`.
     Model model;
     RenderModel render;
+    // The skeleton and clips ready to play, loaded from the cooked ozz-animation archive
+    // without building; null when the model has no clips. Shared by every character of the model.
+    std::shared_ptr<const AnimationSet> animations;
     // One entry per simpler level: its model data (vertices only, no textures) and meshes
     // on the graphics card. Its materials are the full model's, matched by name.
     std::vector<Model> lod_models;

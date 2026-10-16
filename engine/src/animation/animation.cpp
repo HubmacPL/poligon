@@ -12,6 +12,8 @@
 #include <ozz/animation/runtime/local_to_model_job.h>
 #include <ozz/animation/runtime/sampling_job.h>
 #include <ozz/animation/runtime/skeleton.h>
+#include <ozz/base/io/archive.h>
+#include <ozz/base/io/stream.h>
 #include <ozz/base/maths/simd_math.h>
 #include <ozz/base/maths/soa_transform.h>
 #include <ozz/base/memory/unique_ptr.h>
@@ -193,7 +195,75 @@ AnimationSet::AnimationSet(const Skeleton& skeleton, const std::vector<Animation
     }
 }
 
+AnimationSet::AnimationSet() : impl_(std::make_unique<Impl>()) {}
+
 AnimationSet::~AnimationSet() = default;
+
+std::vector<std::uint8_t> AnimationSet::SaveArchive() const {
+    ozz::io::MemoryStream stream;
+    ozz::io::OArchive archive(&stream);
+    archive << *impl_->skeleton;
+    archive << static_cast<std::uint32_t>(impl_->clips.size());
+    for (const ozz::unique_ptr<ozz::animation::Animation>& clip : impl_->clips) {
+        archive << *clip;
+    }
+    std::vector<std::uint8_t> bytes(stream.Size());
+    stream.Seek(0, ozz::io::Stream::kSet);
+    if (stream.Read(bytes.data(), bytes.size()) != bytes.size()) {
+        FatalError("AnimationSet::SaveArchive: cannot read back the archive");
+    }
+    return bytes;
+}
+
+std::unique_ptr<AnimationSet> AnimationSet::LoadArchive(const Skeleton& skeleton, const std::vector<std::uint8_t>& bytes,
+                                                        std::string& error) {
+    ozz::io::MemoryStream stream;
+    if (bytes.empty() || stream.Write(bytes.data(), bytes.size()) != bytes.size()) {
+        error = "empty animation archive";
+        return nullptr;
+    }
+    stream.Seek(0, ozz::io::Stream::kSet);
+    ozz::io::IArchive archive(&stream);
+    if (!archive.TestTag<ozz::animation::Skeleton>()) {
+        error = "not an ozz-animation archive with a skeleton";
+        return nullptr;
+    }
+    std::unique_ptr<AnimationSet> set(new AnimationSet());
+    Impl& impl = *set->impl_;
+    impl.skeleton = ozz::make_unique<ozz::animation::Skeleton>();
+    archive >> *impl.skeleton;
+    // The joints carry their index in their names (see AddChildren): they must be ours.
+    const size_t joint_count = skeleton.joints.size();
+    bool fits = impl.skeleton->num_joints() == static_cast<int>(joint_count);
+    for (size_t i = 0; fits && i < joint_count; ++i) {
+        fits = std::to_string(i) + ":" + skeleton.joints[i].name == impl.skeleton->joint_names()[i];
+    }
+    if (!fits) {
+        error = "the animation archive was made for another skeleton";
+        return nullptr;
+    }
+    std::uint32_t clip_count = 0;
+    archive >> clip_count;
+    for (std::uint32_t i = 0; i < clip_count; ++i) {
+        if (!archive.TestTag<ozz::animation::Animation>()) {
+            error = "the animation archive is cut short";
+            return nullptr;
+        }
+        ozz::unique_ptr<ozz::animation::Animation> clip = ozz::make_unique<ozz::animation::Animation>();
+        archive >> *clip;
+        if (clip->num_tracks() != static_cast<int>(joint_count)) {
+            error = "a clip in the animation archive does not fit the skeleton";
+            return nullptr;
+        }
+        impl.clip_names.push_back(clip->name());
+        impl.clips.push_back(std::move(clip));
+    }
+    for (const Joint& joint : skeleton.joints) {
+        impl.inverse_binds.push_back(joint.inverse_bind);
+    }
+    impl.rest_matrices = ComputeJointMatrices(skeleton, GetRestPose(skeleton));
+    return set;
+}
 
 int AnimationSet::GetJointCount() const {
     return impl_->skeleton->num_joints();

@@ -19,7 +19,8 @@ namespace fs = std::filesystem;
 
 // Raise whenever cooked files change for the same sources: the cooked folder keeps this
 // number in cook_version.txt, and a different number recooks everything.
-constexpr int kCookVersion = 1;
+// 2: animation clips stored built, as an ozz-animation archive, instead of as keys.
+constexpr int kCookVersion = 2;
 
 // --- Binary writing and reading for cooked files ---
 
@@ -157,21 +158,6 @@ void WriteModelData(Writer& writer, const Model& model) {
         writer.Raw(joint.rest.scale);
         writer.Raw(joint.inverse_bind);
     }
-    writer.Raw(static_cast<std::uint32_t>(model.animations.size()));
-    for (const AnimationClip& clip : model.animations) {
-        writer.String(clip.name);
-        writer.Raw(clip.duration_seconds);
-        writer.Raw(static_cast<std::uint32_t>(clip.channels.size()));
-        for (const AnimationChannel& channel : clip.channels) {
-            writer.Raw(static_cast<std::int32_t>(channel.joint));
-            writer.Array(channel.translation_times);
-            writer.Array(channel.translations);
-            writer.Array(channel.rotation_times);
-            writer.Array(channel.rotations);
-            writer.Array(channel.scale_times);
-            writer.Array(channel.scales);
-        }
-    }
     writer.Raw(model.bounds_min);
     writer.Raw(model.bounds_max);
 }
@@ -232,26 +218,6 @@ bool ReadModelData(Reader& reader, Model& model) {
         }
         joint.parent = parent;
     }
-    if (!reader.Raw(count)) {
-        return false;
-    }
-    model.animations.resize(count);
-    for (AnimationClip& clip : model.animations) {
-        std::uint32_t channel_count = 0;
-        if (!reader.String(clip.name) || !reader.Raw(clip.duration_seconds) || !reader.Raw(channel_count)) {
-            return false;
-        }
-        clip.channels.resize(channel_count);
-        for (AnimationChannel& channel : clip.channels) {
-            std::int32_t joint = 0;
-            if (!reader.Raw(joint) || !reader.Array(channel.translation_times) || !reader.Array(channel.translations) ||
-                !reader.Array(channel.rotation_times) || !reader.Array(channel.rotations) || !reader.Array(channel.scale_times) ||
-                !reader.Array(channel.scales)) {
-                return false;
-            }
-            channel.joint = joint;
-        }
-    }
     return reader.Raw(model.bounds_min) && reader.Raw(model.bounds_max);
 }
 
@@ -307,6 +273,13 @@ bool CookModel(const AssetEntry& entry, const fs::path& source_folder, const fs:
     const std::string header = "poligon-model 1\n";
     writer.data.insert(writer.data.end(), header.begin(), header.end());
     WriteModelData(writer, model);
+    // The skeleton and clips, built by ozz-animation and stored as its archive, so that
+    // loading needs no building (empty when the model has no clips).
+    std::vector<std::uint8_t> animation_archive;
+    if (!model.animations.empty() && !model.skeleton.joints.empty()) {
+        animation_archive = AnimationSet(model.skeleton, model.animations).SaveArchive();
+    }
+    writer.Array(animation_archive);
     // Each material's three images, compressed: color (BC1, or BC3 for cut-outs), normal
     // map (BC5: x and y), occlusion-roughness-metallic (BC1).
     for (const ModelMaterial& material : model.materials) {
@@ -722,9 +695,18 @@ const LoadedModel* AssetLibrary::LoadModel(Renderer& renderer, const std::string
     }
     auto loaded = std::make_unique<LoadedModel>();
     Reader reader(bytes.data() + header.size(), bytes.size() - header.size());
-    if (!ReadModelData(reader, loaded->model)) {
+    std::vector<std::uint8_t> animation_archive;
+    if (!ReadModelData(reader, loaded->model) || !reader.Array(animation_archive)) {
         error = name + ": the model file is broken";
         return nullptr;
+    }
+    if (!animation_archive.empty()) {
+        std::string animation_error;
+        loaded->animations = AnimationSet::LoadArchive(loaded->model.skeleton, animation_archive, animation_error);
+        if (loaded->animations == nullptr) {
+            error = name + ": " + animation_error;
+            return nullptr;
+        }
     }
     std::vector<CompressedImage> images(loaded->model.materials.size() * 3);
     std::vector<bool> present(images.size(), false);

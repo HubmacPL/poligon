@@ -1,7 +1,8 @@
 // Checks the asset system: block compression (sizes, levels, repeatable bytes, the file
 // format), the asset list (and its error messages), cooking only what changed, loading by
-// name from the cooked folder and from an archive, drawing a cooked textured model, plant
-// variants split from one model file, and the level file.
+// name from the cooked folder and from an archive, drawing a cooked textured model, a cooked
+// animated model whose clips come built (an ozz-animation archive) and play as the file's
+// own, plant variants split from one model file, and the level file.
 // Usage: assets_test d3d12|vulkan OUTPUT_DIRECTORY
 #include <cmath>
 #include <cstdio>
@@ -9,8 +10,11 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
+#include "poligon/animation/animation.h"
 #include "poligon/assets/assets.h"
+#include "poligon/assets/model.h"
 #include "poligon/world/level.h"
 #include "poligon/world/plants.h"
 #include "poligon/render/renderer.h"
@@ -71,6 +75,64 @@ const char* kCubesMtl = R"(newmtl painted
 Kd 1 1 1
 map_Kd paint.png
 )";
+
+// A skinned triangle with two joints, "root" and "arm" (1 m up; the loader adds the scene's
+// root above them), and one clip, "lift", that turns the arm by 90 degrees about z in a
+// second. Its data is in MakeArmBin's layout.
+const char* kArmGltf = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0, 1]}],
+  "nodes": [
+    {"name": "body", "mesh": 0, "skin": 0},
+    {"name": "root", "children": [2]},
+    {"name": "arm", "translation": [0, 1, 0]}
+  ],
+  "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2}, "indices": 3}]}],
+  "skins": [{"joints": [1, 2], "inverseBindMatrices": 4}],
+  "animations": [{"name": "lift", "channels": [{"sampler": 0, "target": {"node": 2, "path": "rotation"}}],
+                  "samplers": [{"input": 5, "output": 6, "interpolation": "LINEAR"}]}],
+  "buffers": [{"uri": "arm.bin", "byteLength": 272}],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 12},
+    {"buffer": 0, "byteOffset": 48, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 96, "byteLength": 6},
+    {"buffer": 0, "byteOffset": 104, "byteLength": 128},
+    {"buffer": 0, "byteOffset": 232, "byteLength": 8},
+    {"buffer": 0, "byteOffset": 240, "byteLength": 32}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 2, 0]},
+    {"bufferView": 1, "componentType": 5121, "count": 3, "type": "VEC4"},
+    {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"},
+    {"bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4"},
+    {"bufferView": 5, "componentType": 5126, "count": 2, "type": "SCALAR", "min": [0], "max": [1]},
+    {"bufferView": 6, "componentType": 5126, "count": 2, "type": "VEC4"}
+  ]
+})";
+
+// The binary part of kArmGltf: positions, joints, weights, indices, inverse bind matrices,
+// key times, key rotations.
+std::vector<std::uint8_t> MakeArmBin() {
+    std::vector<std::uint8_t> bytes;
+    const auto floats = [&bytes](std::initializer_list<float> values) {
+        for (const float value : values) {
+            const auto* raw = reinterpret_cast<const std::uint8_t*>(&value);
+            bytes.insert(bytes.end(), raw, raw + sizeof(float));
+        }
+    };
+    floats({0, 0, 0, 0, 2, 0, 1, 0, 0});                                // positions
+    bytes.insert(bytes.end(), {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0});    // joints
+    floats({1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0});                       // weights
+    bytes.insert(bytes.end(), {0, 0, 1, 0, 2, 0, 0, 0});                // indices and 2 bytes of padding
+    floats({1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});           // root: identity
+    floats({1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1, 0, 1});          // arm: 1 m down
+    floats({0, 1});                                                     // key times
+    floats({0, 0, 0, 1, 0, 0, 0.70710678f, 0.70710678f});              // key rotations
+    return bytes;
+}
 
 } // namespace
 
@@ -217,6 +279,59 @@ int main(int argc, char** argv) {
             }
             Expect(std::abs(middle[0] - 40) <= 8 && std::abs(middle[1] - 200) <= 8 && std::abs(middle[2] - 90) <= 8,
                    "the cooked, compressed texture draws in its color");
+        }
+    }
+
+    // --- A cooked animated model: its clips come built, and play as the file's own ---
+    {
+        WriteText(source / "arm.gltf", kArmGltf);
+        const std::vector<std::uint8_t> arm_bin = MakeArmBin();
+        std::ofstream(source / "arm.bin", std::ios::binary)
+            .write(reinterpret_cast<const char*>(arm_bin.data()), static_cast<std::streamsize>(arm_bin.size()));
+        const fs::path animated_list_path = root / "animated.txt";
+        WriteText(animated_list_path, "poligon-assets 1\n\nmodel animals/arm\nsource arm.gltf\n");
+        poligon::AssetList animated_list;
+        const fs::path animated_cooked = root / "cooked_animated";
+        Expect(poligon::LoadAssetList(animated_list_path.string().c_str(), animated_list, error), "the second list loads");
+        const poligon::CookReport cook = poligon::CookAssets(animated_list, animated_list_path.string().c_str(),
+                                                             source.string().c_str(), animated_cooked.string().c_str());
+        if (!cook.errors.empty()) {
+            std::printf("  %s\n", cook.errors[0].c_str());
+        }
+        Expect(cook.cooked == 1 && cook.errors.empty(), "the animated model is cooked");
+
+        poligon::Model from_file;
+        Expect(poligon::LoadModelFromFile((source / "arm.gltf").string().c_str(), from_file, error) &&
+                   from_file.skeleton.joints.size() >= 2 && from_file.animations.size() == 1,
+               "the animated test model has its joints and one clip");
+        poligon::Renderer renderer(config);
+        poligon::AssetLibrary library;
+        Expect(library.Open(animated_cooked.string().c_str(), error), "the animated cooked folder opens");
+        const poligon::LoadedModel* arm = library.LoadModel(renderer, "animals/arm", error);
+        Expect(arm != nullptr && arm->animations != nullptr && arm->model.animations.empty(),
+               "a cooked model's clips come built, not as keys");
+        if (arm != nullptr && arm->animations != nullptr && !from_file.animations.empty()) {
+            const poligon::AnimationSet& cooked_set = *arm->animations;
+            Expect(cooked_set.GetClipCount() == 1 && std::string(cooked_set.GetClipName(0)) == from_file.animations[0].name &&
+                       std::fabs(cooked_set.GetClipDuration(0) - 1.0f) < 1e-4f,
+                   "the cooked clip keeps its name and length");
+            const poligon::AnimationSet file_set(from_file.skeleton, from_file.animations);
+            poligon::AnimationPlayer cooked_player(cooked_set);
+            poligon::AnimationPlayer file_player(file_set);
+            cooked_player.Play(0);
+            file_player.Play(0);
+            bool same = true;
+            bool moved = false;
+            const std::vector<glm::mat4> start = cooked_player.GetJointMatrices();
+            for (int tick = 0; tick < 50; ++tick) {
+                cooked_player.Update(1.0f / 60.0f);
+                file_player.Update(1.0f / 60.0f);
+                const std::vector<glm::mat4>& a = cooked_player.GetJointMatrices();
+                const std::vector<glm::mat4>& b = file_player.GetJointMatrices();
+                same = same && a == b;
+                moved = moved || a != start;
+            }
+            Expect(same && moved, "the cooked clip plays exactly as the one built from the file");
         }
     }
 

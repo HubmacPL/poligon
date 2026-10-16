@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -87,7 +88,18 @@ public:
     // Index of the clip with this name, or -1.
     int FindClip(const char* name) const;
 
+    // The skeleton and every clip, built, in ozz-animation's own archive format (its file
+    // format for built skeletons and animations). The asset cooker stores this, so that a
+    // game loads clips ready to play instead of building them (LoadArchive).
+    std::vector<std::uint8_t> SaveArchive() const;
+    // A set from SaveArchive's bytes, without building anything. `skeleton` must be the one
+    // the archive was made from (the same joints in the same order); it gives the bind
+    // matrices. nullptr and `error` when the bytes are not such an archive or do not fit.
+    static std::unique_ptr<AnimationSet> LoadArchive(const Skeleton& skeleton, const std::vector<std::uint8_t>& archive,
+                                                     std::string& error);
+
 private:
+    AnimationSet();
     friend class AnimationPlayer;
     struct Impl;
     std::unique_ptr<Impl> impl_;

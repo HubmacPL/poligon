@@ -31,6 +31,7 @@ poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices())
 ```
 
 - `AnimationSet` przygotowuje szkielet i jego klipy do odtwarzania; buduje się go raz na model i współdzieli. `AnimationPlayer` trzyma czas jednej postaci. Zestaw musi żyć dłużej niż jego odtwarzacze.
+- Wypieczony model (poligon/assets/assets.h) przynosi zestaw gotowy: `LoadedModel::animations`, wczytany z archiwum ozz-animation zapisanego przez wypiekacz, bez budowania. `AnimationSet::SaveArchive()` daje to archiwum (własny format ozz dla zbudowanych szkieletów i klipów), a `AnimationSet::LoadArchive(szkielet, bajty, błąd)` wczytuje je z powrotem dla szkieletu, z którego powstało; wczytany zestaw gra dokładnie tak jak zapisany (`tests/animation/animation_archive_test.cpp`). Budowanie z klipów zostaje dla modeli czytanych prosto z plików (przeglądarka, przykłady). Gry nadal linkują więc część ozz do budowania; zostawienie jej tylko wypiekaczowi wymagałoby podziału biblioteki animacji na dwie.
 - `Play(clip, fade_seconds, loop)` zaczyna klip od początku. To, co grało, wygasa przez `fade_seconds`, a nowy klip w tym czasie narasta, więc chód przechodzi w bieg bez szarpnięcia. Klip zapętlony zaczyna się od nowa po końcu; niezapętlony zatrzymuje się na ostatniej chwili (`IsFinished()`).
 - `SetSpeed(2.0f)` gra dwa razy szybciej; `GetClip()`, `GetTime()` mówią, gdzie jest odtwarzacz.
 - Czas rusza się tylko w `Update`, o podaną wartość. Przy stałym ticku odtwarzanie jest przez to powtarzalne: te same kroki dają macierze stawów identyczne co do bitu (sprawdzane testem).

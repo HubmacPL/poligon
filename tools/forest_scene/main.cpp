@@ -855,7 +855,7 @@ private:
         std::string error;
         for (const char* name : {"animals/fox", "animals/fox_sample"}) {
             loaded = library_.LoadModel(renderer_, name, error);
-            if (loaded != nullptr && !loaded->model.animations.empty()) {
+            if (loaded != nullptr && loaded->animations != nullptr) {
                 std::printf("forest_scene: fox model %s\n", name);
                 break;
             }
@@ -867,7 +867,8 @@ private:
         }
         const poligon::Model& model = loaded->model;
         fox_model_ = loaded->render;
-        fox_animations_ = std::make_unique<poligon::AnimationSet>(model.skeleton, model.animations);
+        // Cooked clips come built (an ozz-animation archive): nothing to prepare here.
+        fox_animations_ = loaded->animations;
         // The model is in centimeters and rather large for a fox.
         fox_scale_ = 0.45f / (model.bounds_max.y - model.bounds_min.y);
 
@@ -1116,7 +1117,7 @@ private:
     poligon::RenderModel fox_model_;
     float fox_scale_ = 1.0f;
     // Players refer to the set, so it is declared before them and destroyed after them.
-    std::unique_ptr<poligon::AnimationSet> fox_animations_;
+    std::shared_ptr<const poligon::AnimationSet> fox_animations_;
     std::vector<Animal> animals_;
     float time_seconds_ = 0.0f;
     double cpu_milliseconds_sum_ = 0.0;
