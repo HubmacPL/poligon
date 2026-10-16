@@ -570,6 +570,46 @@ int main(int argc, char** argv) {
         Expect(is_white(top), "a material without a wind response ignores the wind");
     }
 
+    // --- A change of size between frames (Renderer::SetWindowMode, without a window) ---
+    // Every image that depends on the size is made again: the picture comes out at the new
+    // size, with ambient occlusion, fog and anti-aliasing working as before.
+    {
+        poligon::RendererConfig config = MakeConfig(backend);
+        config.post.temporal_aa = true;
+        poligon::Renderer renderer(config);
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        const poligon::MeshHandle cube = renderer.CreateCubeMesh();
+        poligon::Camera camera;
+        camera.position = {0.0f, 3.0f, 5.0f};
+        camera.target = {0.0f, 0.3f, 0.0f};
+        poligon::Environment environment;
+        environment.ambient_occlusion = true;
+        environment.volumetric_fog = true;
+        environment.fog_density = 0.01f;
+        const auto draw = [&] {
+            renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), MakeMatte({1.0f, 0.0f, 0.0f, 1.0f}));
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+        };
+        draw();
+        Expect(renderer.GetWindowMode() == poligon::WindowMode::Windowed, "a renderer starts windowed");
+        Expect(!renderer.SetWindowMode(poligon::WindowMode::Windowed, 8, 8), "a size below 16 pixels is refused");
+        Expect(renderer.GetWidth() == kSize, "a refused size changes nothing");
+        Expect(renderer.SetWindowMode(poligon::WindowMode::Fullscreen, 384, 192), "the size can change between frames");
+        draw();
+        Expect(renderer.GetWindowMode() == poligon::WindowMode::Fullscreen && renderer.GetWidth() == 384 &&
+                   renderer.GetHeight() == 192 && frame.width == 384 && frame.height == 192,
+               "the next frame has the new size");
+        // The cube stays in the middle of the picture, red, whatever the size.
+        const std::uint8_t* middle = &frame.pixels[static_cast<size_t>((frame.height / 2) * frame.width + frame.width / 2) * 4];
+        Expect(middle[0] > 120 && middle[1] < 60, "the picture at the new size shows the scene");
+        Expect(renderer.SetWindowMode(poligon::WindowMode::Windowed, kSize, kSize), "and back");
+        draw();
+        Expect(frame.width == kSize && frame.height == kSize, "back at the first size");
+    }
+
     std::printf("effects_render_test finished\n");
     return test::ExitCode();
 }

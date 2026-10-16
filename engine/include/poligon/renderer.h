@@ -87,6 +87,14 @@ struct PostSettings {
     float vignette = 0.0f;
 };
 
+// How the window is shown (Renderer::SetWindowMode).
+enum class WindowMode {
+    Windowed,
+    // Exclusive fullscreen: the display switches to the asked resolution and only the game
+    // is shown, as in most games; not a borderless window over the desktop.
+    Fullscreen,
+};
+
 struct RendererConfig {
     int width = 1280;
     int height = 720;
@@ -618,6 +626,13 @@ public:
     int GetRenderHeight() const;
     // Changes the text in the window's title bar. Does nothing in headless mode.
     void SetWindowTitle(const char* title);
+    // Shows the game in a window of width x height, or fullscreen with the display switched
+    // to that resolution (WindowMode::Fullscreen). The picture is drawn at the new size from
+    // the next frame on (every image that depends on it is made again). Call outside
+    // BeginFrame/EndFrame. Returns false, and changes nothing, when the display has no mode of
+    // exactly that size. Without a window (headless) only the picture's size changes.
+    bool SetWindowMode(WindowMode mode, int width, int height);
+    WindowMode GetWindowMode() const;
 
 private:
     TextureHandle CreateTextureArray(const CompressedImage* images, int count, bool plain);

@@ -16,12 +16,14 @@
 //   TURN TILT   where to look, in degrees (default: towards the lake, slightly down)
 //   collision   the word itself: start with the collision shapes shown
 //   --render-settings FILE   the look to start with, as saved from the settings window
+//   --record FILE, --replay FILE   write or play back the input (docs/en/input.md)
 //
 // Mouse: hold the left button and move to look around.
 // Keys:  W/S walk, A/D step sideways, Left/Right turn, Up/Down look up and down, hold
 //        Left Shift to run, Space to jump. F switches between walking and flying (then E/Q
 //        rise and sink). T throws a crate, B shows the collision shapes as colored boxes.
-//        Tab hides and shows the debug windows.
+//        Tab hides and shows the debug windows. F11 switches between a 1280 x 720 window
+//        and fullscreen at 1920 x 1080 (the display changes its resolution).
 // Walking is done by the physics world: trunks, rocks and stumps block the way.
 // The "Render settings" window changes the look while the program runs; its Save button
 // writes forest_render_settings.txt into the poligon-assets folder.
@@ -158,6 +160,7 @@ struct ForestActions {
     poligon::InputAction rise;
     poligon::InputAction toggle_fly;
     poligon::InputAction toggle_windows;
+    poligon::InputAction toggle_fullscreen;
     poligon::InputAction jump;
     poligon::InputAction throw_crate;
     poligon::InputAction toggle_collision_view;
@@ -176,6 +179,7 @@ ForestActions SetUpInput(poligon::Input& input) {
     actions.rise = input.AddAction("rise");
     actions.toggle_fly = input.AddAction("toggle_fly");
     actions.toggle_windows = input.AddAction("toggle_windows");
+    actions.toggle_fullscreen = input.AddAction("toggle_fullscreen");
     actions.jump = input.AddAction("jump");
     actions.throw_crate = input.AddAction("throw_crate");
     actions.toggle_collision_view = input.AddAction("toggle_collision_view");
@@ -196,6 +200,7 @@ ForestActions SetUpInput(poligon::Input& input) {
     input.BindKey(actions.rise, poligon::Key::Q, -1.0f);
     input.BindKey(actions.toggle_fly, poligon::Key::F);
     input.BindKey(actions.toggle_windows, poligon::Key::Tab);
+    input.BindKey(actions.toggle_fullscreen, poligon::Key::F11);
     input.BindKey(actions.jump, poligon::Key::Space);
     input.BindKey(actions.throw_crate, poligon::Key::T);
     input.BindKey(actions.toggle_collision_view, poligon::Key::B);
@@ -269,6 +274,19 @@ public:
         if (!poligon::ProcessPlatformEvents()) {
             loop.RequestQuit();
         }
+        // F11 was pressed during the last ticks: the window mode changes between frames.
+        if (fullscreen_toggle_pending_) {
+            fullscreen_toggle_pending_ = false;
+            const bool to_fullscreen = renderer_.GetWindowMode() == poligon::WindowMode::Windowed;
+            const bool done = to_fullscreen ? renderer_.SetWindowMode(poligon::WindowMode::Fullscreen, 1920, 1080)
+                                            : renderer_.SetWindowMode(poligon::WindowMode::Windowed, 1280, 720);
+            if (done) {
+                std::printf("forest_scene: %s, %d x %d\n", to_fullscreen ? "fullscreen" : "window", renderer_.GetWidth(),
+                            renderer_.GetHeight());
+            } else {
+                std::printf("forest_scene: the display has no 1920 x 1080 mode; staying in the window\n");
+            }
+        }
     }
 
     void FixedUpdate(poligon::GameLoop& /*loop*/, const poligon::TickInfo& tick) override {
@@ -277,6 +295,9 @@ public:
         }
         if (input_.WasPressed(actions_.toggle_windows)) {
             show_windows_ = !show_windows_;
+        }
+        if (input_.WasPressed(actions_.toggle_fullscreen)) {
+            fullscreen_toggle_pending_ = true;
         }
 
         const float delta = static_cast<float>(tick.delta_seconds);
@@ -1117,6 +1138,7 @@ private:
     poligon::FreeCamera camera_;
     bool flying_ = false;
     bool show_windows_ = true;
+    bool fullscreen_toggle_pending_ = false;
 };
 
 // The look the forest starts with: late afternoon, a warm and fairly low sun, so that
@@ -1204,7 +1226,7 @@ int main(int argc, char** argv) {
                      error.c_str());
         return 2;
     }
-    if (options.headless && options.ticks == 0) {
+    if (options.headless && options.ticks == 0 && options.replay_path.empty()) {
         options.ticks = 1;
     }
 
@@ -1249,10 +1271,25 @@ int main(int argc, char** argv) {
     poligon::ApplyGraphicsQuality(settings.quality, renderer_config);
     poligon::Renderer renderer(renderer_config);
 
+    // Input: a recording if one is given (--replay), otherwise the keyboard and mouse when
+    // there is a window; --record writes every tick's actions to a file.
+    constexpr int kTicksPerSecond = 60;
     poligon::Input input;
     const ForestActions actions = SetUpInput(input);
-    if (!options.headless) {
+    if (!options.replay_path.empty()) {
+        if (!input.StartReplay(options.replay_path.c_str(), kTicksPerSecond, error)) {
+            std::fprintf(stderr, "forest_scene: %s\n", error.c_str());
+            return 2;
+        }
+        if (options.ticks == 0) {
+            options.ticks = input.GetReplayTickCount();
+        }
+    } else if (!options.headless) {
         input.UseLiveDevices();
+    }
+    if (!options.record_path.empty() && !input.StartRecording(options.record_path.c_str(), kTicksPerSecond, error)) {
+        std::fprintf(stderr, "forest_scene: %s\n", error.c_str());
+        return 2;
     }
 
     const auto load_start = std::chrono::steady_clock::now();
@@ -1277,13 +1314,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 #ifdef NDEBUG
-    renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, F fly, Tab windows, drag the mouse to look)");
+    renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, F fly, Tab windows, F11 full screen, drag the mouse to look)");
 #else
     renderer.SetWindowTitle("Poligon forest scene  [DEBUG BUILD, slow: use build/release/bin]");
 #endif
 
     poligon::GameLoopConfig loop_config;
     loop_config.headless = options.headless;
+    loop_config.ticks_per_second = kTicksPerSecond;
     loop_config.max_ticks = options.ticks;
     loop_config.render_every_iteration = !options.headless;
     loop_config.input = &input;

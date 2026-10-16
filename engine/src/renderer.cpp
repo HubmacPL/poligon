@@ -700,6 +700,7 @@ struct Renderer::Impl {
     SDL_GPUTexture* taa_targets[2] = {nullptr, nullptr};
     int taa_index = 0;
     bool has_taa_history = false;
+    WindowMode window_mode = WindowMode::Windowed;
     glm::mat4 previous_view_projection{1.0f};
     glm::vec3 previous_camera_position{0.0f};
     std::uint64_t frame_index = 0;
@@ -845,6 +846,12 @@ struct Renderer::Impl {
     }
 
     void CreateTargets() {
+        CreateSizedTargets();
+        CreateFixedTargets();
+    }
+
+    // The images drawn at the output's size or the drawing size (render_scale).
+    void CreateSizedTargets() {
         // Use the asked multisample count, or the nearest lower one the card supports.
         msaa_samples = config.msaa_samples >= 8 ? 8 : config.msaa_samples >= 4 ? 4 : config.msaa_samples >= 2 ? 2 : 1;
         while (msaa_samples > 1 &&
@@ -878,10 +885,6 @@ struct Renderer::Impl {
         // SAMPLER is needed because the image is copied (blitted) to the window.
         output_target = CreateTarget(kOutputFormat, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
                                      config.width, config.height, SDL_GPU_SAMPLECOUNT_1, nullptr, "output target");
-        // The four shadow cascades share one depth image, as 2 x 2 tiles.
-        shadow_atlas = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                                    config.shadow_map_size * 2, config.shadow_map_size * 2, SDL_GPU_SAMPLECOUNT_1,
-                                    nullptr, "shadow image");
 
         const SDL_GPUTextureUsageFlags drawn_and_read = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
         prepass_depth = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
@@ -904,8 +907,6 @@ struct Renderer::Impl {
         cloud_target = CreateTarget(kSceneFormat, drawn_and_read, glm::max(8, static_cast<int>(static_cast<float>(width) * cloud_scale)),
                                     glm::max(8, static_cast<int>(static_cast<float>(height) * cloud_scale)), SDL_GPU_SAMPLECOUNT_1,
                                     nullptr, "cloud image");
-        cloud_shadow_target = CreateTarget(SDL_GPU_TEXTUREFORMAT_R8_UNORM, drawn_and_read, 256, 256, SDL_GPU_SAMPLECOUNT_1, nullptr,
-                                           "cloud shadow image");
         water_depth_copy = CreateTarget(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1,
                                         nullptr, "copy of the depth for water");
 
@@ -923,10 +924,39 @@ struct Renderer::Impl {
             bloom_levels.push_back(level);
         } while (static_cast<int>(bloom_levels.size()) < kMaxBloomLevels && level_width >= 16 && level_height >= 16);
 
+    }
+
+    // The images whose size does not depend on the output: shadows, cloud shadows, the
+    // measured brightness for automatic exposure.
+    void CreateFixedTargets() {
+        const SDL_GPUTextureUsageFlags drawn_and_read = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        // The four shadow cascades share one depth image, as 2 x 2 tiles.
+        shadow_atlas = CreateTarget(kDepthFormat, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                    config.shadow_map_size * 2, config.shadow_map_size * 2, SDL_GPU_SAMPLECOUNT_1,
+                                    nullptr, "shadow image");
+        cloud_shadow_target = CreateTarget(SDL_GPU_TEXTUREFORMAT_R8_UNORM, drawn_and_read, 256, 256, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                           "cloud shadow image");
         for (SDL_GPUTexture*& target : luminance_targets) {
             target = CreateTarget(kLuminanceFormat, drawn_and_read, 1, 1, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                   "luminance image");
         }
+    }
+
+    // Releases what CreateSizedTargets made, so that it can be made again at another size.
+    void ReleaseSizedTargets() {
+        SDL_GPUTexture** sized[] = {&scene_color,  &scene_resolved, &scene_depth,      &output_target,  &prepass_depth,
+                                    &ao_target,    &ao_scratch,     &fog_target,       &taa_targets[0], &taa_targets[1],
+                                    &water_scene_copy, &cloud_target, &water_depth_copy};
+        for (SDL_GPUTexture** texture : sized) {
+            if (*texture != nullptr) {
+                SDL_ReleaseGPUTexture(device, *texture);
+                *texture = nullptr;
+            }
+        }
+        for (const BloomLevel& level : bloom_levels) {
+            SDL_ReleaseGPUTexture(device, level.texture);
+        }
+        bloom_levels.clear();
     }
 
     void CreateSamplers() {
@@ -4237,6 +4267,50 @@ void Renderer::SetWindowTitle(const char* title) {
     if (impl_->window != nullptr) {
         SDL_SetWindowTitle(impl_->window, title);
     }
+}
+
+bool Renderer::SetWindowMode(WindowMode mode, int width, int height) {
+    if (impl_->in_frame) {
+        FatalError("Renderer::SetWindowMode: called between BeginFrame and EndFrame");
+    }
+    if (width < 16 || height < 16 || width > 8192 || height > 8192) {
+        return false;
+    }
+    if (impl_->window != nullptr) {
+        if (mode == WindowMode::Fullscreen) {
+            // An exact mode of the display the window is on, at its highest refresh rate.
+            SDL_DisplayMode display_mode{};
+            const SDL_DisplayID display = SDL_GetDisplayForWindow(impl_->window);
+            if (!SDL_GetClosestFullscreenDisplayMode(display, width, height, 0.0f, false, &display_mode) ||
+                display_mode.w != width || display_mode.h != height) {
+                return false;
+            }
+            if (!SDL_SetWindowFullscreenMode(impl_->window, &display_mode) || !SDL_SetWindowFullscreen(impl_->window, true)) {
+                return false;
+            }
+        } else {
+            SDL_SetWindowFullscreen(impl_->window, false);
+            SDL_SyncWindow(impl_->window);
+            SDL_SetWindowSize(impl_->window, width, height);
+            SDL_SetWindowPosition(impl_->window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        }
+        SDL_SyncWindow(impl_->window);
+    }
+    impl_->window_mode = mode;
+    if (width != impl_->config.width || height != impl_->config.height) {
+        // The images of the old size may still be in use by the frame the card is drawing.
+        SDL_WaitForGPUIdle(impl_->device);
+        impl_->ReleaseSizedTargets();
+        impl_->config.width = width;
+        impl_->config.height = height;
+        impl_->CreateSizedTargets();
+        impl_->has_taa_history = false;
+    }
+    return true;
+}
+
+WindowMode Renderer::GetWindowMode() const {
+    return impl_->window_mode;
 }
 
 } // namespace poligon

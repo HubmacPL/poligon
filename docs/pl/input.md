@@ -5,7 +5,7 @@ Nagłówek: `poligon/input.h`. Przykład: `examples/input`. Wzorzec w grze: `Set
 ## Model
 
 - Gra nie czyta klawiatury ani myszy. Czyta **akcje**: nazwane liczby, po jednej wartości na tick (przycisk to 0 lub 1, oś to dowolna liczba).
-- **Wiązania** zamieniają urządzenia na akcje: `BindKey(akcja, klawisz, wartość)`, `BindMouseButton`, `BindMouseMotion`. Dwa klawisze z +1 i -1 na tej samej akcji dają oś. Wartości wiązań się sumują, więc grę obowiązuje ewentualne ograniczenie zakresu.
+- **Wiązania** zamieniają urządzenia na akcje: `BindKey(akcja, klawisz, wartość)` (klawisze: litery, cyfry, strzałki, Space, Enter, Tab, Backspace, lewe Shift, Control i Alt, F1 do F12), `BindMouseButton`, `BindMouseMotion`. Dwa klawisze z +1 i -1 na tej samej akcji dają oś. Wartości wiązań się sumują, więc grę obowiązuje ewentualne ograniczenie zakresu.
 - Źródło wartości wybiera się raz na przebieg: prawdziwe urządzenia (`UseLiveDevices`), stan podany ręcznie (`UseManualDevices` + `SetDeviceState`, dla testów), nagranie (`StartReplay`) albo nic (wszystko 0).
 - `GameLoopConfig::input = &input` sprawia, że pętla woła `AdvanceTick` przed każdym `FixedUpdate`.
 - Odczyt: `GetValue`, `IsDown` (powyżej 0,5), `WasPressed` i `WasReleased` (tylko w ticku zmiany).

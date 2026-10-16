@@ -5,7 +5,7 @@ Header: `poligon/input.h`. Example: `examples/input`. Pattern in a game: `SetUpT
 ## Model
 
 - The game does not read the keyboard or mouse. It reads **actions**: named numbers, one value per tick (a button is 0 or 1, an axis any number).
-- **Bindings** turn devices into actions: `BindKey(action, key, value)`, `BindMouseButton`, `BindMouseMotion`. Two keys with +1 and -1 on the same action make an axis. Binding values add up, so limiting the range is the game's job.
+- **Bindings** turn devices into actions: `BindKey(action, key, value)` (keys: letters, digits, arrows, Space, Enter, Tab, Backspace, left Shift, Control and Alt, F1 to F12), `BindMouseButton`, `BindMouseMotion`. Two keys with +1 and -1 on the same action make an axis. Binding values add up, so limiting the range is the game's job.
 - The source of values is chosen once per run: real devices (`UseLiveDevices`), a state supplied by hand (`UseManualDevices` + `SetDeviceState`, for tests), a recording (`StartReplay`) or nothing (everything 0).
 - `GameLoopConfig::input = &input` makes the loop call `AdvanceTick` before every `FixedUpdate`.
 - Reading: `GetValue`, `IsDown` (above 0.5), `WasPressed` and `WasReleased` (only on the tick of the change).
