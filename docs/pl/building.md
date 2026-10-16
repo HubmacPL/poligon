@@ -56,13 +56,16 @@ Silnik to zestaw bibliotek statycznych, po jednej na obszar. Każdy obszar ma na
 | `poligon_core` | `core` | `app` (pętla gry, zegar, wiersz poleceń, wersja), `platform` (zdarzenia, błędy, raporty awarii), `input`, `image` (obrazy, kompresja blokowa) | niczego naszego |
 | `poligon_ecs` | `ecs` | ustawienia flecs, zrzut i hash stanu | core |
 | `poligon_render` | `render` | `renderer` (publiczne API i klatka, cele renderowania, potoki, rysowanie; stan w `renderer_internal.h`), `resources` (siatki, tekstury, teren, impostory, przesyłanie, szum chmur), `passes` (po pliku na przebieg klatki), `settings` (presety, plik ustawień obrazu), `shaders/<grupa>` | core |
-| `poligon_animation` | `animation` | szkielety, klipy, odtwarzacze | core |
+| `poligon_animation` | `animation` | `runtime`: szkielety, odtwarzacze, archiwa | core |
+| `poligon_animation_build` | `animation` | `build`: budowanie zestawów z klipów (strona narzędzi) | core, animation |
 | `poligon_physics` | `physics` | ciała, postacie, promienie | core |
-| `poligon_assets` | `assets` | pliki modeli, lista assetów, wypiekanie, wczytywanie po nazwie | core, render, animation |
+| `poligon_assets` | `assets` | `runtime`: wczytywanie wypieczonych assetów po nazwie, modele na karcie | core, render, animation |
+| `poligon_assets_cook` | `assets` | `cook`: pliki modeli (Assimp), lista assetów, wypiekanie, pakowanie (strona narzędzi) | core, render, animation, assets |
 | `poligon_world` | `world` | `terrain` (z przesłanianiem nieba, a generator w `terrain/generator`: po pliku na etap, duża skala, mała skala i mapy), `vegetation` (z regułami sadzenia, roślinami z kodu, wydeptywaniem), `water`, `level` | core, render, animation, assets, physics |
 | `poligon_debug` | `debug` | okna debug, swobodna kamera | core, render, ecs |
 
-- `poligon_engine` łączy je wszystkie; gry, narzędzia, testy i przykłady linkują właśnie ją.
+- Strona narzędzi (`poligon_animation_build`, `poligon_assets_cook`, nagłówki `animation_build.h`, `model_import.h`, `cooking.h`) to to, bez czego wydana gra może się obejść: wczytuje tylko wypieczone assety. `poligon_runtime` łączy biblioteki strony gry i używa jej gra toy, więc każdy check dowodzi, że linkują się bez Assimp i bez części ozz do budowania. `poligon_engine` łączy wszystko, dla narzędzi, testów i przykładów.
+- `tools/check_layers.ps1` zgłasza też błąd, gdy biblioteka strony gry dołącza nagłówek strony narzędzi.
 - Kolumnę „może używać” sprawdza przy każdym `tools/check.ps1` skrypt `tools/check_layers.ps1`, który czyta każde dołączenie (wszystkie nagłówki leżą w jednym folderze, więc złe dołączenie i tak by się skompilowało). Renderer na przykład nic nie wie o świecie: wydeptana ziemia i przesłanianie nieba docierają do niego jako `GroundMap` przez interfejs `GroundMapSource`.
 - Shadery są pogrupowane według tego, co rysują: `mesh`, `terrain`, `vegetation` (impostory), `sky` (niebo i chmury), `water`, `post` (przebiegi pełnoekranowe); `shaders/common` trzyma pliki dołączane przez kilka shaderów.
 

@@ -43,6 +43,7 @@
 
 #include "poligon/animation/animation.h"
 #include "poligon/assets/assets.h"
+#include "poligon/assets/cooking.h"
 #include "poligon/core/command_line.h"
 #include "poligon/core/crash_handler.h"
 #include "poligon/debug/debug_ui.h"

@@ -108,4 +108,4 @@ Navigation: Recast/Detour (zlib).
 - Terrain and level editor; source of the height map.
 - License of the engine itself: chosen at publication.
 - Loading a state dump back (save games; replaying a bug from the tick before it): not done yet. Comes with the asset system or the first save-game feature.
-- Splitting `poligon_engine` into several libraries (a game without physics not linking Jolt): about an hour in CMake, to be done when a game needs it.
+- The engine is split into libraries per area (2026-10-17), with a tool side (`poligon_animation_build`, `poligon_assets_cook`) a released game leaves out; `poligon_runtime` is the game side. A game without physics not linking Jolt would need `poligon_world` split further (plants make colliders).

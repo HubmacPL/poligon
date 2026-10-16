@@ -2,7 +2,7 @@
 
 How a game names, prepares and loads its textures and models, how plants are made from models, and the level file.
 
-Headers: `poligon/assets/assets.h`, `poligon/core/texture_compression.h`, `poligon/world/plants.h`, `poligon/world/level.h`. Tool: `asset_cooker`. Example: `examples/assets/assets`. Test: `tests/assets/assets_test.cpp`.
+Headers: `poligon/assets/assets.h` (loading), `poligon/assets/cooking.h` (the list, cooking, packing; tool side), `poligon/core/texture_compression.h`, `poligon/world/plants.h`, `poligon/world/level.h`. Tool: `asset_cooker`. Example: `examples/assets/assets`. Test: `tests/assets/assets_test.cpp`.
 
 **State (decided on 2026-10-14, built from 2026-10-15 to 2026-10-17, all of it):** one list names every asset with its source and settings; the cooker turns sources into fast-loading files with compressed textures; a game loads by name through one library, from the cooked folder or from an archive; plants are made from model assets by the engine; a level file holds the land's settings, the player's start, things put by hand and the plant rules ([vegetation.md](vegetation.md)). Animation clips are cooked built, as an ozz-animation archive. The data folder was split into its source and cooked halves on 2026-10-16 (see below).
 

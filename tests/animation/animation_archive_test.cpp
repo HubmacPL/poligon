@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "poligon/animation/animation.h"
+#include "poligon/animation/animation_build.h"
 #include "test_support.h"
 
 namespace {
@@ -70,7 +71,8 @@ int main() {
     using test::Expect;
 
     const poligon::Skeleton skeleton = MakeSkeleton();
-    const poligon::AnimationSet built(skeleton, MakeClips());
+    const std::unique_ptr<poligon::AnimationSet> built_set = poligon::BuildAnimationSet(skeleton, MakeClips());
+    const poligon::AnimationSet& built = *built_set;
     const std::vector<std::uint8_t> archive = built.SaveArchive();
     Expect(archive.size() > 100, "the archive holds the skeleton and the clips");
     Expect(built.SaveArchive() == archive, "the same set saves the same bytes");

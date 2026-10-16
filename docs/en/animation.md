@@ -2,7 +2,7 @@
 
 How a model bends: a skeleton of joints, a mesh whose vertices follow them, and clips that say how the joints move over time.
 
-Headers: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/render/renderer.h`. Example: `examples/animation/animation`. Test: `tests/animation/skinning_render_test.cpp`.
+Headers: `poligon/animation/animation.h`, `poligon/animation/animation_build.h` (tool side), `poligon/assets/model.h`, `poligon/render/renderer.h`. Example: `examples/animation/animation`. Test: `tests/animation/skinning_render_test.cpp`.
 
 ## Terms
 
@@ -23,7 +23,7 @@ Headers: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/ren
 ## Playing clips
 
 ```cpp
-poligon::AnimationSet animations(model.skeleton, model.animations);   // once per model
+const poligon::AnimationSet& animations = *loaded_model->animations;  // a cooked model; or BuildAnimationSet
 poligon::AnimationPlayer player(animations);                          // one per character
 player.Play(animations.FindClip("Walk"));
 player.Update(tick.delta_seconds);                                    // every tick
@@ -31,7 +31,7 @@ poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices())
 ```
 
 - `AnimationSet` prepares a skeleton and its clips for playing; build it once per model and share it. `AnimationPlayer` keeps the time for one character. The set must outlive its players.
-- A cooked model (poligon/assets/assets.h) brings its set ready: `LoadedModel::animations`, loaded from the ozz-animation archive the cooker stored, with no building. `AnimationSet::SaveArchive()` gives that archive (ozz's own format for built skeletons and clips) and `AnimationSet::LoadArchive(skeleton, bytes, error)` reads it back for the skeleton it was made from; a set read back plays exactly like the one saved (`tests/animation/animation_archive_test.cpp`). Building from clips stays for models read straight from files (the viewer, examples). So games still link ozz's building part; leaving it to the cooker alone would need the animation library split in two.
+- A cooked model (poligon/assets/assets.h) brings its set ready: `LoadedModel::animations`, loaded from the ozz-animation archive the cooker stored, with no building. `AnimationSet::SaveArchive()` gives that archive (ozz's own format for built skeletons and clips) and `AnimationSet::LoadArchive(skeleton, bytes, error)` reads it back for the skeleton it was made from; a set read back plays exactly like the one saved (`tests/animation/animation_archive_test.cpp`). Building from clips, `BuildAnimationSet(skeleton, clips)` in `poligon/animation/animation_build.h`, is for models read straight from files (the cooker, the viewer, examples). It lives in its own library, `poligon_animation_build`, with ozz's offline part; a game that loads cooked models links only `poligon_animation` (the toy game does, see building.md).
 - `Play(clip, fade_seconds, loop)` starts a clip from its beginning. What was playing fades out over `fade_seconds` while the new clip fades in, so a walk turns into a run without a jerk. A looping clip starts over at its end; one that does not loop stops on its last moment (`IsFinished()`).
 - `SetSpeed(2.0f)` plays twice as fast; `GetClip()`, `GetTime()` tell where the player is.
 - Time moves only in `Update`, by the amount given. With the fixed tick this makes playback repeatable: the same steps give bit-identical joint matrices (tested).

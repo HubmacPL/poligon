@@ -70,13 +70,13 @@ std::vector<JointTransform> GetRestPose(const Skeleton& skeleton);
 // `pose` must have one entry per joint. Pass the result to Renderer::DrawSkinnedMesh.
 std::vector<glm::mat4> ComputeJointMatrices(const Skeleton& skeleton, const std::vector<JointTransform>& pose);
 
-// A skeleton and its clips prepared for playing. Built once per model (it takes a moment)
-// and then shared by every character that uses the model. Playing is done by the
-// ozz-animation library; this class and AnimationPlayer are all of it that shows.
+// A skeleton and its clips prepared for playing, shared by every character that uses the
+// model. It comes from a cooked model (LoadedModel::animations, read from an archive by
+// LoadArchive) or is built from clips by BuildAnimationSet (poligon/animation/animation_build.h,
+// a tool-side library). Playing is done by the ozz-animation library; this class and
+// AnimationPlayer are all of it that shows.
 class AnimationSet {
 public:
-    // A clip may leave joints out; those stay in their rest pose.
-    AnimationSet(const Skeleton& skeleton, const std::vector<AnimationClip>& clips);
     ~AnimationSet();
     AnimationSet(const AnimationSet&) = delete;
     AnimationSet& operator=(const AnimationSet&) = delete;
@@ -101,6 +101,7 @@ public:
 private:
     AnimationSet();
     friend class AnimationPlayer;
+    friend std::unique_ptr<AnimationSet> BuildAnimationSet(const Skeleton& skeleton, const std::vector<AnimationClip>& clips);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
@@ -111,7 +112,7 @@ private:
 // Time only moves in Update, by the amount given, so a run with a fixed time step plays
 // the same every time. The AnimationSet must outlive the player.
 //
-//     poligon::AnimationSet animations(model.skeleton, model.animations);
+//     const poligon::AnimationSet& animations = *loaded_model->animations;  // a cooked model
 //     poligon::AnimationPlayer player(animations);
 //     player.Play(animations.FindClip("Walk"));
 //     // every tick:

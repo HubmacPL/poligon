@@ -119,7 +119,7 @@ Measure: `forest_scene X Z TURN TILT --headless --ticks 200 --quality high --res
 
 ## Models
 
-Header: `poligon/assets/model.h`. Example: `examples/assets/model`. Tool: `model_viewer`.
+Headers: `poligon/assets/model.h` (model data, uploading, drawing), `poligon/assets/model_import.h` (`LoadModelFromFile`; tool side). Example: `examples/assets/model`. Tool: `model_viewer`.
 
 - `LoadModelFromFile(path, model, error)` reads a model through the Assimp library: glTF/GLB, FBX, OBJ, DAE and about forty other formats. It needs no graphics card.
 - The loaded `Model` follows our conventions whatever the file used: right-handed, +Y up, counter-clockwise front faces, UV (0, 0) at the top-left.

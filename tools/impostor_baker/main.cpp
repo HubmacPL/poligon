@@ -21,6 +21,7 @@
 
 #include "poligon/render/impostor.h"
 #include "poligon/assets/model.h"
+#include "poligon/assets/model_import.h"
 #include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {

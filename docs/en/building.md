@@ -56,13 +56,16 @@ The engine is a set of static libraries, one per area. Each area has its public 
 | `poligon_core` | `core` | `app` (game loop, clock, command line, version), `platform` (events, errors, crash reports), `input`, `image` (pictures, block compression) | nothing of ours |
 | `poligon_ecs` | `ecs` | flecs setup, state dump and hash | core |
 | `poligon_render` | `render` | `renderer` (public API and frame, render targets, pipelines, drawing; state in `renderer_internal.h`), `resources` (meshes, textures, terrain, impostors, uploads, cloud noise), `passes` (one file per pass of a frame), `settings` (presets, render settings file), `shaders/<group>` | core |
-| `poligon_animation` | `animation` | skeletons, clips, players | core |
+| `poligon_animation` | `animation` | `runtime`: skeletons, players, archives | core |
+| `poligon_animation_build` | `animation` | `build`: building sets from clips (tool side) | core, animation |
 | `poligon_physics` | `physics` | bodies, characters, rays | core |
-| `poligon_assets` | `assets` | model files, asset list, cooking, loading by name | core, render, animation |
+| `poligon_assets` | `assets` | `runtime`: loading cooked assets by name, models on the card | core, render, animation |
+| `poligon_assets_cook` | `assets` | `cook`: model files (Assimp), asset list, cooking, packing (tool side) | core, render, animation, assets |
 | `poligon_world` | `world` | `terrain` (with sky occlusion, and the generator in `terrain/generator`: one file per stage, large scale, fine scale and maps), `vegetation` (with plant rules, plants made by code, trampling), `water`, `level` | core, render, animation, assets, physics |
 | `poligon_debug` | `debug` | debug windows, free camera | core, render, ecs |
 
-- `poligon_engine` links all of them; games, tools, tests and examples link that.
+- The tool side (`poligon_animation_build`, `poligon_assets_cook`, headers `animation_build.h`, `model_import.h`, `cooking.h`) is what a released game can leave out: it loads cooked assets only. `poligon_runtime` links the game-side libraries and the toy game uses it, so every check proves they link without Assimp or ozz's offline part. `poligon_engine` links everything, for tools, tests and examples.
+- `tools/check_layers.ps1` also fails when a game-side library includes a tool-side header.
 - The "may use" column is checked on every run of `tools/check.ps1` by `tools/check_layers.ps1`, which reads every include (all headers share one include folder, so a wrong include would still compile). The renderer, for example, knows nothing of the world: trampled ground and sky occlusion reach it as a `GroundMap` through the `GroundMapSource` interface.
 - Shaders are grouped by what they draw: `mesh`, `terrain`, `vegetation` (impostors), `sky` (sky and clouds), `water`, `post` (full-screen passes); `shaders/common` holds the files several shaders include.
 

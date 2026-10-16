@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "poligon/animation/animation.h"
+#include "poligon/animation/animation_build.h"
 #include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {
@@ -62,7 +63,10 @@ int main(int argc, char** argv) {
                                   glm::angleAxis(0.0f, across)};
 
     // --- Playing: the set is built once, a player keeps the time for one character. ---
-    const poligon::AnimationSet animations(skeleton, {clip});
+    // Built here from clips (poligon/animation/animation_build.h); a cooked model brings its
+    // set ready instead (LoadedModel::animations).
+    const std::unique_ptr<poligon::AnimationSet> built = poligon::BuildAnimationSet(skeleton, {clip});
+    const poligon::AnimationSet& animations = *built;
     poligon::AnimationPlayer player(animations);
     player.Play(animations.FindClip("wave"));
     // A game calls Update once per tick. Here: 45 ticks of 1/60 s, which is 0.75 s into the clip.

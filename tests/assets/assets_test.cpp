@@ -13,8 +13,11 @@
 #include <vector>
 
 #include "poligon/animation/animation.h"
+#include "poligon/animation/animation_build.h"
 #include "poligon/assets/assets.h"
+#include "poligon/assets/cooking.h"
 #include "poligon/assets/model.h"
+#include "poligon/assets/model_import.h"
 #include "poligon/world/level.h"
 #include "poligon/world/plants.h"
 #include "poligon/render/renderer.h"
@@ -315,7 +318,8 @@ int main(int argc, char** argv) {
             Expect(cooked_set.GetClipCount() == 1 && std::string(cooked_set.GetClipName(0)) == from_file.animations[0].name &&
                        std::fabs(cooked_set.GetClipDuration(0) - 1.0f) < 1e-4f,
                    "the cooked clip keeps its name and length");
-            const poligon::AnimationSet file_set(from_file.skeleton, from_file.animations);
+            const std::unique_ptr<poligon::AnimationSet> built_set = poligon::BuildAnimationSet(from_file.skeleton, from_file.animations);
+            const poligon::AnimationSet& file_set = *built_set;
             poligon::AnimationPlayer cooked_player(cooked_set);
             poligon::AnimationPlayer file_player(file_set);
             cooked_player.Play(0);

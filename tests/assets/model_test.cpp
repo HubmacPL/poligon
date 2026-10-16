@@ -9,6 +9,7 @@
 
 #include "poligon/core/image.h"
 #include "poligon/assets/model.h"
+#include "poligon/assets/model_import.h"
 #include "test_support.h"
 
 namespace {

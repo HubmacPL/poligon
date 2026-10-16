@@ -121,7 +121,7 @@ Pomiar: `forest_scene X Z OBRÓT POCHYLENIE --headless --ticks 200 --quality hig
 
 ## Modele
 
-Nagłówek: `poligon/assets/model.h`. Przykład: `examples/assets/model`. Narzędzie: `model_viewer`.
+Nagłówki: `poligon/assets/model.h` (dane modelu, wysyłanie na kartę, rysowanie), `poligon/assets/model_import.h` (`LoadModelFromFile`; strona narzędzi). Przykład: `examples/assets/model`. Narzędzie: `model_viewer`.
 
 - `LoadModelFromFile(path, model, error)` czyta model przez bibliotekę Assimp: glTF/GLB, FBX, OBJ, DAE i około czterdziestu innych formatów. Nie wymaga karty graficznej.
 - Wczytany `Model` trzyma się naszych konwencji niezależnie od pliku: układ prawoskrętny, +Y w górę, przednie ściany przeciwnie do ruchu wskazówek zegara, UV (0, 0) w lewym górnym rogu.

@@ -19,11 +19,13 @@
 #include <string>
 #include <vector>
 
+#include "poligon/animation/animation_build.h"
 #include "poligon/core/command_line.h"
 #include "poligon/core/crash_handler.h"
 #include "poligon/core/game_loop.h"
 #include "poligon/core/input.h"
 #include "poligon/assets/model.h"
+#include "poligon/assets/model_import.h"
 #include "poligon/core/platform.h"
 #include "poligon/render/renderer.h"
 
@@ -192,7 +194,7 @@ public:
         animations_.reset();
         clip_name_.clear();
         if (!model.animations.empty()) {
-            animations_ = std::make_unique<poligon::AnimationSet>(model.skeleton, model.animations);
+            animations_ = poligon::BuildAnimationSet(model.skeleton, model.animations);
             player_ = std::make_unique<poligon::AnimationPlayer>(*animations_);
             const int wanted = animations_->FindClip(start_clip_.c_str());
             if (!start_clip_.empty() && wanted < 0) {

@@ -80,11 +80,6 @@ struct Model {
     std::int64_t GetVertexCount() const;
 };
 
-// Returns false and fills `error` if the file is missing, not a known model format, or holds no triangles.
-// load_textures = false skips reading and decoding the images, which is most of the loading
-// time; for files of which only the meshes are wanted (simpler levels of detail that share
-// the textures of the full model). Materials then have no textures.
-bool LoadModelFromFile(const char* path, Model& model, std::string& error, bool load_textures = true);
 
 // A model on the graphics card, ready to draw.
 struct RenderModel {

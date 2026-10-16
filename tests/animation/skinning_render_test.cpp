@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "poligon/animation/animation.h"
+#include "poligon/animation/animation_build.h"
 #include "poligon/render/renderer.h"
 #include "test_support.h"
 
@@ -147,7 +148,8 @@ int main(int argc, char** argv) {
         clips[2].name = "bent";
         clips[2].channels[0].rotations = {quarter_turn};
 
-        const poligon::AnimationSet set(skeleton, clips);
+        const std::unique_ptr<poligon::AnimationSet> built_set = poligon::BuildAnimationSet(skeleton, clips);
+        const poligon::AnimationSet& set = *built_set;
         Expect(set.GetJointCount() == 2 && set.GetClipCount() == 3, "the set holds the skeleton and the clips");
         Expect(set.FindClip("bent") == 2 && set.FindClip("none") == -1, "clips are found by name");
         Expect(std::strcmp(set.GetClipName(0), "bend") == 0 && std::fabs(set.GetClipDuration(0) - 1.0f) < 1.0e-5f,

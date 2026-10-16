@@ -2,7 +2,7 @@
 
 Jak model się wygina: szkielet ze stawów, siatka, której wierzchołki za nimi podążają, i klipy mówiące, jak stawy ruszają się w czasie.
 
-Nagłówki: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/render/renderer.h`. Przykład: `examples/animation/animation`. Test: `tests/animation/skinning_render_test.cpp`.
+Nagłówki: `poligon/animation/animation.h`, `poligon/animation/animation_build.h` (strona narzędzi), `poligon/assets/model.h`, `poligon/render/renderer.h`. Przykład: `examples/animation/animation`. Test: `tests/animation/skinning_render_test.cpp`.
 
 ## Pojęcia
 
@@ -23,7 +23,7 @@ Nagłówki: `poligon/animation/animation.h`, `poligon/assets/model.h`, `poligon/
 ## Odtwarzanie klipów
 
 ```cpp
-poligon::AnimationSet animations(model.skeleton, model.animations);   // raz na model
+const poligon::AnimationSet& animations = *loaded_model->animations;  // model wypieczony; albo BuildAnimationSet
 poligon::AnimationPlayer player(animations);                          // jeden na postać
 player.Play(animations.FindClip("Walk"));
 player.Update(tick.delta_seconds);                                    // co tick
@@ -31,7 +31,7 @@ poligon::DrawModel(renderer, render_model, transform, player.GetJointMatrices())
 ```
 
 - `AnimationSet` przygotowuje szkielet i jego klipy do odtwarzania; buduje się go raz na model i współdzieli. `AnimationPlayer` trzyma czas jednej postaci. Zestaw musi żyć dłużej niż jego odtwarzacze.
-- Wypieczony model (poligon/assets/assets.h) przynosi zestaw gotowy: `LoadedModel::animations`, wczytany z archiwum ozz-animation zapisanego przez wypiekacz, bez budowania. `AnimationSet::SaveArchive()` daje to archiwum (własny format ozz dla zbudowanych szkieletów i klipów), a `AnimationSet::LoadArchive(szkielet, bajty, błąd)` wczytuje je z powrotem dla szkieletu, z którego powstało; wczytany zestaw gra dokładnie tak jak zapisany (`tests/animation/animation_archive_test.cpp`). Budowanie z klipów zostaje dla modeli czytanych prosto z plików (przeglądarka, przykłady). Gry nadal linkują więc część ozz do budowania; zostawienie jej tylko wypiekaczowi wymagałoby podziału biblioteki animacji na dwie.
+- Wypieczony model (poligon/assets/assets.h) przynosi zestaw gotowy: `LoadedModel::animations`, wczytany z archiwum ozz-animation zapisanego przez wypiekacz, bez budowania. `AnimationSet::SaveArchive()` daje to archiwum (własny format ozz dla zbudowanych szkieletów i klipów), a `AnimationSet::LoadArchive(szkielet, bajty, błąd)` wczytuje je z powrotem dla szkieletu, z którego powstało; wczytany zestaw gra dokładnie tak jak zapisany (`tests/animation/animation_archive_test.cpp`). Budowanie z klipów, `BuildAnimationSet(szkielet, klipy)` w `poligon/animation/animation_build.h`, służy modelom czytanym prosto z plików (wypiekacz, przeglądarka, przykłady). Leży we własnej bibliotece, `poligon_animation_build`, razem z częścią ozz do budowania; gra wczytująca modele wypieczone linkuje tylko `poligon_animation` (gra toy tak robi, zob. building.md).
 - `Play(clip, fade_seconds, loop)` zaczyna klip od początku. To, co grało, wygasa przez `fade_seconds`, a nowy klip w tym czasie narasta, więc chód przechodzi w bieg bez szarpnięcia. Klip zapętlony zaczyna się od nowa po końcu; niezapętlony zatrzymuje się na ostatniej chwili (`IsFinished()`).
 - `SetSpeed(2.0f)` gra dwa razy szybciej; `GetClip()`, `GetTime()` mówią, gdzie jest odtwarzacz.
 - Czas rusza się tylko w `Update`, o podaną wartość. Przy stałym ticku odtwarzanie jest przez to powtarzalne: te same kroki dają macierze stawów identyczne co do bitu (sprawdzane testem).

@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "poligon/assets/assets.h"
+#include "poligon/assets/cooking.h"
 #include "poligon/render/renderer.h"
 
 int main(int argc, char** argv) {

@@ -12,6 +12,7 @@
 #include <string>
 
 #include "poligon/assets/assets.h"
+#include "poligon/assets/cooking.h"
 
 int main(int argc, char** argv) {
     if (argc != 4 && !(argc == 6 && std::strcmp(argv[4], "--pack") == 0)) {

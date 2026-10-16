@@ -19,7 +19,26 @@ $allowed = @{
     'debug'     = @('core', 'render', 'ecs', 'debug')
 }
 
+# Tool-side libraries (what a released game can leave out) and their headers: only they may
+# include these headers, so that the game-side libraries never need them.
+$toolHeaders = @('poligon/animation/animation_build.h', 'poligon/assets/model_import.h', 'poligon/assets/cooking.h')
+$toolFolders = @('src\animation\build\', 'src\assets\cook\')
+
 $failures = @()
+foreach ($file in Get-ChildItem -Path $engine -Recurse -File -Include *.h, *.cpp) {
+    $relative = $file.FullName.Substring($engine.Length + 1)
+    $isToolSide = ($toolFolders | Where-Object { $relative.StartsWith($_) }).Count -gt 0
+    $isToolHeader = ($toolHeaders | Where-Object { $relative -eq ('include\' + $_.Replace('/', '\')) }).Count -gt 0
+    if ($isToolSide -or $isToolHeader) {
+        continue
+    }
+    foreach ($header in $toolHeaders) {
+        $match = Select-String -Path $file.FullName -SimpleMatch -Pattern ('#include "' + $header + '"')
+        if ($match) {
+            $failures += "$($file.FullName):$($match[0].LineNumber): a game-side library may not include the tool-side $header"
+        }
+    }
+}
 foreach ($root in @('include\poligon', 'src')) {
     $base = Join-Path $engine $root
     foreach ($file in Get-ChildItem -Path $base -Recurse -File -Include *.h, *.cpp) {

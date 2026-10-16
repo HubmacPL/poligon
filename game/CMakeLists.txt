@@ -3,7 +3,8 @@ add_library(toy_world STATIC
   src/toy_world.cpp
 )
 target_include_directories(toy_world PUBLIC src)
-target_link_libraries(toy_world PUBLIC poligon_engine PRIVATE poligon_build_options)
+# The game side of the engine only: no cooking, model file import or animation building.
+target_link_libraries(toy_world PUBLIC poligon_runtime PRIVATE poligon_build_options)
 
 add_executable(toy
   src/main.cpp
