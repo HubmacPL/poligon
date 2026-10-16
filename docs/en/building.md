@@ -59,7 +59,7 @@ The engine is a set of static libraries, one per area. Each area has its public 
 | `poligon_animation` | `animation` | skeletons, clips, players | core |
 | `poligon_physics` | `physics` | bodies, characters, rays | core |
 | `poligon_assets` | `assets` | model files, asset list, cooking, loading by name | core, render, animation |
-| `poligon_world` | `world` | `terrain` (with the generator and sky occlusion), `vegetation` (with plant rules, plants made by code, trampling), `water`, `level` | core, render, animation, assets, physics |
+| `poligon_world` | `world` | `terrain` (with sky occlusion, and the generator in `terrain/generator`: one file per stage, large scale, fine scale and maps), `vegetation` (with plant rules, plants made by code, trampling), `water`, `level` | core, render, animation, assets, physics |
 | `poligon_debug` | `debug` | debug windows, free camera | core, render, ecs |
 
 - `poligon_engine` links all of them; games, tools, tests and examples link that.

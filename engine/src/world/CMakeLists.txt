@@ -4,7 +4,10 @@ add_library(poligon_world STATIC
   terrain/height_map.cpp
   terrain/sky_occlusion.cpp
   terrain/terrain.cpp
-  terrain/terrain_generator.cpp
+  terrain/generator/fine_scale.cpp
+  terrain/generator/large_scale.cpp
+  terrain/generator/maps.cpp
+  terrain/generator/terrain_generator.cpp
   vegetation/ground_cover.cpp
   vegetation/plant_rules.cpp
   vegetation/plants.cpp

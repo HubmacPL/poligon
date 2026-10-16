@@ -59,7 +59,7 @@ Silnik to zestaw bibliotek statycznych, po jednej na obszar. Każdy obszar ma na
 | `poligon_animation` | `animation` | szkielety, klipy, odtwarzacze | core |
 | `poligon_physics` | `physics` | ciała, postacie, promienie | core |
 | `poligon_assets` | `assets` | pliki modeli, lista assetów, wypiekanie, wczytywanie po nazwie | core, render, animation |
-| `poligon_world` | `world` | `terrain` (z generatorem i przesłanianiem nieba), `vegetation` (z regułami sadzenia, roślinami z kodu, wydeptywaniem), `water`, `level` | core, render, animation, assets, physics |
+| `poligon_world` | `world` | `terrain` (z przesłanianiem nieba, a generator w `terrain/generator`: po pliku na etap, duża skala, mała skala i mapy), `vegetation` (z regułami sadzenia, roślinami z kodu, wydeptywaniem), `water`, `level` | core, render, animation, assets, physics |
 | `poligon_debug` | `debug` | okna debug, swobodna kamera | core, render, ecs |
 
 - `poligon_engine` łączy je wszystkie; gry, narzędzia, testy i przykłady linkują właśnie ją.
