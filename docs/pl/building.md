@@ -55,7 +55,7 @@ Silnik to zestaw bibliotek statycznych, po jednej na obszar. Każdy obszar ma na
 |---|---|---|---|
 | `poligon_core` | `core` | `app` (pętla gry, zegar, wiersz poleceń, wersja), `platform` (zdarzenia, błędy, raporty awarii), `input`, `image` (obrazy, kompresja blokowa) | niczego naszego |
 | `poligon_ecs` | `ecs` | ustawienia flecs, zrzut i hash stanu | core |
-| `poligon_render` | `render` | `renderer`, `settings` (presety, plik ustawień obrazu), `impostor`, `shaders/<grupa>` | core |
+| `poligon_render` | `render` | `renderer` (publiczne API i klatka, cele renderowania, potoki, rysowanie; stan w `renderer_internal.h`), `resources` (siatki, tekstury, teren, impostory, przesyłanie, szum chmur), `passes` (po pliku na przebieg klatki), `settings` (presety, plik ustawień obrazu), `shaders/<grupa>` | core |
 | `poligon_animation` | `animation` | szkielety, klipy, odtwarzacze | core |
 | `poligon_physics` | `physics` | ciała, postacie, promienie | core |
 | `poligon_assets` | `assets` | pliki modeli, lista assetów, wypiekanie, wczytywanie po nazwie | core, render, animation |

@@ -159,7 +159,7 @@ Header: `poligon/assets/model.h`. Example: `examples/model`. Tool: `model_viewer
   - uniform buffers of a vertex shader: `register(bN, space1)`; of a fragment shader: `register(bN, space3)`;
   - textures and samplers of a vertex shader: `space0`; of a fragment shader: `space2`;
   - for Vulkan a texture and its sampler must be one combined binding: both get `[[vk::combinedImageSampler]][[vk::binding(N, 2)]]` with the same N (pattern in `mesh.frag.hlsl`). The DXIL compile skips these attributes.
-- The C++ structs (`FrameUniforms`, `ObjectUniforms`, `LightUniforms` in `renderer.cpp`) must match the `cbuffer`s in HLSL.
+- The C++ structs of uniforms (`VertexFrameUniforms`, `FragmentFrameUniforms`, `ObjectUniforms`, `MaterialUniforms` and the rest, in `engine/src/render/renderer/renderer_internal.h`) must match the `cbuffer`s of the same names in HLSL.
 
 ## Verifying images
 

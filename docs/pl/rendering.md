@@ -161,7 +161,7 @@ Nagłówek: `poligon/assets/model.h`. Przykład: `examples/model`. Narzędzie: `
   - bufory stałych shadera wierzchołków: `register(bN, space1)`; shadera fragmentów: `register(bN, space3)`;
   - tekstury i samplery shadera wierzchołków: `space0`; shadera fragmentów: `space2`;
   - dla Vulkana tekstura i jej sampler muszą być jednym połączonym wiązaniem: oba dostają `[[vk::combinedImageSampler]][[vk::binding(N, 2)]]` z tym samym N (wzór w `mesh.frag.hlsl`). Kompilacja do DXIL te atrybuty pomija.
-- Struktury po stronie C++ (`FrameUniforms`, `ObjectUniforms`, `LightUniforms` w `renderer.cpp`) muszą odpowiadać `cbuffer` w HLSL.
+- Struktury uniformów po stronie C++ (`VertexFrameUniforms`, `FragmentFrameUniforms`, `ObjectUniforms`, `MaterialUniforms` i reszta, w `engine/src/render/renderer/renderer_internal.h`) muszą odpowiadać `cbuffer` o tych samych nazwach w HLSL.
 
 ## Weryfikacja obrazu
 

@@ -1,8 +1,29 @@
 # Render: the renderer on SDL3 GPU, its HLSL shaders, graphics presets and render settings.
+# renderer/: the public API, the frame (EndFrame runs the passes), render targets, pipelines
+# and drawing inside a pass, around Renderer::Impl in renderer/renderer_internal.h.
+# resources/: what lives on the graphics card. passes/: one file per pass of a frame.
 add_library(poligon_render STATIC
-  impostor/impostor.cpp
-  renderer/cloud_noise.cpp
+  passes/bloom_pass.cpp
+  passes/cloud_pass.cpp
+  passes/depth_pass.cpp
+  passes/fog_pass.cpp
+  passes/output_pass.cpp
+  passes/scene_pass.cpp
+  passes/shadow_pass.cpp
+  passes/temporal_aa_pass.cpp
+  passes/water_pass.cpp
+  renderer/drawing.cpp
+  renderer/pipelines.cpp
   renderer/renderer.cpp
+  renderer/targets.cpp
+  resources/cloud_noise.cpp
+  resources/cloud_textures.cpp
+  resources/impostor_file.cpp
+  resources/impostors.cpp
+  resources/meshes.cpp
+  resources/terrain.cpp
+  resources/textures.cpp
+  resources/uploads.cpp
   settings/graphics_quality.cpp
   settings/render_settings.cpp
 )

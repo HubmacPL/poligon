@@ -55,7 +55,7 @@ The engine is a set of static libraries, one per area. Each area has its public 
 |---|---|---|---|
 | `poligon_core` | `core` | `app` (game loop, clock, command line, version), `platform` (events, errors, crash reports), `input`, `image` (pictures, block compression) | nothing of ours |
 | `poligon_ecs` | `ecs` | flecs setup, state dump and hash | core |
-| `poligon_render` | `render` | `renderer`, `settings` (presets, render settings file), `impostor`, `shaders/<group>` | core |
+| `poligon_render` | `render` | `renderer` (public API and frame, render targets, pipelines, drawing; state in `renderer_internal.h`), `resources` (meshes, textures, terrain, impostors, uploads, cloud noise), `passes` (one file per pass of a frame), `settings` (presets, render settings file), `shaders/<group>` | core |
 | `poligon_animation` | `animation` | skeletons, clips, players | core |
 | `poligon_physics` | `physics` | bodies, characters, rays | core |
 | `poligon_assets` | `assets` | model files, asset list, cooking, loading by name | core, render, animation |
