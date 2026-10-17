@@ -50,7 +50,7 @@ fog.volumetric 1
 
 - `FreeCamera` trzyma pozycję, obrót w poziomie (yaw) i pochylenie (pitch). `Move(forward, right, up)`, `Turn(yaw, pitch)`, `SetFromCamera(camera)`, `ToCamera(base)`. Nie czyta urządzeń; wywołujący mówi, o ile ruszyć.
 - `FlyFreeCamera(renderer, camera)` lata nią klawiszami I/J/K/L, U/O (dół, góra), lewy Shift (szybciej) i środkowym przyciskiem myszy (rozglądanie). Te klawisze są czytane przez Dear ImGui, a nie przez `Input`, więc nigdy nie trafiają do nagrania wejścia, a swobodna kamera nie jest częścią stanu gry: nagrany przebieg odtwarza się tak samo z nią i bez niej.
-- W `toy`: F przełącza swobodną kamerę, Tab chowa okna. W `forest_scene`: F przełącza chodzenie i latanie, Tab chowa okna, F11 przełącza między oknem 1280 × 720 a pełnym ekranem 1920 × 1080.
+- W `toy`: F przełącza swobodną kamerę, Tab chowa okna. W `forest_scene`: F przełącza chodzenie i latanie, Tab chowa okna, F11 przełącza między oknem 1280 × 720 a pełnym ekranem 1920 × 1080. Jego okno Simulation ustawia, jak szybko płynie własny czas świata (wiatr, chmury, woda, zwierzęta; 0 = zatrzymany, do x 20); gracz i fizyka zostają w czasie rzeczywistym.
 
 ## Znane ograniczenia
 

@@ -50,7 +50,7 @@ fog.volumetric 1
 
 - `FreeCamera` holds a position, a yaw and a pitch. `Move(forward, right, up)`, `Turn(yaw, pitch)`, `SetFromCamera(camera)`, `ToCamera(base)`. It reads no devices; the caller says how far to move.
 - `FlyFreeCamera(renderer, camera)` flies it with I/J/K/L, U/O (down, up), Left Shift (faster) and the middle mouse button (look). These keys are read through Dear ImGui and not through `Input`, so they never enter an input recording, and the free camera is not part of the game state: a recorded run replays the same with or without it.
-- In `toy`: F switches the free camera, Tab hides the windows. In `forest_scene`: F switches between walking and flying, Tab hides the windows, F11 switches between a 1280 x 720 window and fullscreen at 1920 x 1080.
+- In `toy`: F switches the free camera, Tab hides the windows. In `forest_scene`: F switches between walking and flying, Tab hides the windows, F11 switches between a 1280 x 720 window and fullscreen at 1920 x 1080. Its Simulation window sets how fast the world's own time runs (wind, clouds, water, animals; 0 = stopped, up to x 20); the player and physics stay in real time.
 
 ## Known limits
 

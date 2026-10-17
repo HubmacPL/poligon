@@ -272,6 +272,9 @@ public:
     // Height of the land at a world position.
     float Ground(float x, float z) const { return terrain_->GetHeight(x, z); }
     void ShowCollision(bool show) { show_collision_ = show; }
+    // How fast the world's own time runs (wind, clouds, water, animals): 1 = real time,
+    // 0 = stopped. The player and physics always run in real time. Also in the Simulation window.
+    void SetTimeScale(float scale) { time_scale_ = glm::clamp(scale, 0.0f, 20.0f); }
     glm::vec3 GetCameraPosition() const { return camera_.position; }
 
     void BeginFrame(poligon::GameLoop& loop) override {
@@ -305,9 +308,11 @@ public:
         }
 
         const float delta = static_cast<float>(tick.delta_seconds);
-        time_seconds_ += delta;
+        // The world's own time (wind, clouds, water, animals) may run faster or slower.
+        const float world_delta = delta * time_scale_;
+        time_seconds_ += world_delta;
         for (Animal& animal : animals_) {
-            animal.player->Update(delta);
+            animal.player->Update(world_delta);
             PlaceAnimal(animal);
         }
         float yaw_change = input_.GetValue(actions_.turn) * 90.0f * delta;
@@ -457,6 +462,19 @@ public:
                 ImGui::PopItemWidth();
                 if (changed) {
                     applied_quality_valid_ = false;  // ApplyQualityToSystems combines these with the quality
+                }
+            }
+            ImGui::End();
+            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 400.0f), ImGuiCond_FirstUseEver,
+                                    ImVec2(1.0f, 0.0f));
+            if (ImGui::Begin("Simulation", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("world time %.0f s (wind, clouds, water, animals)", time_seconds_);
+                ImGui::PushItemWidth(160.0f);
+                ImGui::SliderFloat("speed", &time_scale_, 0.0f, 20.0f, "x %.2f");
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ImGui::Button("x 1")) {
+                    time_scale_ = 1.0f;
                 }
             }
             ImGui::End();
@@ -1126,6 +1144,7 @@ private:
     std::shared_ptr<const poligon::AnimationSet> fox_animations_;
     std::vector<Animal> animals_;
     float time_seconds_ = 0.0f;
+    float time_scale_ = 1.0f;  // see SetTimeScale
     double cpu_milliseconds_sum_ = 0.0;
     double wait_milliseconds_sum_ = 0.0;
     int cpu_frames_ = 0;
