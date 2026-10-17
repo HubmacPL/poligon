@@ -62,14 +62,14 @@ Header: `poligon/render/graphics_quality.h`. Example: `examples/render/graphics_
 | ground cover density, radius | x0.35, x0.6 | x0.65, x0.8 | x1, x1 | x1.5, x1.3 |
 | terrain detail | x0.6 | x0.8 | x1 | x1.5 |
 
-Measured in `forest_scene` on generated land with its lakes, cooked (block-compressed) assets, plants placed by rules, clouds, cloud shadows, haze and sky occlusion, on the GTX 980 at 1920 x 1080 (`release`, headless, 200 ticks), in milliseconds per frame, at the four views used for every measurement: the start looking at the lake `0 0`, inside the forest `-60 -40 225 6`, on the lake shore `-6 -230 12 -8`, back over the forest `0 0 185 -3`:
+Measured in `forest_scene` on generated land with its lakes, cooked (block-compressed) assets, plants placed by rules, clouds, cloud shadows, haze, sky occlusion, the sky light map, soft shadows and motion vectors, on the GTX 980 at 1920 x 1080 (`release`, headless, 200 ticks), in milliseconds per frame, at the four views used for every measurement: the start looking at the lake `0 0`, inside the forest `-60 -40 225 6`, on the lake shore `-6 -230 12 -8`, back over the forest `0 0 185 -3`:
 
 | | start | inside | shore | back |
 |---|---|---|---|---|
-| low | 7.5 | 6.9 | 5.9 | 7.3 |
-| medium | 10.8 | 9.9 | 7.8 | 11.7 |
-| high | 13.2 | 13.0 | 9.9 | 15.6 |
-| ultra | 34.2 | 31.0 | 17.6 | 37.0 |
+| low | 7.9 | 7.5 | 5.8 | 7.5 |
+| medium | 11.2 | 10.9 | 8.7 | 11.9 |
+| high | 15.5 | 15.9 | 10.9 | 16.3 |
+| ultra | 35.6 | 37.7 | 20.1 | 36.5 |
 
 Medium and high hold 60 frames per second (16.7 ms) everywhere (the shore view is now at the reed belt, `-6 -230 12 -8`). Compressed textures took 10 to 35% off the frame (the card reads a quarter of the memory); clouds and their shadows cost about 1 ms. In the forest the shadow images decide the rest: on the Batorz land high with 2048 pixels per cascade took 30 ms, without shadows 17 ms. Water costs 0.5 to 2 ms where a lake is in view.
 

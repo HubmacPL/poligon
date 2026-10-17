@@ -64,14 +64,14 @@ Nagłówek: `poligon/render/graphics_quality.h`. Przykład: `examples/render/gra
 | gęstość i promień pokrywy ziemi | x0,35, x0,6 | x0,65, x0,8 | x1, x1 | x1,5, x1,3 |
 | szczegół terenu | x0,6 | x0,8 | x1 | x1,5 |
 
-Zmierzone w `forest_scene` na terenie generowanym z jego jeziorami, wypieczonymi assetami (z kompresją blokową), roślinami sadzonymi regułami, chmurami, ich cieniami, mgiełką i przesłanianiem nieba, na GTX 980 w 1920 x 1080 (`release`, bez okna, 200 ticków), w milisekundach na klatkę, w czterech widokach używanych przy każdym pomiarze: start z widokiem na jezioro `0 0`, w lesie `-60 -40 225 6`, na brzegu jeziora `-6 -230 12 -8`, wstecz nad lasem `0 0 185 -3`:
+Zmierzone w `forest_scene` na terenie generowanym z jego jeziorami, wypieczonymi assetami (z kompresją blokową), roślinami sadzonymi regułami, chmurami, ich cieniami, mgiełką, przesłanianiem nieba, mapą światła nieba, miękkimi cieniami i wektorami ruchu, na GTX 980 w 1920 x 1080 (`release`, bez okna, 200 ticków), w milisekundach na klatkę, w czterech widokach używanych przy każdym pomiarze: start z widokiem na jezioro `0 0`, w lesie `-60 -40 225 6`, na brzegu jeziora `-6 -230 12 -8`, wstecz nad lasem `0 0 185 -3`:
 
 | | start | w lesie | brzeg | wstecz |
 |---|---|---|---|---|
-| low | 7,5 | 6,9 | 5,9 | 7,3 |
-| medium | 10,8 | 9,9 | 7,8 | 11,7 |
-| high | 13,2 | 13,0 | 9,9 | 15,6 |
-| ultra | 34,2 | 31,0 | 17,6 | 37,0 |
+| low | 7,9 | 7,5 | 5,8 | 7,5 |
+| medium | 11,2 | 10,9 | 8,7 | 11,9 |
+| high | 15,5 | 15,9 | 10,9 | 16,3 |
+| ultra | 35,6 | 37,7 | 20,1 | 36,5 |
 
 Medium i high trzymają 60 klatek na sekundę (16,7 ms) wszędzie (widok brzegu stoi teraz przy pasie trzciny, `-6 -230 12 -8`). Skompresowane tekstury zdjęły z klatki od 10 do 35% (karta czyta ćwierć pamięci); chmury i ich cienie kosztują około 1 ms. W lesie resztę rozstrzygają obrazy cieni: na terenie Batorza high z 2048 pikselami na kaskadę zajmowało 30 ms, bez cieni 17 ms. Woda kosztuje od 0,5 do 2 ms tam, gdzie widać jezioro.
 
