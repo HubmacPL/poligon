@@ -54,7 +54,7 @@ void Renderer::Impl::RenderWaterPass(FrameContext& frame) {
         vertex_frame_uniforms.trample = impl.trample_info;
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_frame_uniforms, sizeof(vertex_frame_uniforms));
         SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
-        SDL_GPUTextureSamplerBinding bindings[6]{};
+        SDL_GPUTextureSamplerBinding bindings[7]{};
         bindings[0].texture = impl.water_scene_copy;
         bindings[0].sampler = impl.linear_clamp_sampler;
         bindings[1].texture = impl.water_depth_copy;
@@ -64,7 +64,7 @@ void Renderer::Impl::RenderWaterPass(FrameContext& frame) {
         bindings[3].texture = white;
         bindings[3].sampler = impl.clamp_sampler;
         impl.AddLightingBindings(&bindings[4]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 6);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
         const glm::mat4 inverse_view_projection = glm::inverse(view_projection);
         for (const WaterCommand& command : impl.water_commands) {
             const Mesh& mesh = impl.meshes[command.mesh_id - 1];

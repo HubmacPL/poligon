@@ -148,11 +148,13 @@ Renderer::~Renderer() {
         SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->linear_clamp_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->repeat_sampler);
+        SDL_ReleaseGPUSampler(impl_->device, impl_->cube_sampler);
         for (SDL_GPUGraphicsPipeline* pipeline :
              {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
               impl_->luminance_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline,
-              impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline, impl_->clouds_resolve_pipeline}) {
+              impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline, impl_->clouds_resolve_pipeline,
+              impl_->sky_capture_pipeline, impl_->sky_prefilter_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
         }
         for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
@@ -160,6 +162,7 @@ Renderer::~Renderer() {
                                         impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy,
                                         impl_->no_trample_texture, impl_->trample_texture, impl_->cloud_shape, impl_->cloud_detail,
                                         impl_->cloud_weather, impl_->cloud_target, impl_->cloud_history[0], impl_->cloud_history[1], impl_->cloud_shadow_target,
+                                        impl_->sky_capture, impl_->sky_radiance, impl_->dummy_volume,
                                         impl_->sky_occlusion_texture}) {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
@@ -625,6 +628,7 @@ void Renderer::EndFrame() {
 
     impl.RenderShadowPass(frame);
     impl.RenderCloudShadowPass(frame);
+    impl.RenderSkyLightPass(frame);
     impl.RenderDepthPass(frame);
     impl.RenderScenePass(frame);
     impl.RenderWaterPass(frame);

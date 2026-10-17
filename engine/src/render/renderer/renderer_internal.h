@@ -69,6 +69,31 @@ struct FragmentFrameUniforms {
     glm::vec4 sky_occlusion_area;
     glm::vec4 aerial;
     glm::vec4 foliage;
+    glm::vec4 sky_radiance;  // x: the sky light map's level for roughness 1, y: 1 = in use, z: its level for ambient light
+};
+
+// The sky light map (RenderSkyLightPass): the captured sky, faces kSkyCaptureSize pixels wide
+// with a full chain of smaller levels, and the map surfaces read, one level per roughness.
+constexpr int kSkyCaptureSize = 64;
+constexpr int kSkyCaptureLevels = 7;   // 64 down to 1
+// 64 down to 4: levels 0 to 3 for roughness 0, 1/3, 2/3, 1; the last for ambient light.
+constexpr int kSkyRadianceLevels = 5;
+// The map is renewed over this many frames: one face captured per frame, then the smaller
+// levels, then the blurred levels.
+constexpr int kSkyLightCycle = 8;
+
+// Must match sky_capture.frag.hlsl (the clouds' uniforms come first, as CloudUniforms).
+struct SkyCaptureUniforms {
+    glm::vec4 capture;
+    glm::vec4 zenith;
+    glm::vec4 horizon;
+    glm::vec4 ground;
+    glm::vec4 eye;
+};
+
+// Must match sky_prefilter.frag.hlsl.
+struct SkyPrefilterUniforms {
+    glm::vec4 params;
 };
 
 // Must match clouds_resolve.frag.hlsl.
@@ -564,6 +589,15 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* cloud_shadow_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* clouds_composite_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* clouds_resolve_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* sky_capture_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* sky_prefilter_pipeline = nullptr;
+    // The sky light map (RenderSkyLightPass) and the sampler that reads it.
+    SDL_GPUTexture* sky_capture = nullptr;
+    SDL_GPUTexture* sky_radiance = nullptr;
+    SDL_GPUSampler* cube_sampler = nullptr;
+    SDL_GPUTexture* dummy_volume = nullptr;  // a 1 x 1 x 1 volume bound for the cloud noise when there are no clouds
+    bool sky_radiance_ready = false;
+    std::uint64_t sky_light_frame = 0;  // frame of the last step of the cycle
     SDL_GPUSampler* repeat_sampler = nullptr;
     // What the lighting shaders read this frame: the cloud shadow image (or white) and the
     // sky occlusion map (or white).
@@ -832,6 +866,11 @@ struct Renderer::Impl {
     // The passes of a frame, in the order EndFrame runs them; each in engine/src/render/passes.
     void RenderShadowPass(FrameContext& frame);
     void RenderCloudShadowPass(FrameContext& frame);
+    void RenderSkyLightPass(FrameContext& frame);
+    // Draws a full-screen pass into one face (0..5) and level of a cube map.
+    void DrawFullscreenToCube(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, int face, int level,
+                              SDL_GPUGraphicsPipeline* pipeline, const SDL_GPUTextureSamplerBinding* bindings, Uint32 binding_count,
+                              const void* uniforms0, Uint32 size0, const void* uniforms1 = nullptr, Uint32 size1 = 0);
     void RenderDepthPass(FrameContext& frame);
     void RenderScenePass(FrameContext& frame);
     void RenderWaterPass(FrameContext& frame);

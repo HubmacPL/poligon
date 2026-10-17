@@ -9,6 +9,8 @@ void Renderer::Impl::AddLightingBindings(SDL_GPUTextureSamplerBinding* bindings)
     bindings[0].sampler = linear_clamp_sampler;
     bindings[1].texture = frame_sky_occlusion;
     bindings[1].sampler = linear_clamp_sampler;
+    bindings[2].texture = sky_radiance;
+    bindings[2].sampler = cube_sampler;
 }
 
 void Renderer::Impl::DrawCommandGeometry(SDL_GPURenderPass* pass, const DrawCommand& command) {
@@ -134,7 +136,7 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
 
         if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
             const MaterialUniforms material_uniforms = MakeMaterialUniforms(material, temporal_noise_offset);
-            SDL_GPUTextureSamplerBinding bindings[7]{};
+            SDL_GPUTextureSamplerBinding bindings[8]{};
             bindings[0].texture = GetTexture(material.texture, white_texture);
             bindings[0].sampler = texture_sampler;
             if (IsScenePass(mesh_pass)) {
@@ -148,7 +150,7 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
                 bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
                 bindings[4].sampler = clamp_sampler;
                 AddLightingBindings(&bindings[5]);
-                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
+                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 8);
             } else {
                 // The depth-only passes need the material only to cut out leaves.
                 SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
@@ -218,7 +220,7 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
                       0.5f / weight_size.y);
         SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-        SDL_GPUTextureSamplerBinding bindings[9]{};
+        SDL_GPUTextureSamplerBinding bindings[10]{};
         bindings[0].texture = terrain.height_texture;
         bindings[0].sampler = linear_clamp_sampler;
         bindings[1].texture = GetTexture(textured ? look.colors : white_array_texture, white_array_texture);
@@ -235,7 +237,7 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
         bindings[6].texture = ao_on ? ao_target : textures[white_texture.id - 1];
         bindings[6].sampler = clamp_sampler;
         AddLightingBindings(&bindings[7]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 10);
     } else {
         // The depth-only passes use the leaf-cutting shader with nothing to cut.
         MaterialUniforms material_uniforms{};
@@ -277,7 +279,7 @@ void Renderer::Impl::DrawImpostorBatch(SDL_GPUCommandBuffer* commands, SDL_GPURe
     ImpostorMaterial material;
     material.material = glm::vec4(kImpostorAlphaCutoff, kImpostorRoughness, temporal_noise_offset, 0.0f);
 
-    SDL_GPUTextureSamplerBinding bindings[6]{};
+    SDL_GPUTextureSamplerBinding bindings[7]{};
     bindings[0].texture = textures[impostor.color.id - 1];
     bindings[0].sampler = texture_sampler;
     if (IsScenePass(mesh_pass)) {
@@ -289,7 +291,7 @@ void Renderer::Impl::DrawImpostorBatch(SDL_GPUCommandBuffer* commands, SDL_GPURe
         bindings[3].texture = ao_on ? ao_target : textures[white_texture.id - 1];
         bindings[3].sampler = clamp_sampler;
         AddLightingBindings(&bindings[4]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 6);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
     } else {
         SDL_PushGPUFragmentUniformData(commands, 0, &material, sizeof(material));
         SDL_BindGPUFragmentSamplers(pass, 0, bindings, 1);

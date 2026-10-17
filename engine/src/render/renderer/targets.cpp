@@ -133,6 +133,27 @@ void Renderer::Impl::CreateFixedTargets() {
         target = CreateTarget(kLuminanceFormat, drawn_and_read, 1, 1, SDL_GPU_SAMPLECOUNT_1, nullptr,
                               "luminance image");
     }
+    // The sky light map: cube maps with chains of smaller levels.
+    const auto create_cube = [this](int levels, const char* what) {
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_CUBE;
+        info.format = kSceneFormat;
+        info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = static_cast<Uint32>(kSkyCaptureSize);
+        info.height = static_cast<Uint32>(kSkyCaptureSize);
+        info.layer_count_or_depth = 6;
+        info.num_levels = static_cast<Uint32>(levels);
+        info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+        if (texture == nullptr) {
+            const std::string message = std::string("cannot create ") + what;
+            FatalSdlError(message.c_str());
+        }
+        return texture;
+    };
+    sky_capture = create_cube(kSkyCaptureLevels, "captured sky");
+    sky_radiance = create_cube(kSkyRadianceLevels, "sky light map");
+    sky_radiance_ready = false;
 }
 
 void Renderer::Impl::ReleaseSizedTargets() {
@@ -191,6 +212,15 @@ void Renderer::Impl::CreateSamplers() {
     linear_clamp_info.min_filter = SDL_GPU_FILTER_LINEAR;
     linear_clamp_info.mag_filter = SDL_GPU_FILTER_LINEAR;
     linear_clamp_sampler = SDL_CreateGPUSampler(device, &linear_clamp_info);
+
+    // The sky light map is read at any level, blending between levels.
+    SDL_GPUSamplerCreateInfo cube_info = linear_clamp_info;
+    cube_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+    cube_info.max_lod = 1000.0f;
+    cube_sampler = SDL_CreateGPUSampler(device, &cube_info);
+    if (cube_sampler == nullptr) {
+        FatalSdlError("cannot create the cube map sampler");
+    }
 
     SDL_GPUSamplerCreateInfo repeat_info{};
     repeat_info.min_filter = SDL_GPU_FILTER_LINEAR;

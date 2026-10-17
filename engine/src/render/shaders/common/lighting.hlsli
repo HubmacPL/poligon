@@ -11,6 +11,7 @@
 //     #define LIGHTING_AO_BINDING 4       // and LIGHTING_AO_T t4, LIGHTING_AO_S s4
 //     #define LIGHTING_CLOUD_BINDING 5    // and LIGHTING_CLOUD_T t5, LIGHTING_CLOUD_S s5
 //     #define LIGHTING_SKY_BINDING 6      // and LIGHTING_SKY_T t6, LIGHTING_SKY_S s6
+//     #define LIGHTING_RADIANCE_BINDING 7 // and LIGHTING_RADIANCE_T t7, LIGHTING_RADIANCE_S s7
 // The frame's uniforms are always uniform buffer 0 of the fragment shader.
 #include "common.hlsli"
 
@@ -39,6 +40,13 @@ Texture2D<float> sky_occlusion_texture : register(LIGHTING_SKY_T, space2);
 [[vk::combinedImageSampler]][[vk::binding(LIGHTING_SKY_BINDING, 2)]]
 SamplerState sky_occlusion_sampler : register(LIGHTING_SKY_S, space2);
 
+// The sky light map: the sky with its clouds in every direction, blurred level by level as
+// ever rougher surfaces reflect it (sky_capture and sky_prefilter in shaders/sky).
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_RADIANCE_BINDING, 2)]]
+TextureCube<float4> sky_radiance_texture : register(LIGHTING_RADIANCE_T, space2);
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_RADIANCE_BINDING, 2)]]
+SamplerState sky_radiance_sampler : register(LIGHTING_RADIANCE_S, space2);
+
 cbuffer FrameUniforms : register(b0, space3) {
     float4x4 shadow_matrices[4];  // world position -> shadow image coordinates and depth, per cascade
     float4 cascade_far;           // distance from the camera where each cascade ends
@@ -60,7 +68,29 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 sky_occlusion_area;    // xy: world x and z of the sky occlusion map's first point, z: 1 / its size in meters, w: 1 = on
     float4 aerial;                // rgb: color of the haze of distance, a: its density per meter (0 = off)
     float4 foliage;               // x: how much sunlight thin leaves let through
+    float4 sky_radiance;          // x: the sky light map's level for roughness 1, y: 1 = ambient light and reflections come from it, z: its level for ambient light
 };
+
+// The sky light map in a direction, as a surface of the given roughness (0..1) reflects it.
+float3 SkyRadiance(float3 direction, float roughness) {
+    return sky_radiance_texture.SampleLevel(sky_radiance_sampler, direction, roughness * sky_radiance.x).rgb;
+}
+
+// The light a matte surface facing `normal` gets from the whole sky (and ground) before it.
+float3 SkyIrradiance(float3 normal) {
+    return sky_radiance_texture.SampleLevel(sky_radiance_sampler, normal, sky_radiance.z).rgb;
+}
+
+// The split-sum environment BRDF as two numbers (scale and bias of the specular color),
+// fitted in closed form instead of read from a table (Karis, "Physically Based Shading on
+// Mobile", 2014, after Lazarov 2013).
+float2 EnvironmentBrdf(float roughness, float n_dot_v) {
+    const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
+    float4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * n_dot_v)) * r.x + r.y;
+    return float2(-1.04, 1.04) * a004 + r.zw;
+}
 
 // Share of sunlight the clouds let through at a place (1 without clouds).
 float CloudShadow(float3 world_position) {
@@ -265,19 +295,31 @@ float3 ShadeSurface(Surface surface) {
     }
 
     // --- Ambient light: from the sky above and the ground below ---
-    // The sky's light comes mostly from the blue zenith, so surfaces in shadow take a cool
-    // tint; hills and tree crowns around a place hide part of the sky (large-scale occlusion).
+    // Hills and tree crowns around a place hide part of the sky (large-scale occlusion): the
+    // sky's share of the light is cut by what the place sees of it, the ground's less.
     float sky_amount = normal.y * 0.5 + 0.5;
     float sky_visible = SkyVisibility(surface.world_position, normal);
-    float3 ambient = lerp(ambient_ground.rgb * lerp(0.6, 1.0, sky_visible), ambient_sky.rgb * sky_visible, sky_amount);
-    color += diffuse_color * ambient * occlusion;
+    if (sky_radiance.y > 0.5) {
+        // From the sky light map: the real sky before the surface, with its clouds.
+        float visible = lerp(lerp(0.6, 1.0, sky_visible), sky_visible, sky_amount);
+        color += diffuse_color * SkyIrradiance(normal) * visible * occlusion;
 
-    // Smooth surfaces also mirror the sky faintly.
-    if (options.z > 0.5) {
+        // Reflections of the sky: the direction bent towards the normal as roughness grows,
+        // the level of the map for the roughness, nothing from below the surface's horizon,
+        // and the split-sum BRDF with the energy rough surfaces would otherwise lose.
         float3 reflected = reflect(-to_camera, normal);
-        float3 sky = SkyColor(reflected, sky_zenith.rgb, sky_horizon.rgb, sky_ground.rgb);
-        float3 fresnel = specular_color + (max(1.0 - roughness, specular_color) - specular_color) * pow(1.0 - n_dot_v, 5.0);
-        color += sky * fresnel * (1.0 - roughness) * occlusion;
+        reflected = normalize(lerp(reflected, normal, roughness * roughness));
+        float horizon = saturate(1.0 + dot(reflected, surface.surface_normal));
+        float2 brdf = EnvironmentBrdf(roughness, n_dot_v);
+        float3 energy = 1.0 + specular_color * (1.0 / max(brdf.x + brdf.y, 0.001) - 1.0);
+        // Less reflection where the surroundings hide the sky: from ambient occlusion
+        // (Lagarde and de Rousiers, "Moving Frostbite to PBR", 2014) and the sky occlusion map.
+        float specular_occlusion = saturate(pow(n_dot_v + occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + occlusion) * sky_visible;
+        color += SkyRadiance(reflected, roughness) * (specular_color * brdf.x + brdf.y) * energy * horizon * horizon * specular_occlusion;
+    } else {
+        // Without the map: two colors, the sky's from above and the ground's from below.
+        float3 ambient = lerp(ambient_ground.rgb * lerp(0.6, 1.0, sky_visible), ambient_sky.rgb * sky_visible, sky_amount);
+        color += diffuse_color * ambient * occlusion;
     }
 
     // Debug aid: show which shadow cascade shades each pixel.

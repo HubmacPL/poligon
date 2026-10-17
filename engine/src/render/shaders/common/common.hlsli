@@ -11,6 +11,28 @@ float3 SkyColor(float3 direction, float3 zenith, float3 horizon, float3 ground) 
     return lerp(horizon, ground, saturate(-height * 5.0));
 }
 
+// The world direction through a point of one face of a cube map: `face` 0..5 is +x, -x,
+// +y, -y, +z, -z, and `uv` runs from (0, 0) at the face image's top-left to (1, 1), in the
+// layout cube map sampling uses on both Direct3D 12 and Vulkan.
+float3 CubeFaceDirection(int face, float2 uv) {
+    float2 p = uv * 2.0 - 1.0;
+    float3 direction;
+    if (face == 0) {
+        direction = float3(1.0, -p.y, -p.x);
+    } else if (face == 1) {
+        direction = float3(-1.0, -p.y, p.x);
+    } else if (face == 2) {
+        direction = float3(p.x, 1.0, p.y);
+    } else if (face == 3) {
+        direction = float3(p.x, -1.0, -p.y);
+    } else if (face == 4) {
+        direction = float3(p.x, -p.y, 1.0);
+    } else {
+        direction = float3(-p.x, -p.y, -1.0);
+    }
+    return normalize(direction);
+}
+
 // Distance in front of the camera (meters) for a value from the depth image. The camera's
 // depth runs from 1 at the near plane to 0 far away (reversed depth); the formula holds for
 // either direction, since it only uses the projection matrix.

@@ -13,6 +13,9 @@
 #define LIGHTING_SKY_BINDING 5
 #define LIGHTING_SKY_T t5
 #define LIGHTING_SKY_S s5
+#define LIGHTING_RADIANCE_BINDING 6
+#define LIGHTING_RADIANCE_T t6
+#define LIGHTING_RADIANCE_S s6
 #include "lighting.hlsli"
 #define IMPOSTOR_FRAGMENT
 #define IMPOSTOR_NORMALS

@@ -16,6 +16,10 @@
 #include "poligon_shaders/clouds_composite_frag_spirv.h"
 #include "poligon_shaders/clouds_resolve_frag_dxil.h"
 #include "poligon_shaders/clouds_resolve_frag_spirv.h"
+#include "poligon_shaders/sky_capture_frag_dxil.h"
+#include "poligon_shaders/sky_capture_frag_spirv.h"
+#include "poligon_shaders/sky_prefilter_frag_dxil.h"
+#include "poligon_shaders/sky_prefilter_frag_spirv.h"
 #include "poligon_shaders/clouds_frag_dxil.h"
 #include "poligon_shaders/clouds_frag_spirv.h"
 #include "poligon_shaders/depth_copy_frag_dxil.h"
@@ -148,10 +152,34 @@ void Renderer::Impl::DrawFullscreenPass(SDL_GPUCommandBuffer* commands, SDL_GPUT
     SDL_EndGPURenderPass(pass);
 }
 
+void Renderer::Impl::DrawFullscreenToCube(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, int face, int level,
+                                          SDL_GPUGraphicsPipeline* pipeline, const SDL_GPUTextureSamplerBinding* bindings,
+                                          Uint32 binding_count, const void* uniforms0, Uint32 size0, const void* uniforms1,
+                                          Uint32 size1) {
+    SDL_GPUColorTargetInfo color_info{};
+    color_info.texture = target;
+    color_info.mip_level = static_cast<Uint32>(level);
+    color_info.layer_or_depth_plane = static_cast<Uint32>(face);
+    color_info.load_op = SDL_GPU_LOADOP_DONT_CARE;
+    color_info.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_info, 1, nullptr);
+    if (pass == nullptr) {
+        FatalSdlError("cannot begin a cube map pass");
+    }
+    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    SDL_BindGPUFragmentSamplers(pass, 0, bindings, binding_count);
+    SDL_PushGPUFragmentUniformData(commands, 0, uniforms0, size0);
+    if (uniforms1 != nullptr) {
+        SDL_PushGPUFragmentUniformData(commands, 1, uniforms1, size1);
+    }
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(pass);
+}
+
 void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* mesh_vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil),
                                               kMeshVertSpirv, sizeof(kMeshVertSpirv));
-    SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kMeshFragDxil,
+    SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 2, kMeshFragDxil,
                                                 sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
     SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
                                                   sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
@@ -299,7 +327,7 @@ void Renderer::Impl::CreatePipelines() {
     // ("greater or equal" with reversed depth: the surface the depth pass kept) before
     // the shader runs, writing no depth.
     SDL_GPUShader* after_depth_fragment =
-        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
                      kMeshAfterDepthFragSpirv, sizeof(kMeshAfterDepthFragSpirv));
     after_depth_info = mesh_info;
     after_depth_info.fragment_shader = after_depth_fragment;
@@ -345,7 +373,7 @@ void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* terrain_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 1, 3, kTerrainVertDxil, sizeof(kTerrainVertDxil), kTerrainVertSpirv,
                      sizeof(kTerrainVertSpirv), 1);
-    SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 2, kTerrainFragDxil,
+    SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 10, 2, kTerrainFragDxil,
                                                    sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv));
     const auto create_terrain = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUShader* fragment,
                                     SDL_GPUCullMode cull_mode) {
@@ -370,7 +398,7 @@ void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* impostor_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kImpostorVertDxil, sizeof(kImpostorVertDxil), kImpostorVertSpirv,
                      sizeof(kImpostorVertSpirv), 1);
-    SDL_GPUShader* impostor_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 6, 2, kImpostorFragDxil,
+    SDL_GPUShader* impostor_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kImpostorFragDxil,
                                                     sizeof(kImpostorFragDxil), kImpostorFragSpirv, sizeof(kImpostorFragSpirv));
     SDL_GPUShader* impostor_depth_fragment =
         CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kImpostorDepthFragDxil, sizeof(kImpostorDepthFragDxil),
@@ -390,7 +418,7 @@ void Renderer::Impl::CreatePipelines() {
     impostor_pipelines[kScenePass] = create_impostor(mesh_info, impostor_fragment);
     impostor_pipelines[kDepthPass] = create_impostor(prepass_info, impostor_depth_fragment);
     SDL_GPUShader* impostor_after_depth_fragment =
-        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 6, 2, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
                      kImpostorAfterDepthFragSpirv, sizeof(kImpostorAfterDepthFragSpirv));
     impostor_pipelines[kSceneAfterDepthPass] = create_impostor(after_depth_info, impostor_after_depth_fragment);
     SDL_ReleaseGPUShader(device, impostor_after_depth_fragment);
@@ -478,7 +506,7 @@ void Renderer::Impl::CreatePipelines() {
 
     // --- Water: a mesh drawn over the single-sample scene, testing and writing depth. ---
     {
-        SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 6, 2, kWaterFragDxil,
+        SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kWaterFragDxil,
                                                      sizeof(kWaterFragDxil), kWaterFragSpirv, sizeof(kWaterFragSpirv));
         SDL_GPUGraphicsPipelineCreateInfo water_info = mesh_info;
         water_info.fragment_shader = water_fragment;
@@ -489,6 +517,18 @@ void Renderer::Impl::CreatePipelines() {
         if (water_pipeline == nullptr) {
             FatalSdlError("cannot create water pipeline");
         }
+    }
+
+    // --- The sky light map: capturing the sky into cube faces and blurring it level by level. ---
+    {
+        SDL_GPUShader* capture = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 2, kSkyCaptureFragDxil, sizeof(kSkyCaptureFragDxil),
+                                              kSkyCaptureFragSpirv, sizeof(kSkyCaptureFragSpirv));
+        sky_capture_pipeline = CreateFullscreenPipeline(fullscreen_vertex, capture, kSceneFormat, FullscreenBlend::Replace);
+        SDL_ReleaseGPUShader(device, capture);
+        SDL_GPUShader* prefilter = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kSkyPrefilterFragDxil,
+                                                sizeof(kSkyPrefilterFragDxil), kSkyPrefilterFragSpirv, sizeof(kSkyPrefilterFragSpirv));
+        sky_prefilter_pipeline = CreateFullscreenPipeline(fullscreen_vertex, prefilter, kSceneFormat, FullscreenBlend::Replace);
+        SDL_ReleaseGPUShader(device, prefilter);
     }
 
     // Pipelines keep what they need; the shader objects can go.

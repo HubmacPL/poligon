@@ -26,6 +26,9 @@
 #define LIGHTING_SKY_BINDING 5
 #define LIGHTING_SKY_T t5
 #define LIGHTING_SKY_S s5
+#define LIGHTING_RADIANCE_BINDING 6
+#define LIGHTING_RADIANCE_T t6
+#define LIGHTING_RADIANCE_S s6
 #include "lighting.hlsli"
 
 // The scene as drawn before the water, and its depth (copied: the water writes depth).
@@ -138,7 +141,9 @@ float4 main(FragmentInput input) : SV_Target0 {
     // 3. Reflection: the sky, or what the reflected ray meets on screen.
     float3 reflected_direction = reflect(-to_camera, normal);
     reflected_direction.y = abs(reflected_direction.y);  // waves never mirror the ground under the water
-    float3 reflection = SkyColor(reflected_direction, sky_zenith.rgb, sky_horizon.rgb, sky_ground.rgb);
+    // The sky with its clouds from the sky light map (a mirror's level); without it, the sky's colors.
+    float3 reflection = sky_radiance.y > 0.5 ? SkyRadiance(reflected_direction, 0.0)
+                                             : SkyColor(reflected_direction, sky_zenith.rgb, sky_horizon.rgb, sky_ground.rgb);
     int steps = (int)water_screen.z;
     if (steps > 0) {
         float travelled = 0.0;

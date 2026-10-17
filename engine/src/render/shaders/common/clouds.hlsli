@@ -105,6 +105,50 @@ float CloudTransmittanceTowardsSun(float3 position, int steps, float offset) {
     return exp(-optical_depth);
 }
 
+
+float HenyeyGreenstein(float cosine, float g) {
+    float g2 = g * g;
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(max(1.0 + g2 - 2.0 * g * cosine, 0.0001), 1.5));
+}
+
+// Walks a line of sight through the cloud layer from `enter` to `leave` meters along it, in
+// `steps` steps starting at `offset` (0..1) within the first, each lit by sunlight through
+// `light_steps` steps towards the sun. Returns rgb the clouds' light towards the origin, a
+// the share of what is behind that still shows. Used by the cloud pass and the sky capture.
+float4 MarchClouds(float3 origin, float3 direction, float enter, float leave, int steps, int light_steps, float offset) {
+    float step_length = (leave - enter) / steps;
+    float3 to_sun = -light_direction.xyz;
+    float cosine = dot(direction, to_sun);
+    float phase = lerp(HenyeyGreenstein(cosine, -0.25), HenyeyGreenstein(cosine, 0.75), 0.6) * 4.0 * 3.14159265;
+    float3 light = float3(0.0, 0.0, 0.0);
+    float transmittance = 1.0;
+    [loop] for (int i = 0; i < steps; ++i) {
+        float3 position = origin + direction * (enter + (i + offset) * step_length);
+        float density = CloudDensity(position, true);
+        if (density <= 0.0) {
+            continue;
+        }
+        float height = saturate((position.y - layer.x) / max(layer.y - layer.x, 1.0));
+        float sun = CloudTransmittanceTowardsSun(position, light_steps, frac(offset + 0.5 + i * 0.618034));
+        float powder = 1.0 - exp(-density * step_length * 2.0);
+        float3 sunlight = light_color.rgb * sun * phase * lerp(1.0, powder * 2.0, 0.5);
+        float3 skylight = lerp(sky_horizon.rgb * 0.3, sky_zenith.rgb * 0.75, height);
+        float3 scattering = sunlight + skylight;
+        // Energy-conserving integration of a step (Hillaire 2016).
+        float step_transmittance = exp(-density * step_length);
+        light += transmittance * scattering * (1.0 - step_transmittance);
+        transmittance *= step_transmittance;
+        if (transmittance < 0.01) {
+            break;
+        }
+    }
+    // Far towards the horizon the clouds fade into the haze.
+    float haze = saturate(enter / quality.z);
+    light = lerp(light, float3(0.0, 0.0, 0.0), haze);
+    transmittance = lerp(transmittance, 1.0, haze);
+    return float4(light, transmittance);
+}
+
 // Share of sunlight that reaches the ground under the clouds, for the cloud shadow image.
 // Unlike CloudTransmittanceTowardsSun (light inside a cloud) it uses the clouds' detailed
 // shape, the one the sky shows, so that shadows fall only under the clouds one sees; with

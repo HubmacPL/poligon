@@ -19,6 +19,9 @@
 #define LIGHTING_SKY_BINDING 8
 #define LIGHTING_SKY_T t8
 #define LIGHTING_SKY_S s8
+#define LIGHTING_RADIANCE_BINDING 9
+#define LIGHTING_RADIANCE_T t9
+#define LIGHTING_RADIANCE_S s9
 #include "lighting.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]

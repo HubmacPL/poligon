@@ -507,6 +507,66 @@ int main(int argc, char** argv) {
         Expect(difference < 6.0f, "clouds built over frames look like clouds walked in one");
     }
 
+    // --- The sky light map: with sky light, a surface takes the light of the sky it faces. Sky
+    // above blue, ground below red, no sun: a floor facing up turns blue, a ceiling seen from
+    // below red; a smooth metal floor mirrors the blue sky. ---
+    {
+        poligon::Renderer renderer(MakeConfig(backend));
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        poligon::DirectionalLight sun;
+        sun.color = {0.0f, 0.0f, 0.0f, 1.0f};
+        poligon::Environment environment;
+        environment.sky_light = true;
+        environment.sky_light_intensity = 1.0f;
+        environment.sky_zenith = {0.0f, 0.0f, 1.0f, 1.0f};
+        environment.sky_horizon = {0.0f, 0.0f, 1.0f, 1.0f};
+        environment.sky_ground = {1.0f, 0.0f, 0.0f, 1.0f};
+        environment.shadows = false;
+        const auto middle = [](const poligon::Image& image) {
+            const std::uint8_t* pixel = &image.pixels[static_cast<size_t>((kSize / 2) * kSize + kSize / 2) * 4];
+            return glm::ivec3(pixel[0], pixel[1], pixel[2]);
+        };
+        poligon::Camera above = MakeTopDownCamera(3.0f);
+        renderer.BeginFrame(above, sun, environment);
+        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const glm::ivec3 floor_color = middle(frame);
+
+        poligon::Camera below;
+        below.position = {0.0f, -3.0f, 0.0f};
+        below.target = {0.0f, 0.0f, 0.0f};
+        below.up = {0.0f, 0.0f, -1.0f};
+        // A ceiling: the plane turned upside down, facing the ground.
+        const glm::mat4 ceiling = glm::rotate(identity, glm::radians(180.0f), {1.0f, 0.0f, 0.0f}) * glm::scale(identity, {40.0f, 1.0f, 40.0f});
+        renderer.BeginFrame(below, sun, environment);
+        renderer.DrawMesh(plane, ceiling, white);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const glm::ivec3 ceiling_color = middle(frame);
+
+        poligon::Material metal = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+        metal.metallic = 1.0f;
+        metal.roughness = 0.1f;
+        renderer.BeginFrame(above, sun, environment);
+        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), metal);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const glm::ivec3 mirror_color = middle(frame);
+        // The map is small (a matte surface's light at 4 x 4 per face), so a little of the other
+        // half's color reaches a surface: at most 8% (80 of 255 after sRGB encoding).
+        const bool ok = floor_color.z > 150 && floor_color.x < 80 && ceiling_color.x > 150 && ceiling_color.z < 110 &&
+                        mirror_color.z > 150 && mirror_color.x < 40;
+        if (!ok) {
+            std::printf("  floor %d %d %d, ceiling %d %d %d, metal floor %d %d %d\n", floor_color.x, floor_color.y,
+                        floor_color.z, ceiling_color.x, ceiling_color.y, ceiling_color.z, mirror_color.x, mirror_color.y,
+                        mirror_color.z);
+        }
+        Expect(floor_color.z > 150 && floor_color.x < 80, "a floor facing up takes the sky's light");
+        Expect(ceiling_color.x > 150 && ceiling_color.z < 110, "a ceiling facing down takes the ground's light");
+        Expect(mirror_color.z > 150 && mirror_color.x < 40, "a smooth metal floor mirrors the sky");
+    }
+
     // --- Bloom ---
     // A small, very bright square on black. Without bloom the black next to it stays black;
     // with bloom the square's light spills over, less so far away.

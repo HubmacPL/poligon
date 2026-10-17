@@ -10,6 +10,7 @@ add_library(poligon_render STATIC
   passes/output_pass.cpp
   passes/scene_pass.cpp
   passes/shadow_pass.cpp
+  passes/sky_light_pass.cpp
   passes/temporal_aa_pass.cpp
   passes/water_pass.cpp
   renderer/drawing.cpp
@@ -102,6 +103,8 @@ poligon_embed_shader(shaders/sky/clouds.frag.hlsl fragment kCloudsFrag clouds_fr
 poligon_embed_shader(shaders/sky/cloud_shadow.frag.hlsl fragment kCloudShadowFrag cloud_shadow_frag)
 poligon_embed_shader(shaders/sky/clouds_composite.frag.hlsl fragment kCloudsCompositeFrag clouds_composite_frag)
 poligon_embed_shader(shaders/sky/clouds_resolve.frag.hlsl fragment kCloudsResolveFrag clouds_resolve_frag)
+poligon_embed_shader(shaders/sky/sky_capture.frag.hlsl fragment kSkyCaptureFrag sky_capture_frag)
+poligon_embed_shader(shaders/sky/sky_prefilter.frag.hlsl fragment kSkyPrefilterFrag sky_prefilter_frag)
 poligon_embed_shader(shaders/sky/sky.frag.hlsl fragment kSkyFrag sky_frag)
 # water
 poligon_embed_shader(shaders/water/water.frag.hlsl fragment kWaterFrag water_frag)

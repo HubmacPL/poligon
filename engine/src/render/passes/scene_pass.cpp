@@ -88,6 +88,10 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
                                           environment.sky_horizon.g * environment.sky_light_intensity,
                                           environment.sky_horizon.b * environment.sky_light_intensity, environment.aerial_density);
         frame_uniforms.foliage = glm::vec4(environment.foliage_translucency, 0.0f, 0.0f, 0.0f);
+        // Ambient light and reflections from the sky light map, when the sky lights the scene.
+        frame_uniforms.sky_radiance = glm::vec4(static_cast<float>(kSkyRadianceLevels - 2),
+                                                environment.sky_light && impl.sky_radiance_ready ? 1.0f : 0.0f,
+                                                static_cast<float>(kSkyRadianceLevels - 1), 0.0f);
         frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
         frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
         frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
@@ -136,7 +140,7 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
             const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material, impl.temporal_noise_offset);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-            SDL_GPUTextureSamplerBinding bindings[7]{};
+            SDL_GPUTextureSamplerBinding bindings[8]{};
             bindings[0].texture = impl.GetTexture(material.texture, impl.white_texture);
             bindings[0].sampler = impl.texture_sampler;
             bindings[1].texture = impl.GetTexture(material.normal_texture, impl.flat_normal_texture);
@@ -148,7 +152,7 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
             bindings[4].texture = ao_on ? impl.ao_target : impl.textures[impl.white_texture.id - 1];
             bindings[4].sampler = impl.clamp_sampler;
             impl.AddLightingBindings(&bindings[5]);
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 8);
             impl.DrawCommandGeometry(pass, command);
         }
         impl.DrawInstanceBatches(commands, pass, scene_after_depth ? kSceneAfterDepthPass : kScenePass, 0, ao_on,
