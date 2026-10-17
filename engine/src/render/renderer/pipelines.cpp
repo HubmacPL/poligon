@@ -52,6 +52,8 @@
 #include "poligon_shaders/mesh_vert_spirv.h"
 #include "poligon_shaders/shadow_frag_dxil.h"
 #include "poligon_shaders/shadow_frag_spirv.h"
+#include "poligon_shaders/depth_motion_frag_dxil.h"
+#include "poligon_shaders/depth_motion_frag_spirv.h"
 #include "poligon_shaders/sky_frag_dxil.h"
 #include "poligon_shaders/sky_frag_spirv.h"
 #include "poligon_shaders/taa_frag_dxil.h"
@@ -183,6 +185,9 @@ void Renderer::Impl::CreatePipelines() {
                                                 sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
     SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
                                                   sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
+    SDL_GPUShader* depth_motion_fragment =
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kDepthMotionFragDxil, sizeof(kDepthMotionFragDxil), kDepthMotionFragSpirv,
+                     sizeof(kDepthMotionFragSpirv));
     SDL_GPUShader* fullscreen_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 0, kFullscreenVertDxil, sizeof(kFullscreenVertDxil),
                      kFullscreenVertSpirv, sizeof(kFullscreenVertSpirv));
@@ -262,15 +267,17 @@ void Renderer::Impl::CreatePipelines() {
     shadow_info.target_info.num_color_targets = 0;
     shadow_pipeline = SDL_CreateGPUGraphicsPipeline(device, &shadow_info);
 
-    // --- Meshes in the depth pass: depth only, seen from the camera, one sample per pixel ---
+    // --- Meshes in the depth pass: depth and motion vectors, seen from the camera, one sample per pixel ---
     SDL_GPUGraphicsPipelineCreateInfo after_depth_info{};  // filled after the skinned pipelines
     SDL_GPUGraphicsPipelineCreateInfo prepass_info = mesh_info;
-    prepass_info.fragment_shader = shadow_fragment;
+    SDL_GPUColorTargetDescription motion_description{};
+    motion_description.format = kMotionFormat;
+    prepass_info.fragment_shader = depth_motion_fragment;
     prepass_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
     prepass_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
     prepass_info.multisample_state.enable_alpha_to_coverage = false;
-    prepass_info.target_info.color_target_descriptions = nullptr;
-    prepass_info.target_info.num_color_targets = 0;
+    prepass_info.target_info.color_target_descriptions = &motion_description;
+    prepass_info.target_info.num_color_targets = 1;
     prepass_pipeline = SDL_CreateGPUGraphicsPipeline(device, &prepass_info);
     prepass_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
     prepass_pipeline_double_sided = SDL_CreateGPUGraphicsPipeline(device, &prepass_info);
@@ -388,7 +395,7 @@ void Renderer::Impl::CreatePipelines() {
     };
     terrain_pipelines[kScenePass] = create_terrain(mesh_info, terrain_fragment, SDL_GPU_CULLMODE_BACK);
     terrain_pipelines[kShadowPass] = create_terrain(shadow_info, shadow_fragment, SDL_GPU_CULLMODE_NONE);
-    terrain_pipelines[kDepthPass] = create_terrain(prepass_info, shadow_fragment, SDL_GPU_CULLMODE_BACK);
+    terrain_pipelines[kDepthPass] = create_terrain(prepass_info, depth_motion_fragment, SDL_GPU_CULLMODE_BACK);
     // The terrain shader discards nothing, so the depth test runs before it anyway.
     terrain_pipelines[kSceneAfterDepthPass] = create_terrain(after_depth_info, terrain_fragment, SDL_GPU_CULLMODE_BACK);
     SDL_ReleaseGPUShader(device, terrain_vertex);
@@ -484,7 +491,7 @@ void Renderer::Impl::CreatePipelines() {
          sizeof(kBloomUpFragSpirv), kSceneFormat, FullscreenBlend::Mix},
         {&luminance_pipeline, 2, kLuminanceFragDxil, sizeof(kLuminanceFragDxil), kLuminanceFragSpirv,
          sizeof(kLuminanceFragSpirv), kLuminanceFormat, FullscreenBlend::Replace},
-        {&taa_pipeline, 3, kTaaFragDxil, sizeof(kTaaFragDxil), kTaaFragSpirv, sizeof(kTaaFragSpirv), kSceneFormat,
+        {&taa_pipeline, 4, kTaaFragDxil, sizeof(kTaaFragDxil), kTaaFragSpirv, sizeof(kTaaFragSpirv), kSceneFormat,
          FullscreenBlend::Replace},
         {&depth_copy_pipeline, 1, kDepthCopyFragDxil, sizeof(kDepthCopyFragDxil), kDepthCopyFragSpirv,
          sizeof(kDepthCopyFragSpirv), SDL_GPU_TEXTUREFORMAT_R32_FLOAT, FullscreenBlend::Replace},
@@ -535,6 +542,7 @@ void Renderer::Impl::CreatePipelines() {
     SDL_ReleaseGPUShader(device, mesh_vertex);
     SDL_ReleaseGPUShader(device, mesh_fragment);
     SDL_ReleaseGPUShader(device, shadow_fragment);
+    SDL_ReleaseGPUShader(device, depth_motion_fragment);
     SDL_ReleaseGPUShader(device, fullscreen_vertex);
     SDL_ReleaseGPUShader(device, sky_fragment);
     SDL_ReleaseGPUShader(device, tonemap_fragment);

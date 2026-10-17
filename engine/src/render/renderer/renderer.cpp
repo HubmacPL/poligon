@@ -299,6 +299,11 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
         }
         impl_->trample_info = glm::vec4(map.corner.x, map.corner.y, 1.0f / map.size, 1.0f);
     }
+    // The previous frame's draws with object ids and their poses, for motion vectors.
+    impl_->previous_drawn_objects.swap(impl_->drawn_objects);
+    impl_->drawn_objects.clear();
+    impl_->object_draw_counts.clear();
+    impl_->previous_joint_palette.swap(impl_->joint_palette);
     impl_->joint_palette.clear();
     impl_->instance_sources.clear();
     impl_->instance_batches.clear();
@@ -309,7 +314,29 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     }
 }
 
-void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material) {
+void Renderer::Impl::MatchPreviousDraw(std::uint64_t object_id, DrawCommand& command, int joint_count) {
+    command.previous_transform = command.transform;
+    command.previous_first_joint = command.first_joint;
+    if (object_id == 0) {
+        return;
+    }
+    const DrawnObjectKey key{object_id, object_draw_counts[object_id]++};
+    const auto found = previous_drawn_objects.find(key);
+    if (found != previous_drawn_objects.end()) {
+        const DrawnObject& previous = found->second;
+        command.previous_transform = previous.transform;
+        if (command.skinned && previous.joint_count == joint_count &&
+            previous.first_joint + static_cast<std::uint32_t>(joint_count) <= previous_joint_palette.size()) {
+            // The previous pose joins this frame's joint matrices.
+            command.previous_first_joint = static_cast<std::uint32_t>(joint_palette.size());
+            const auto first = previous_joint_palette.begin() + static_cast<std::ptrdiff_t>(previous.first_joint);
+            joint_palette.insert(joint_palette.end(), first, first + joint_count);
+        }
+    }
+    drawn_objects[key] = DrawnObject{command.transform, command.first_joint, joint_count};
+}
+
+void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material, std::uint64_t object_id) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawMesh: call BeginFrame first");
     }
@@ -332,6 +359,7 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
     command.material = material;
     command.bounds_min = mesh.bounds_min;
     command.bounds_max = mesh.bounds_max;
+    impl_->MatchPreviousDraw(object_id, command, 0);
     impl_->draw_commands.push_back(command);
 }
 
@@ -444,7 +472,7 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
 }
 
 void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material,
-                               const glm::mat4* joint_matrices, int joint_count) {
+                               const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
     }
@@ -484,6 +512,7 @@ void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transfor
             command.bounds_max = glm::max(command.bounds_max, moved);
         }
     }
+    impl_->MatchPreviousDraw(object_id, command, joint_count);
     impl_->draw_commands.push_back(command);
 }
 
@@ -637,6 +666,8 @@ void Renderer::EndFrame() {
     impl.RenderTemporalAaPass(frame);
     impl.previous_view_projection = unshifted_view_projection;
     impl.previous_camera_position = camera.position;
+    impl.previous_wind = impl.WindUniform();
+    impl.has_previous_wind = true;
     ++impl.frame_index;
     impl.RenderBloomPass(frame);
     impl.RenderOutputPass(frame);

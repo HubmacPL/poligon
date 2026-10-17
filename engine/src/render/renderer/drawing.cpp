@@ -30,8 +30,9 @@ ObjectUniforms Renderer::Impl::MakeObjectUniforms(const DrawCommand& command) {
     uniforms.model = command.transform;
     uniforms.color = ToVec4(command.material.color);
     uniforms.uv_scale = glm::vec4(command.material.uv_scale.x, command.material.uv_scale.y,
-                                  static_cast<float>(command.first_joint), 0.0f);
+                                  static_cast<float>(command.first_joint), static_cast<float>(command.previous_first_joint));
     uniforms.wind_response = glm::vec4(command.material.wind_bend, command.material.wind_flutter, 0.0f, 0.0f);
+    uniforms.previous_model = command.previous_transform;
     return uniforms;
 }
 

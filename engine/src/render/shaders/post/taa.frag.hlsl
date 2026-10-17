@@ -8,11 +8,12 @@
 // For each output pixel:
 // 1. The new frame's estimate: the drawn pixels around this point, each weighted by how
 //    close its (shifted) sample position lies to the output pixel's center.
-// 2. Where was this point of the scene in the previous frame? The depth image gives the
-//    point's position; the cameras of both frames, without their shifts, give its motion.
-//    The previous result is read there.
-// 3. Anything that moved by other means (wind, animals) is caught by clipping the history
-//    into the colors the new frame's neighborhood holds, which removes ghosts. Colors are
+// 2. Where was this point of the scene in the previous frame? The motion image (motion
+//    vectors from the depth pass) says it for meshes, animals and plants in the wind; where
+//    nothing wrote one (sky, impostors), the depth image gives the point's position and the
+//    cameras of both frames, without their shifts, its motion. The previous result is read there.
+// 3. Anything the motion misses (shading changes, things uncovered) is caught by clipping
+//    the history into the colors the new frame's neighborhood holds, which removes ghosts. Colors are
 //    compared in YCoCg (brightness and two color differences), squeezed by brightness so
 //    that a few very bright pixels cannot dominate.
 //
@@ -33,6 +34,12 @@ SamplerState history_sampler : register(s1, space2);
 Texture2D<float> depth_texture : register(t2, space2);
 [[vk::combinedImageSampler]][[vk::binding(2, 2)]]
 SamplerState depth_sampler : register(s2, space2);
+
+// Each pixel's motion since the previous frame, in texture coordinates; above 3 = none written.
+[[vk::combinedImageSampler]][[vk::binding(3, 2)]]
+Texture2D<float2> motion_texture : register(t3, space2);
+[[vk::combinedImageSampler]][[vk::binding(3, 2)]]
+SamplerState motion_sampler : register(s3, space2);
 
 cbuffer TaaUniforms : register(b0, space3) {
     float4x4 inverse_view_projection;   // this frame, with its sub-pixel shift
@@ -154,15 +161,20 @@ float4 main(FragmentInput input_pixel) : SV_Target0 {
         return float4(max(current_texture.Load(int3(clamp(nearest_drawn, int2(0, 0), last), 0)).rgb, 0.0), 1.0);
     }
 
-    // The nearest surface's position, and where it is and was without the shifts.
-    float2 nearest_uv = (float2(nearest_pixel) + 0.5) / input_size;
-    float4 world = mul(inverse_view_projection, float4(nearest_uv.x * 2.0 - 1.0, 1.0 - nearest_uv.y * 2.0, nearest_depth, 1.0));
-    world /= world.w;
-    float4 previous = mul(previous_view_projection, float4(world.xyz, 1.0));
-    float4 now = mul(current_view_projection, float4(world.xyz, 1.0));
-    float2 motion = ToUv(previous) - ToUv(now);
+    // The nearest surface's motion: its own, or from its position and the two cameras.
+    float2 motion = motion_texture.Load(int3(nearest_pixel, 0));
+    bool behind_camera = false;
+    if (motion.x > 3.0) {
+        float2 nearest_uv = (float2(nearest_pixel) + 0.5) / input_size;
+        float4 world = mul(inverse_view_projection, float4(nearest_uv.x * 2.0 - 1.0, 1.0 - nearest_uv.y * 2.0, nearest_depth, 1.0));
+        world /= world.w;
+        float4 previous = mul(previous_view_projection, float4(world.xyz, 1.0));
+        float4 now = mul(current_view_projection, float4(world.xyz, 1.0));
+        motion = ToUv(previous) - ToUv(now);
+        behind_camera = previous.w <= 0.0;
+    }
     float2 history_uv = uv + motion;
-    if (any(history_uv < 0.0) || any(history_uv > 1.0) || previous.w <= 0.0) {
+    if (any(history_uv < 0.0) || any(history_uv > 1.0) || behind_camera) {
         return float4(Unsqueeze(current), 1.0);  // off screen in the previous frame
     }
 

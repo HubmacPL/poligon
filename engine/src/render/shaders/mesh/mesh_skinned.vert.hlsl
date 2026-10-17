@@ -13,14 +13,22 @@ ByteAddressBuffer joint_matrices : register(t0, space0);
 
 cbuffer FrameUniforms : register(b0, space1) {
     float4x4 view_projection;
-    float4 wind;  // see ApplyWind in common.hlsli
+    float4 wind;     // see ApplyWind in common.hlsli
+    float4 trample;  // see mesh_instanced.vert.hlsl
+    // Motion vectors (depth pass only, motion.x = 1): where each vertex is without the
+    // camera's sub-pixel shift, and where it was in the previous frame.
+    float4x4 motion_view_projection;    // this frame's camera without its shift
+    float4x4 previous_view_projection;  // the previous frame's, without its shift
+    float4 previous_wind;               // the previous frame's wind
+    float4 motion;                      // x: 1 = work out the motion
 };
 
 cbuffer ObjectUniforms : register(b1, space1) {
     float4x4 model;
     float4 object_color;
-    float4 uv_scale;  // xy: multiplier for texture coordinates, z: index of this mesh's first joint matrix
+    float4 uv_scale;  // xy: multiplier for texture coordinates, z: index of this mesh's first joint matrix, w: the same for its pose in the previous frame
     float4 wind_response;  // unused here
+    float4x4 previous_model;  // the transform in the previous frame (motion vectors)
 };
 
 struct VertexInput {
@@ -38,13 +46,15 @@ struct VertexOutput {
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
     float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
+    float4 motion_clip : TEXCOORD5;    // without the camera's shift (motion vectors, depth pass only)
+    float4 previous_clip : TEXCOORD6;  // where the vertex was in the previous frame
 };
 
-VertexOutput main(VertexInput input) {
-    // Blend the positions and normals that each of the four joints would give the vertex.
-    uint first_joint = (uint)uv_scale.z;
-    float3 position = float3(0.0, 0.0, 0.0);
-    float3 normal = float3(0.0, 0.0, 0.0);
+// The vertex placed by the pose whose joint matrices start at `first_joint`: a blend of the
+// positions and normals that each of its four joints would give it.
+void Skin(VertexInput input, uint first_joint, out float3 position, out float3 normal) {
+    position = float3(0.0, 0.0, 0.0);
+    normal = float3(0.0, 0.0, 0.0);
     for (int i = 0; i < 4; ++i) {
         uint address = (first_joint + input.joints[i]) * 64;
         float3 column0 = asfloat(joint_matrices.Load3(address));
@@ -55,6 +65,12 @@ VertexOutput main(VertexInput input) {
         position += weight * (column0 * input.position.x + column1 * input.position.y + column2 * input.position.z + column3);
         normal += weight * (column0 * input.normal.x + column1 * input.normal.y + column2 * input.normal.z);
     }
+}
+
+VertexOutput main(VertexInput input) {
+    float3 position;
+    float3 normal;
+    Skin(input, (uint)uv_scale.z, position, normal);
 
     VertexOutput output;
     float4 world_position = mul(model, float4(position, 1.0));
@@ -64,5 +80,14 @@ VertexOutput main(VertexInput input) {
     output.uv = input.uv * uv_scale.xy;
     output.world_position = world_position.xyz;
     output.fade = 1.0;
+    output.motion_clip = 0.0;
+    output.previous_clip = 0.0;
+    if (motion.x > 0.0) {
+        float3 previous_position;
+        float3 previous_normal;
+        Skin(input, (uint)uv_scale.w, previous_position, previous_normal);
+        output.motion_clip = mul(motion_view_projection, world_position);
+        output.previous_clip = mul(previous_view_projection, mul(previous_model, float4(previous_position, 1.0)));
+    }
     return output;
 }

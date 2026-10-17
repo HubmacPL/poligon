@@ -88,6 +88,7 @@ poligon_embed_shader(shaders/mesh/mesh_skinned.vert.hlsl vertex kMeshSkinnedVert
 poligon_embed_shader(shaders/mesh/mesh_instanced.vert.hlsl vertex kMeshInstancedVert mesh_instanced_vert)
 poligon_embed_shader(shaders/mesh/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
 poligon_embed_shader(shaders/mesh/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
+poligon_embed_shader(shaders/mesh/depth_motion.frag.hlsl fragment kDepthMotionFrag depth_motion_frag)
 poligon_embed_shader(shaders/mesh/mesh_after_depth.frag.hlsl fragment kMeshAfterDepthFrag mesh_after_depth_frag)
 # terrain
 poligon_embed_shader(shaders/terrain/terrain.vert.hlsl vertex kTerrainVert terrain_vert)

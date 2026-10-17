@@ -43,6 +43,10 @@ void Renderer::Impl::RenderOutputPass(FrameContext& frame) {
             debug_image = impl.frame_cloud_shadow;
             debug_mode = 1.0f;
             break;
+        case DebugView::Motion:
+            debug_image = taa_on ? impl.motion_target : white;
+            debug_mode = taa_on ? 3.0f : 1.0f;
+            break;
         }
 
         SDL_GPUTextureSamplerBinding bindings[4]{};

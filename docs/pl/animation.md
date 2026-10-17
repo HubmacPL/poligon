@@ -52,6 +52,7 @@ poligon::DrawModel(renderer, render_model, transform, matrices);
 ```
 
 - `DrawModel(renderer, render_model, transform)` bez macierzy rysuje model ze skinningiem w pozie spoczynkowej.
+- Ostatni argument `object_id` (dowolna niezerowa liczba stała dla zwierzęcia) pozwala czasowemu wygładzaniu krawędzi śledzić ruch i pozę modelu (wektory ruchu, zob. [rendering.md](rendering.md)).
 - Pod `DrawModel`: `Renderer::CreateSkinnedMesh(vertices, skin, ...)` i `Renderer::DrawSkinnedMesh(mesh, transform, material, joint_matrices, joint_count)`. Macierze są kopiowane w chwili wywołania.
 - Siatkę ze skinningiem ustawiają jej stawy i `transform`; węzeł, na którym wisi w pliku, jest pomijany, jak nakazuje glTF.
 

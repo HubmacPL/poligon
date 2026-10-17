@@ -25,6 +25,7 @@ enum class DebugView {
     Fog,               // the light added by volumetric fog
     Bloom,             // the blurred image that bloom mixes in
     CloudShadow,       // the cloud shadow image seen from above (north up, the camera in the middle): white = sunlit
+    Motion,            // motion vectors (with TAA): gray-yellow = still, red and green = moved, blue = worked out from depth
 };
 
 // What happens to the picture after the scene is drawn. Starts as RendererConfig::post and
@@ -573,7 +574,13 @@ public:
 
     void BeginFrame(const Camera& camera, const DirectionalLight& light,
                     const Environment& environment = Environment{});
-    void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material);
+    // `object_id`: any nonzero number that stays the same for this object from frame to
+    // frame (an entity, a physics body). The renderer then remembers where the object was
+    // drawn in the previous frame, and temporal anti-aliasing follows it when it moves
+    // (motion vectors) instead of smearing it. 0 = the object stands still (plants moving in
+    // the wind are followed anyway). Several draws with one id in a frame (the meshes of one
+    // model) are told apart by their order.
+    void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material, std::uint64_t object_id = 0);
     // Same, with a plain color and no texture.
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
     // Draws one mesh many times in a single draw call per pass: `transforms` holds one
@@ -589,8 +596,9 @@ public:
     // Draws a mesh made by CreateSkinnedMesh in a pose. `joint_matrices` come from
     // ComputeJointMatrices (poligon/animation/animation.h), one per joint of the skeleton; they are
     // copied, so the array need not outlive the call. `transform` places the whole model.
+    // `object_id` as in DrawMesh: with it, the previous frame's pose gives motion vectors.
     void DrawSkinnedMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material,
-                         const glm::mat4* joint_matrices, int joint_count);
+                         const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id = 0);
 
     // Photographs a model for an impostor (see Impostor): frames_per_side x frames_per_side
     // pictures of frame_size x frame_size pixels, without perspective. Cut-out materials are

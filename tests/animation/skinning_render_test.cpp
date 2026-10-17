@@ -314,6 +314,28 @@ int main(int argc, char** argv) {
     Expect(shadow < 140, "the bent half casts its shadow where the pose puts it");
     Expect(lit > 190, "no shadow remains where the straight bar would have cast it");
 
+    // Motion vectors follow the pose: the bar drawn straight, then bent, with an object id;
+    // in the motion debug view the half that swung shows motion, the still half none.
+    poligon::PostSettings post = renderer.GetPostSettings();
+    post.temporal_aa = true;
+    post.debug_view = poligon::DebugView::Motion;
+    renderer.SetPostSettings(post);
+    renderer.BeginFrame(camera, light);
+    renderer.DrawSkinnedMesh(bar, identity, white, straight, 2, 5);
+    renderer.EndFrame();
+    renderer.BeginFrame(camera, light);
+    renderer.DrawSkinnedMesh(bar, identity, white, bent.data(), 2, 5);
+    renderer.EndFrame();
+    renderer.CaptureFrame(frame);
+    const int still_red = RedAt(frame, 1.0f, 0.0f);
+    const int swung_red = RedAt(frame, 2.0f, -1.5f);
+    const int swung_green = frame.pixels[static_cast<size_t>(ToPixel(-1.5f) * frame.width + ToPixel(2.0f)) * 4 + 1];
+    if (!(std::abs(still_red - 188) <= 4 && (std::abs(swung_red - 188) > 30 || std::abs(swung_green - 188) > 30))) {
+        std::printf("  motion: still half %d, swung half %d %d\n", still_red, swung_red, swung_green);
+    }
+    Expect(std::abs(still_red - 188) <= 4, "the half of the bar on the still joint has no motion");
+    Expect(std::abs(swung_red - 188) > 30 || std::abs(swung_green - 188) > 30, "the half that swung has motion from the previous pose");
+
     std::printf("skinning_render_test finished\n");
     return test::ExitCode();
 }

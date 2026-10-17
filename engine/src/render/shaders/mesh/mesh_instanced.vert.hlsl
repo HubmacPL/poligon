@@ -22,6 +22,12 @@ cbuffer FrameUniforms : register(b0, space1) {
     float4x4 view_projection;
     float4 wind;     // see ApplyWind in common.hlsli
     float4 trample;  // xy: world x and z of the trample map's corner, z: 1 / its size in meters, w: 1 = on
+    // Motion vectors (depth pass only, motion.x = 1): instances stand still, but the wind
+    // moves them, so the previous frame's wind gives where each vertex was.
+    float4x4 motion_view_projection;    // this frame's camera without its shift
+    float4x4 previous_view_projection;  // the previous frame's, without its shift
+    float4 previous_wind;               // the previous frame's wind
+    float4 motion;                      // x: 1 = work out the motion
 };
 
 // A plant on trampled ground leans over, in a direction of its own, and gets lower.
@@ -66,6 +72,8 @@ struct VertexOutput {
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
     float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
+    float4 motion_clip : TEXCOORD5;    // without the camera's shift (motion vectors, depth pass only)
+    float4 previous_clip : TEXCOORD6;  // where the vertex was in the previous frame
 };
 
 VertexOutput main(VertexInput input) {
@@ -76,9 +84,9 @@ VertexOutput main(VertexInput input) {
     float4 column3 = asfloat(instance_matrices.Load4(address + 48));
 
     VertexOutput output;
-    float3 world_position = column0 * input.position.x + column1 * input.position.y + column2 * input.position.z + column3.xyz;
-    world_position = ApplyTrample(world_position, column3.xyz, wind_response.x);
-    world_position = ApplyWind(world_position, column3.xyz, input.position, wind, wind_response.xy);
+    float3 still_position = column0 * input.position.x + column1 * input.position.y + column2 * input.position.z + column3.xyz;
+    still_position = ApplyTrample(still_position, column3.xyz, wind_response.x);
+    float3 world_position = ApplyWind(still_position, column3.xyz, input.position, wind, wind_response.xy);
     output.clip_position = mul(view_projection, float4(world_position, 1.0));
     // Correct for rotation and for scaling that is the same along all axes.
     output.world_normal = column0 * input.normal.x + column1 * input.normal.y + column2 * input.normal.z;
@@ -86,5 +94,12 @@ VertexOutput main(VertexInput input) {
     output.uv = input.uv * uv_scale.xy;
     output.world_position = world_position;
     output.fade = column3.w;
+    output.motion_clip = 0.0;
+    output.previous_clip = 0.0;
+    if (motion.x > 0.0) {
+        float3 previous_position = ApplyWind(still_position, column3.xyz, input.position, previous_wind, wind_response.xy);
+        output.motion_clip = mul(motion_view_projection, float4(world_position, 1.0));
+        output.previous_clip = mul(previous_view_projection, float4(previous_position, 1.0));
+    }
     return output;
 }

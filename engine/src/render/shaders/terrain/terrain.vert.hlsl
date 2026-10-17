@@ -23,7 +23,14 @@ ByteAddressBuffer instance_matrices : register(t1, space0);
 
 cbuffer FrameUniforms : register(b0, space1) {
     float4x4 view_projection;
-    float4 wind;  // see ApplyWind in common.hlsli
+    float4 wind;     // see ApplyWind in common.hlsli
+    float4 trample;  // see mesh_instanced.vert.hlsl
+    // Motion vectors (depth pass only, motion.x = 1): where each vertex is without the
+    // camera's sub-pixel shift, and where it was in the previous frame.
+    float4x4 motion_view_projection;    // this frame's camera without its shift
+    float4x4 previous_view_projection;  // the previous frame's, without its shift
+    float4 previous_wind;               // the previous frame's wind
+    float4 motion;                      // x: 1 = work out the motion
 };
 
 cbuffer ObjectUniforms : register(b1, space1) {
@@ -52,6 +59,8 @@ struct VertexOutput {
     float2 uv : TEXCOORD2;
     float3 world_position : TEXCOORD3;
     float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
+    float4 motion_clip : TEXCOORD5;    // without the camera's shift (motion vectors, depth pass only)
+    float4 previous_clip : TEXCOORD6;  // where the vertex was in the previous frame
 };
 
 VertexOutput main(VertexInput input) {
@@ -78,5 +87,12 @@ VertexOutput main(VertexInput input) {
     output.uv = point_position;
     output.world_position = world_position;
     output.fade = 1.0;
+    // The ground stands still: only the cameras differ.
+    output.motion_clip = 0.0;
+    output.previous_clip = 0.0;
+    if (motion.x > 0.0) {
+        output.motion_clip = mul(motion_view_projection, float4(world_position, 1.0));
+        output.previous_clip = mul(previous_view_projection, float4(world_position, 1.0));
+    }
     return output;
 }

@@ -42,7 +42,7 @@ fog.volumetric 1
 
 ## Podglądy diagnostyczne
 
-- `PostSettings::debug_view` pokazuje jeden etap zamiast gotowej klatki: `AmbientOcclusion` (białe = otwarte, ciemne = zasłonięte), `Fog` (światło dodawane przez mgłę objętościową), `Bloom` (rozmyty obraz domieszany przez poświatę), `CloudShadow` (obraz cieni chmur z góry, północ u góry, kamera w środku; białe = słońce). Wyłączony etap jest biały. W pliku ustawień obrazu: `post.debug_view none|ambient_occlusion|fog|bloom|cloud_shadow`.
+- `PostSettings::debug_view` pokazuje jeden etap zamiast gotowej klatki: `AmbientOcclusion` (białe = otwarte, ciemne = zasłonięte), `Fog` (światło dodawane przez mgłę objętościową), `Bloom` (rozmyty obraz domieszany przez poświatę), `CloudShadow` (obraz cieni chmur z góry, północ u góry, kamera w środku; białe = słońce), `Motion` (wektory ruchu, przy TAA: szarożółte = bez ruchu, więcej czerwieni = ruch w lewo, mniej = w prawo, więcej zieleni = w górę; niebieskie = wyliczone z głębi). Wyłączony etap jest biały. W pliku ustawień obrazu: `post.debug_view none|ambient_occlusion|fog|bloom|cloud_shadow|motion`.
 - `Environment::show_shadow_cascades` barwi powierzchnie według kaskady cieni, która je cieniuje: czerwona, zielona, niebieska, żółta od bliskiej do dalekiej.
 - Oba są w oknie ustawień i w pliku ustawień.
 

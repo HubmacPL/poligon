@@ -28,14 +28,16 @@ void Renderer::Impl::RenderTemporalAaPass(FrameContext& frame) {
         taa_uniforms.parameters = glm::vec4(glm::clamp(impl.post.temporal_aa_blend, 0.01f, 1.0f),
                                             impl.has_taa_history ? 1.0f : 0.0f, output_width, output_height);
         taa_uniforms.input = glm::vec4(width, height, jitter_pixels.x, jitter_pixels.y);
-        SDL_GPUTextureSamplerBinding bindings[3]{};
+        SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = scene_image;
         bindings[0].sampler = impl.clamp_sampler;
         bindings[1].texture = impl.taa_targets[impl.taa_index];
         bindings[1].sampler = impl.linear_clamp_sampler;
         bindings[2].texture = impl.prepass_depth;
         bindings[2].sampler = impl.clamp_sampler;
-        impl.DrawFullscreenPass(commands, impl.taa_targets[write], false, impl.taa_pipeline, bindings, 3, &taa_uniforms,
+        bindings[3].texture = impl.motion_target;
+        bindings[3].sampler = impl.clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.taa_targets[write], false, impl.taa_pipeline, bindings, 4, &taa_uniforms,
                                 sizeof(taa_uniforms));
         impl.taa_index = write;
         impl.has_taa_history = true;

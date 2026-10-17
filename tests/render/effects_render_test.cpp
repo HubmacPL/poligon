@@ -644,6 +644,54 @@ int main(int argc, char** argv) {
         Expect(edge_widths[1] > edge_widths[0] * 3 / 2, "a shadow cast from 10 m up is softer with a sun of some size");
     }
 
+    // --- Motion vectors: with temporal anti-aliasing the depth pass writes each pixel's motion
+    // since the previous frame. Seen in the motion debug view from above: a box moved with an
+    // object id shows its motion, the same box moved without one and the still floor show
+    // none, and plants bending in a changing wind show motion of their own. ---
+    {
+        poligon::RendererConfig config = MakeConfig(backend);
+        config.post.temporal_aa = true;
+        config.post.debug_view = poligon::DebugView::Motion;
+        poligon::Renderer renderer(config);
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        const poligon::MeshHandle cube = renderer.CreateCubeMesh();
+        const poligon::DirectionalLight sun = MakeFlatLight(30.0f);
+        poligon::Environment environment;
+        environment.wind_strength = 3.0f;
+        poligon::Material grass = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+        grass.wind_bend = 1.0f;
+        const poligon::Camera camera = MakeTopDownCamera(12.0f);
+        for (int i = 0; i < 3; ++i) {
+            environment.wind_time = static_cast<float>(i) * 1.0f;
+            renderer.BeginFrame(camera, sun, environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+            const float x = static_cast<float>(i) * 0.5f;
+            renderer.DrawMesh(cube, glm::translate(identity, {x - 3.0f, 0.5f, -2.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}), 7);
+            renderer.DrawMesh(cube, glm::translate(identity, {x - 3.0f, 0.5f, 2.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+            // A tall thin plant, which bends in the wind (its top moves between frames).
+            const glm::mat4 plant = glm::translate(identity, {3.0f, 2.0f, 0.0f}) * glm::scale(identity, {1.0f, 4.0f, 1.0f});
+            renderer.DrawMeshInstances(cube, grass, &plant, 1);
+            renderer.EndFrame();
+        }
+        renderer.CaptureFrame(frame);
+        const glm::ivec2 tracked = ToPixel(camera, {-2.0f, 1.0f, -2.0f});
+        const glm::ivec2 untracked = ToPixel(camera, {-2.0f, 1.0f, 2.0f});
+        const glm::ivec2 floor_pixel = ToPixel(camera, {0.0f, 0.0f, 4.0f});
+        const glm::ivec2 plant_top = ToPixel(camera, {3.0f, 3.9f, 0.0f});
+        const int tracked_red = RedAt(frame, tracked.x, tracked.y);
+        const int untracked_red = RedAt(frame, untracked.x, untracked.y);
+        const int floor_red = RedAt(frame, floor_pixel.x, floor_pixel.y);
+        const int plant_red = RedAt(frame, plant_top.x, plant_top.y);
+        const int plant_green = frame.pixels[static_cast<size_t>(plant_top.y * kSize + plant_top.x) * 4 + 1];
+        std::printf("  motion view: tracked box %d, untracked box %d, floor %d, plant top %d %d\n", tracked_red, untracked_red,
+                    floor_red, plant_red, plant_green);
+        // 0.5 m to the right per frame seen from 12 m up: moved right, so it was to the left (red lower).
+        Expect(std::abs(floor_red - 188) <= 4, "the still floor has no motion");
+        Expect(std::abs(untracked_red - 188) <= 4, "a box moved without an object id has no motion of its own");
+        Expect(tracked_red < 150, "a box moved with an object id has motion vectors");
+        Expect(std::abs(plant_red - 188) > 4 || std::abs(plant_green - 188) > 4, "a plant in the wind has motion vectors");
+    }
+
     // --- Bloom ---
     // A small, very bright square on black. Without bloom the black next to it stays black;
     // with bloom the square's light spills over, less so far away.

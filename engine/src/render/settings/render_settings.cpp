@@ -135,9 +135,9 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("quality.terrain_detail", quality.terrain_detail, 0.2f, 3.0f);
 
     visitor.Section("debug view");
-    static const char* const kDebugViews[] = {"none", "ambient_occlusion", "fog", "bloom", "cloud_shadow"};
+    static const char* const kDebugViews[] = {"none", "ambient_occlusion", "fog", "bloom", "cloud_shadow", "motion"};
     int debug_view = static_cast<int>(post.debug_view);
-    visitor.Choice("post.debug_view", debug_view, kDebugViews, 5);
+    visitor.Choice("post.debug_view", debug_view, kDebugViews, 6);
     post.debug_view = static_cast<DebugView>(debug_view);
 }
 

@@ -42,7 +42,7 @@ fog.volumetric 1
 
 ## Debug views
 
-- `PostSettings::debug_view` shows one stage instead of the finished frame: `AmbientOcclusion` (white = open, dark = occluded), `Fog` (the light the volumetric fog adds), `Bloom` (the blurred image that bloom mixes in), `CloudShadow` (the cloud shadow image from above, north up with the camera in the middle; white = sunlit). A stage that is off shows as white. In the render settings file: `post.debug_view none|ambient_occlusion|fog|bloom|cloud_shadow`.
+- `PostSettings::debug_view` shows one stage instead of the finished frame: `AmbientOcclusion` (white = open, dark = occluded), `Fog` (the light the volumetric fog adds), `Bloom` (the blurred image that bloom mixes in), `CloudShadow` (the cloud shadow image from above, north up with the camera in the middle; white = sunlit), `Motion` (motion vectors, with TAA: gray-yellow = still, more red = moved left, less = right, more green = moved up; blue = worked out from depth). A stage that is off shows as white. In the render settings file: `post.debug_view none|ambient_occlusion|fog|bloom|cloud_shadow|motion`.
 - `Environment::show_shadow_cascades` tints surfaces by the shadow cascade that shades them: red, green, blue, yellow from near to far.
 - Both are in the settings window and in the settings file.
 

@@ -52,6 +52,7 @@ poligon::DrawModel(renderer, render_model, transform, matrices);
 ```
 
 - `DrawModel(renderer, render_model, transform)` without matrices draws a skinned model in its rest pose.
+- A last argument `object_id` (any nonzero number that stays the same for the animal) lets temporal anti-aliasing follow the model's movement and pose (motion vectors, see [rendering.md](rendering.md)).
 - Below `DrawModel`: `Renderer::CreateSkinnedMesh(vertices, skin, ...)` and `Renderer::DrawSkinnedMesh(mesh, transform, material, joint_matrices, joint_count)`. The matrices are copied at the call.
 - A skinned mesh is placed by its joints and by `transform`; the node it hangs on in the file is ignored, as glTF prescribes.
 

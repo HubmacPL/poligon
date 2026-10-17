@@ -77,6 +77,9 @@ constexpr float kFarForestHalfSize = 1200.0f;
 constexpr float kPlayHalfSize = 500.0f;
 constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
+// Object ids for the renderer's motion vectors: crates by physics body, foxes by number.
+constexpr std::uint64_t kCrateObjectIds = 0x100000000ull;
+constexpr std::uint64_t kAnimalObjectIds = 0x200000000ull;
 // How far each kind of thing is drawn (meters). Trees have simpler meshes for the two
 // longer ranges; everything else has one mesh and simply stops being drawn.
 // How far each level of detail is used, for kinds that have simpler levels. `impostor`:
@@ -400,9 +403,10 @@ public:
         for (const poligon::WaterSurface& lake : lakes_) {
             renderer_.DrawWater(lake.mesh, lake.transform, water_material_);
         }
+        // Object ids (crates by body, foxes by number) let temporal anti-aliasing follow them.
         for (const poligon::BodyHandle crate : crates_) {
             renderer_.DrawMesh(cube_mesh_, physics_.GetTransform(crate) * glm::scale(glm::mat4(1.0f), glm::vec3(kCrateSize)),
-                               crate_material_);
+                               crate_material_, kCrateObjectIds + crate.id);
         }
         if (show_collision_) {
             // Every body except the ground and the fences, as the box that encloses it:
@@ -426,8 +430,9 @@ public:
                                    color);
             }
         }
-        for (Animal& animal : animals_) {
-            poligon::DrawModel(renderer_, fox_model_, animal.transform, animal.player->GetJointMatrices());
+        for (size_t i = 0; i < animals_.size(); ++i) {
+            poligon::DrawModel(renderer_, fox_model_, animals_[i].transform, animals_[i].player->GetJointMatrices(),
+                               kAnimalObjectIds + i);
         }
         vegetation_.Draw(renderer_, camera);
         ground_cover_->Update(camera.position);

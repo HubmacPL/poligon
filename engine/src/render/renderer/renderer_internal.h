@@ -19,6 +19,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <SDL3/SDL.h>
@@ -39,13 +40,19 @@ struct VertexFrameUniforms {
     glm::mat4 view_projection;
     glm::vec4 wind{0.0f};
     glm::vec4 trample{0.0f};  // xy: corner of the trample map, z: 1 / its size, w: 1 = on
+    // Motion vectors, worked out in the depth pass only (motion.x = 1).
+    glm::mat4 motion_view_projection{1.0f};    // this frame's camera without its sub-pixel shift
+    glm::mat4 previous_view_projection{1.0f};  // the previous frame's, without its shift
+    glm::vec4 previous_wind{0.0f};
+    glm::vec4 motion{0.0f};
 };
 
 struct ObjectUniforms {
     glm::mat4 model;
     glm::vec4 color;
-    glm::vec4 uv_scale;
+    glm::vec4 uv_scale;  // w: where the previous frame's joint matrices start (skinned meshes)
     glm::vec4 wind_response{0.0f};
+    glm::mat4 previous_model{1.0f};  // the transform in the previous frame
 };
 
 struct FragmentFrameUniforms {
@@ -264,6 +271,11 @@ constexpr SDL_GPUTextureFormat kSceneFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16
 constexpr SDL_GPUTextureFormat kOutputFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
 constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 constexpr SDL_GPUTextureFormat kAoFormat = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+// Motion vectors: each pixel's motion on screen since the previous frame, in texture coordinates.
+constexpr SDL_GPUTextureFormat kMotionFormat = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
+// Stored where nothing drawn worked out a motion (the sky, impostors); the shaders return
+// it as float2(4, 4).
+constexpr float kNoMotion = 4.0f;
 constexpr SDL_GPUTextureFormat kLuminanceFormat = SDL_GPU_TEXTUREFORMAT_R16_FLOAT;
 // Terrain heights as 16-bit values between the lowest and the highest point of the map:
 // 65535 steps, which is millimeters for hills. Unlike a float format it can always be
@@ -319,6 +331,33 @@ struct DrawCommand {
     // Skinned meshes: where this draw's joint matrices start in the frame's joint buffer.
     std::uint32_t first_joint = 0;
     bool skinned = false;
+    // Where the object was in the previous frame (the same draw when it has no object id):
+    // its transform and, for skinned meshes, where that pose's joint matrices start.
+    glm::mat4 previous_transform{1.0f};
+    std::uint32_t previous_first_joint = 0;
+};
+
+// A draw with an object id (Renderer::DrawMesh), told apart from other draws with the same id
+// in one frame by its order among them.
+struct DrawnObjectKey {
+    std::uint64_t object_id = 0;
+    std::uint32_t order = 0;
+    bool operator==(const DrawnObjectKey& other) const {
+        return object_id == other.object_id && order == other.order;
+    }
+};
+
+struct DrawnObjectKeyHash {
+    size_t operator()(const DrawnObjectKey& key) const {
+        return std::hash<std::uint64_t>()(key.object_id * 31u + key.order);
+    }
+};
+
+// What the next frame needs to know about a draw with an object id.
+struct DrawnObject {
+    glm::mat4 transform{1.0f};
+    std::uint32_t first_joint = 0;  // in that frame's joint_palette
+    int joint_count = 0;
 };
 
 // The three passes that draw meshes.
@@ -623,6 +662,8 @@ struct Renderer::Impl {
     // its history, the previous frame's camera (without its shift), and the frame count
     // that picks the shift and moves the noise patterns from frame to frame.
     SDL_GPUTexture* taa_targets[2] = {nullptr, nullptr};
+    // Motion vectors written by the depth pass (kMotionFormat, drawn size).
+    SDL_GPUTexture* motion_target = nullptr;
     int taa_index = 0;
     bool has_taa_history = false;
     WindowMode window_mode = WindowMode::Windowed;
@@ -670,6 +711,17 @@ struct Renderer::Impl {
     // The joint matrices of every skinned mesh drawn this frame, one after another, and
     // the buffer on the graphics card they are copied to in EndFrame.
     std::vector<glm::mat4> joint_palette;
+    // Motion vectors: draws with an object id in this frame and in the previous one, the
+    // previous frame's joint matrices, how many draws each id has had this frame, and the
+    // previous frame's wind.
+    std::unordered_map<DrawnObjectKey, DrawnObject, DrawnObjectKeyHash> drawn_objects;
+    std::unordered_map<DrawnObjectKey, DrawnObject, DrawnObjectKeyHash> previous_drawn_objects;
+    std::vector<glm::mat4> previous_joint_palette;
+    std::unordered_map<std::uint64_t, std::uint32_t> object_draw_counts;
+    glm::vec4 previous_wind{0.0f};
+    bool has_previous_wind = false;
+    // Fills command.previous_* from the previous frame's draw with this id, and remembers this one.
+    void MatchPreviousDraw(std::uint64_t object_id, DrawCommand& command, int joint_count);
     SDL_GPUBuffer* joint_buffer = nullptr;
     Uint32 joint_buffer_capacity = 0;
     SDL_GPUTransferBuffer* joint_transfer = nullptr;

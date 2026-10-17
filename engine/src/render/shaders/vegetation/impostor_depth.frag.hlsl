@@ -1,5 +1,6 @@
 // Fragment shader for impostors in the depth pass: only decides which pixels the card
-// covers, the same way impostor.frag.hlsl does.
+// covers, the same way impostor.frag.hlsl does. Far away and still, impostors write no
+// motion of their own; temporal anti-aliasing works it out from the depth and the cameras.
 #include "common.hlsli"
 #define IMPOSTOR_FRAGMENT
 #include "impostor.hlsli"
@@ -21,7 +22,7 @@ struct FragmentInput {
     float3 blend_fade : TEXCOORD8;
 };
 
-void main(FragmentInput input) {
+float2 main(FragmentInput input) : SV_Target0 {
     if (!KeptByFade(input.blend_fade.z, input.clip_position.xy + float2(impostor_material.z, 0.0))) {
         discard;
     }
@@ -31,4 +32,5 @@ void main(FragmentInput input) {
     if (texel.color.a < impostor_material.x) {
         discard;
     }
+    return float2(4.0, 4.0);  // no motion of its own (see kNoMotion in renderer_internal.h)
 }

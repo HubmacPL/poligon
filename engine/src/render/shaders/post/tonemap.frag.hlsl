@@ -28,7 +28,7 @@ SamplerState debug_sampler : register(s3, space2);
 
 cbuffer TonemapUniforms : register(b0, space3) {
     float4 parameters;     // x: exposure (brightness multiplier), y: 0 = none, 1 = ACES filmic curve, z: bloom share, w: automatic exposure on
-    float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier, w: debug view (0 = off, 1 = show red as gray, 2 = show color)
+    float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier, w: debug view (0 = off, 1 = show red as gray, 2 = show color, 3 = show motion)
     float4 white_balance;  // rgb: multipliers from temperature and tint (1 = neutral)
     float4 grading;        // x: saturation, y: contrast, z: vignette strength, w: sharpening
     float4 input;          // x: 1 = the scene image has the output's size, 0 = smaller, stretched
@@ -68,6 +68,14 @@ float4 main(FragmentInput input_pixel) : SV_Target0 {
     }
     if (auto_exposure.w > 0.5) {
         float4 debug = debug_texture.SampleLevel(debug_sampler, input_pixel.uv, 0.0);
+        if (auto_exposure.w > 2.5) {
+            // Motion since the previous frame: gray-yellow = still, more red = moved left, less
+            // = right, more green = moved up; blue = none written (worked out from depth).
+            if (debug.x > 3.0) {
+                return float4(0.0, 0.0, 0.5, 1.0);
+            }
+            return float4(saturate(0.5 + debug.xy * 25.0), 0.0, 1.0);
+        }
         if (auto_exposure.w < 1.5) {
             return float4(debug.rrr, 1.0);
         }
