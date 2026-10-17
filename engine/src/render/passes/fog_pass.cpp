@@ -1,4 +1,4 @@
-// Pass 5: volumetric fog.
+﻿// Pass 5: volumetric fog.
 
 #include "../renderer/renderer_internal.h"
 
@@ -40,17 +40,23 @@ void Renderer::Impl::RenderFogPass(FrameContext& frame) {
                                            environment.fog_sun_glow, environment.fog_shadow_brightness);
         fog_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, glm::min(kFogWalkDistance, camera.far_plane), width,
                                          height);
-        fog_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.fog_steps, 4, 128)), 0.0f, 0.0f, 0.0f);
+        // y: the sky light map's level for roughness 1, z: how much the fog takes the sky's color from it.
+        const bool use_sky_map = environment.sky_light && impl.sky_radiance_ready;
+        fog_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.fog_steps, 4, 128)),
+                                         static_cast<float>(kSkyRadianceLevels - 2),
+                                         use_sky_map ? glm::clamp(environment.fog_sky_color, 0.0f, 1.0f) : 0.0f, 0.0f);
         fog_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
                                                    clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
-        SDL_GPUTextureSamplerBinding bindings[3]{};
+        SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = impl.prepass_depth;
         bindings[0].sampler = impl.clamp_sampler;
         bindings[1].texture = impl.shadow_atlas;
         bindings[1].sampler = impl.shadow_sampler;
+        bindings[3].texture = impl.sky_radiance;
+        bindings[3].sampler = impl.cube_sampler;
         bindings[2].texture = impl.frame_cloud_shadow;
         bindings[2].sampler = impl.linear_clamp_sampler;
-        impl.DrawFullscreenPass(commands, impl.fog_target, false, impl.fog_pipeline, bindings, 3, &fog_uniforms,
+        impl.DrawFullscreenPass(commands, impl.fog_target, false, impl.fog_pipeline, bindings, 4, &fog_uniforms,
                                 sizeof(fog_uniforms));
 
         FogCompositeUniforms composite_uniforms;

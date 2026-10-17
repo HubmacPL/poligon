@@ -565,6 +565,31 @@ int main(int argc, char** argv) {
         Expect(floor_color.z > 150 && floor_color.x < 80, "a floor facing up takes the sky's light");
         Expect(ceiling_color.x > 150 && ceiling_color.z < 110, "a ceiling facing down takes the ground's light");
         Expect(mirror_color.z > 150 && mirror_color.x < 40, "a smooth metal floor mirrors the sky");
+
+        // Thick simple fog of a red color over a far floor: with fog_sky_color the fog takes the
+        // blue sky's color instead.
+        poligon::Camera level;
+        level.position = {0.0f, 2.0f, 0.0f};
+        level.target = {0.0f, 1.5f, -100.0f};
+        level.far_plane = 2000.0f;
+        environment.fog_color = {1.0f, 0.0f, 0.0f, 1.0f};
+        environment.fog_density = 0.05f;
+        glm::ivec3 fogged[2];
+        for (int sky_color = 0; sky_color < 2; ++sky_color) {
+            environment.fog_sky_color = static_cast<float>(sky_color);
+            renderer.BeginFrame(level, sun, environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {2000.0f, 1.0f, 2000.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const std::uint8_t* pixel = &frame.pixels[static_cast<size_t>((kSize / 2 + 8) * kSize + kSize / 2) * 4];  // floor about 60 m away
+            fogged[sky_color] = glm::ivec3(pixel[0], pixel[1], pixel[2]);
+        }
+        if (!(fogged[0].x > fogged[0].z * 2 && fogged[1].z > fogged[1].x * 2)) {
+            std::printf("  fogged floor %d %d %d, with the sky's color %d %d %d\n", fogged[0].x, fogged[0].y, fogged[0].z,
+                        fogged[1].x, fogged[1].y, fogged[1].z);
+        }
+        Expect(fogged[0].x > fogged[0].z * 2, "fog has its own color");
+        Expect(fogged[1].z > fogged[1].x * 2, "with fog_sky_color the fog takes the sky's color");
     }
 
     // --- Bloom ---

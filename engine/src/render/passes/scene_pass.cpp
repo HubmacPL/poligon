@@ -91,7 +91,8 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
         // Ambient light and reflections from the sky light map, when the sky lights the scene.
         frame_uniforms.sky_radiance = glm::vec4(static_cast<float>(kSkyRadianceLevels - 2),
                                                 environment.sky_light && impl.sky_radiance_ready ? 1.0f : 0.0f,
-                                                static_cast<float>(kSkyRadianceLevels - 1), 0.0f);
+                                                static_cast<float>(kSkyRadianceLevels - 1),
+                                                environment.sky_light && impl.sky_radiance_ready ? glm::clamp(environment.fog_sky_color, 0.0f, 1.0f) : 0.0f);
         frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
         frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
         frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);

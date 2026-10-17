@@ -23,6 +23,12 @@ Texture2D<float> cloud_shadow_texture : register(t2, space2);
 [[vk::combinedImageSampler]][[vk::binding(2, 2)]]
 SamplerState cloud_shadow_sampler : register(s2, space2);
 
+// The sky light map (lighting.hlsli): the fog can take the sky's color in the direction one looks.
+[[vk::combinedImageSampler]][[vk::binding(3, 2)]]
+TextureCube<float4> sky_radiance_texture : register(t3, space2);
+[[vk::combinedImageSampler]][[vk::binding(3, 2)]]
+SamplerState sky_radiance_sampler : register(s3, space2);
+
 cbuffer FogUniforms : register(b0, space3) {
     float4x4 inverse_view_projection;
     float4x4 shadow_matrices[4];
@@ -34,7 +40,7 @@ cbuffer FogUniforms : register(b0, space3) {
     float4 fog;              // rgb: color of sunlit fog, a: density per meter at the base height
     float4 fog_shape;        // x: thinning per meter of height, y: base height, z: sun glow strength, w: brightness of shadowed fog
     float4 options;          // x: shadows on, y: farthest distance walked, zw: size of the depth image in pixels
-    float4 quality;          // x: steps along each line of sight
+    float4 quality;          // x: steps along each line of sight, y: the sky light map's level for roughness 1, z: share of the sky's color in the fog
     float4 cloud_shadow_area;  // xy: world x and z of the cloud shadow image's corner, z: 1 / its size, w: 1 = on
 };
 
@@ -90,6 +96,14 @@ float4 main(FragmentInput input) : SV_Target0 {
     const float g = 0.7;
     float glow = (1.0 - g * g) / (12.566 * pow(1.0 + g * g - 2.0 * g * cos_angle, 1.5));
     float3 sun_glow = light_color.rgb * (glow * fog_shape.z);
+    // The fog's own light: its color, or (fog_sky_color) the blurred sky in this direction.
+    float3 fog_light = fog.rgb;
+    if (quality.z > 0.0) {
+        // Somewhat blurred (the level for roughness 1/3) and never below the horizon, where
+        // the map holds the ground.
+        float3 sky = sky_radiance_texture.SampleLevel(sky_radiance_sampler, normalize(float3(direction.x, max(direction.y, 0.15), direction.z)), quality.y / 3.0).rgb;
+        fog_light = lerp(fog.rgb, sky, quality.z);
+    }
 
     // The start of each step is shifted by a per-pixel amount; the resulting noise is
     // removed when the fog is put over the scene.
@@ -108,7 +122,7 @@ float4 main(FragmentInput input) : SV_Target0 {
         float density = fog.a * exp(-max(position.y - fog_shape.y, 0.0) * fog_shape.x);
         float blocked = 1.0 - exp(-density * (end - start));
         float visibility = SunVisibility(position);
-        float3 light = fog.rgb * lerp(fog_shape.w, 1.0, visibility) + sun_glow * visibility;
+        float3 light = fog_light * lerp(fog_shape.w, 1.0, visibility) + sun_glow * visibility;
         added_light += let_through * blocked * light;
         let_through *= 1.0 - blocked;
     }

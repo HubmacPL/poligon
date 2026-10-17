@@ -1168,6 +1168,8 @@ poligon::RenderSettings MakeForestSettings() {
     environment.fog_base_height = -60.0f;
     environment.fog_shadow_brightness = 0.22f;
     environment.fog_sun_glow = 1.2f;
+    // Fog and haze take the sky's color in the direction one looks (from the sky light map).
+    environment.fog_sky_color = 1.0f;
     environment.wind_direction = {0.6f, 0.8f};
     environment.wind_strength = 1.0f;
     // Fair-weather clouds, their shadows drifting over the land, and the haze of distance

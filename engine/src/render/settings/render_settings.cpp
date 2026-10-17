@@ -40,6 +40,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("fog.base_height", environment.fog_base_height, -20.0f, 50.0f);
     visitor.Float("fog.shadow_brightness", environment.fog_shadow_brightness, 0.0f, 1.0f);
     visitor.Float("fog.sun_glow", environment.fog_sun_glow, 0.0f, 5.0f);
+    visitor.Float("fog.sky_color", environment.fog_sky_color, 0.0f, 1.0f);
 
     visitor.Section("clouds and haze");
     visitor.Bool("clouds.on", environment.clouds);

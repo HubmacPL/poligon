@@ -474,7 +474,7 @@ void Renderer::Impl::CreatePipelines() {
          FullscreenBlend::Replace},
         {&ao_blur_pipeline, 2, kAoBlurFragDxil, sizeof(kAoBlurFragDxil), kAoBlurFragSpirv, sizeof(kAoBlurFragSpirv),
          kAoFormat, FullscreenBlend::Replace},
-        {&fog_pipeline, 3, kFogFragDxil, sizeof(kFogFragDxil), kFogFragSpirv, sizeof(kFogFragSpirv), kSceneFormat,
+        {&fog_pipeline, 4, kFogFragDxil, sizeof(kFogFragDxil), kFogFragSpirv, sizeof(kFogFragSpirv), kSceneFormat,
          FullscreenBlend::Replace},
         {&fog_composite_pipeline, 2, kFogCompositeFragDxil, sizeof(kFogCompositeFragDxil), kFogCompositeFragSpirv,
          sizeof(kFogCompositeFragSpirv), kSceneFormat, FullscreenBlend::AddAndDim},

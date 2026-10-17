@@ -68,7 +68,7 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 sky_occlusion_area;    // xy: world x and z of the sky occlusion map's first point, z: 1 / its size in meters, w: 1 = on
     float4 aerial;                // rgb: color of the haze of distance, a: its density per meter (0 = off)
     float4 foliage;               // x: how much sunlight thin leaves let through
-    float4 sky_radiance;          // x: the sky light map's level for roughness 1, y: 1 = ambient light and reflections come from it, z: its level for ambient light
+    float4 sky_radiance;          // x: the sky light map's level for roughness 1, y: 1 = ambient light and reflections come from it, z: its level for ambient light, w: share of the sky's color in fog and haze
 };
 
 // The sky light map in a direction, as a surface of the given roughness (0..1) reflects it.
@@ -118,14 +118,27 @@ float SkyVisibility(float3 world_position, float3 normal) {
 }
 
 // Distant things fade into the haze: bluish away from the sun, warm and bright towards it.
+// The sky a little above the horizon in the direction's bearing, somewhat blurred (the
+// level for roughness 1/3, which still leaves the ground below the horizon out): the color
+// fog and haze take far away, from the sky light map, so with its clouds.
+float3 HorizonSky(float3 direction) {
+    float2 bearing = normalize(direction.xz + float2(0.0, 1e-4));
+    return sky_radiance_texture.SampleLevel(sky_radiance_sampler, normalize(float3(bearing.x, 0.15, bearing.y)), sky_radiance.x / 3.0).rgb;
+}
+
 float3 ApplyAerialPerspective(float3 color, float3 world_position) {
     if (aerial.a <= 0.0) {
         return color;
     }
     float3 view = world_position - camera_position.xyz;
     float distance_to_camera = length(view);
-    float towards_sun = pow(saturate(dot(view / max(distance_to_camera, 0.001), -light_direction.xyz)), 6.0);
-    float3 haze = lerp(aerial.rgb, aerial.rgb * 0.5 + light_color.rgb * 0.35, towards_sun);
+    float3 direction = view / max(distance_to_camera, 0.001);
+    float towards_sun = pow(saturate(dot(direction, -light_direction.xyz)), 6.0);
+    float3 haze_color = aerial.rgb;
+    if (sky_radiance.w > 0.0) {
+        haze_color = lerp(haze_color, HorizonSky(direction), sky_radiance.w);
+    }
+    float3 haze = lerp(haze_color, haze_color * 0.5 + light_color.rgb * 0.35, towards_sun);
     return lerp(color, haze, 1.0 - exp(-distance_to_camera * aerial.a));
 }
 
@@ -334,7 +347,11 @@ float3 ShadeSurface(Surface surface) {
     if (fog.a > 0.0) {
         float distance_to_camera = length(camera_position.xyz - surface.world_position);
         float fog_amount = 1.0 - exp(-distance_to_camera * fog.a);
-        color = lerp(color, fog.rgb, fog_amount);
+        float3 fog_color = fog.rgb;
+        if (sky_radiance.w > 0.0) {
+            fog_color = lerp(fog_color, HorizonSky(surface.world_position - camera_position.xyz), sky_radiance.w);
+        }
+        color = lerp(color, fog_color, fog_amount);
     }
     return ApplyAerialPerspective(color, surface.world_position);
 }

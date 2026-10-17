@@ -175,6 +175,10 @@ struct Environment {
     float fog_shadow_brightness = 0.35f;
     // Strength of the glow around the sun. 0 turns it off.
     float fog_sun_glow = 1.0f;
+    // 0 to 1: how much fog (volumetric or simple) and the haze of distance take the color of
+    // the sky in the direction one looks, from the sky light map (with sky_light), instead of
+    // fog_color and the horizon's color: at 1 the fog matches the sky behind it, clouds included.
+    float fog_sky_color = 0.0f;
     // Steps along each line of sight of volumetric fog, and samples per pixel of ambient
     // occlusion: more is smoother and costs more (set by GraphicsQuality).
     int fog_steps = 32;
