@@ -98,9 +98,9 @@ void Renderer::Impl::RenderCloudPass(FrameContext& frame) {
         resolve.inverse_view_projection = cloud_uniforms.inverse_view_projection;
         resolve.previous_view_projection = impl.previous_cloud_view_projection;
         resolve.camera_position = glm::vec4(camera.position, 0.0f);
-        // A walked pixel takes a fifth of its new value: the step pattern averages out over
-        // about five walks (twenty frames; clouds kilometers away barely move in that time).
-        resolve.params = glm::vec4(static_cast<float>(phase), history_usable ? 0.0f : 1.0f, history_usable ? 1.0f : 0.0f, 0.2f);
+        // A walked pixel takes a tenth of its new value: the step pattern averages out over
+        // about ten walks (forty frames; clouds kilometers away barely move in that time).
+        resolve.params = glm::vec4(static_cast<float>(phase), history_usable ? 0.0f : 1.0f, history_usable ? 1.0f : 0.0f, 0.1f);
         SDL_GPUTextureSamplerBinding resolve_bindings[2]{};
         resolve_bindings[0].texture = impl.cloud_target;
         resolve_bindings[0].sampler = impl.clamp_sampler;

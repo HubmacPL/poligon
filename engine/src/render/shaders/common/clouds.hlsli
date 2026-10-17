@@ -85,8 +85,7 @@ bool LayerSpan(float3 origin, float3 direction, out float enter, out float leave
 }
 
 // Share of sunlight that gets through the clouds above a point, along the sun's direction.
-// `offset` (0..1) places the steps within their stretches: the cloud pass moves it every
-// frame, so that the few steps do not show as bands of brightness once frames are averaged.
+// `offset` (0..1) places the steps within their stretches (MarchClouds keeps it at the middle).
 float CloudTransmittanceTowardsSun(float3 position, int steps, float offset) {
     float3 to_sun = -light_direction.xyz;
     if (to_sun.y <= 0.01) {
@@ -129,7 +128,10 @@ float4 MarchClouds(float3 origin, float3 direction, float enter, float leave, in
             continue;
         }
         float height = saturate((position.y - layer.x) / max(layer.y - layer.x, 1.0));
-        float sun = CloudTransmittanceTowardsSun(position, light_steps, frac(offset + 0.5 + i * 0.618034));
+        // The steps towards the sun sit in the middle of their stretches, the same every frame:
+        // moving them too (as the steps along the line of sight move) made sunlit parts
+        // shimmer, and fixed steps show no bands there.
+        float sun = CloudTransmittanceTowardsSun(position, light_steps, 0.5);
         float powder = 1.0 - exp(-density * step_length * 2.0);
         float3 sunlight = light_color.rgb * sun * phase * lerp(1.0, powder * 2.0, 0.5);
         float3 skylight = lerp(sky_horizon.rgb * 0.3, sky_zenith.rgb * 0.75, height);
