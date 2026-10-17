@@ -34,8 +34,16 @@ struct FragmentInput {
     float2 ndc : TEXCOORD1;
 };
 
-float InterleavedGradientNoise(float2 pixel) {
-    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
+// A number that looks random for each input (PCG hash, Jarzynski and Olano 2020).
+uint Pcg(uint value) {
+    uint state = value * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// Between 0 and 1, looking random for each pixel block (nested, so rows and columns do not correlate).
+float Hash2(uint2 value) {
+    return (float)(Pcg(value.x + Pcg(value.y)) >> 8) * (1.0 / 16777216.0);
 }
 
 float4 main(FragmentInput input) : SV_Target0 {
@@ -55,6 +63,11 @@ float4 main(FragmentInput input) : SV_Target0 {
     if (!LayerSpan(camera_position.xyz, direction, enter, leave)) {
         return float4(0.0, 0.0, 0.0, 1.0);
     }
-    float offset = frac(InterleavedGradientNoise(input.clip_position.xy) + camera_position.w);
+    // The steps' offset: a random start for each 2 x 2 block, moved on by the golden ratio with
+    // every walk, so that over a few walks every pixel's steps cover the step evenly. (A
+    // gradient noise such as InterleavedGradientNoise, read at every other pixel, showed as a
+    // regular grid of dots.) The four pixels of a block start a quarter step apart.
+    uint2 block = uint2(input.clip_position.xy) >> 1;
+    float offset = frac(Hash2(block) + camera_position.w + 0.25 * (float)(cell.x + cell.y * 2));
     return MarchClouds(camera_position.xyz, direction, enter, leave, (int)quality.x, (int)quality.y, offset);
 }
