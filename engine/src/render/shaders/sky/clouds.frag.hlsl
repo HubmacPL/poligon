@@ -7,8 +7,11 @@
 // Each step's light: sunlight dimmed by the cloud between the step and the sun (a few
 // coarse steps), shaped by a phase function (bright looking towards the sun, a silver
 // lining), with the "powder" darkening of thin edges facing the sun, plus sky light from
-// above, stronger near the cloud's top. Every frame starts the steps at a different offset;
-// temporal anti-aliasing averages that away.
+// above, stronger near the cloud's top. Every frame starts the steps at a different offset.
+//
+// Only one pixel of every 2 x 2 block is walked per frame, in turn (weather.y; all of them
+// when weather.z is 1); the others keep what they hold, and clouds_resolve.frag.hlsl builds
+// the whole image from them and the previous frame's.
 #define CLOUDS_SHAPE_BINDING 1
 #define CLOUDS_SHAPE_T t1
 #define CLOUDS_SHAPE_S s1
@@ -41,6 +44,10 @@ float InterleavedGradientNoise(float2 pixel) {
 }
 
 float4 main(FragmentInput input) : SV_Target0 {
+    int2 cell = int2(input.clip_position.xy) & 1;
+    if (weather.z < 0.5 && (cell.x + cell.y * 2) != (int)weather.y) {
+        discard;
+    }
     // Only where the scene shows the sky (depth 0) do clouds show; the land is far below them.
     // The depth image is at the drawn size; this image is smaller.
     if (depth_texture.SampleLevel(depth_sampler, input.uv, 0.0) > 0.0) {
@@ -68,7 +75,7 @@ float4 main(FragmentInput input) : SV_Target0 {
             continue;
         }
         float height = saturate((position.y - layer.x) / max(layer.y - layer.x, 1.0));
-        float sun = CloudTransmittanceTowardsSun(position, (int)quality.y);
+        float sun = CloudTransmittanceTowardsSun(position, (int)quality.y, frac(offset + 0.5 + i * 0.618034));
         float powder = 1.0 - exp(-density * step_length * 2.0);
         float3 sunlight = light_color.rgb * sun * phase * lerp(1.0, powder * 2.0, 0.5);
         float3 skylight = lerp(sky_horizon.rgb * 0.3, sky_zenith.rgb * 0.75, height);

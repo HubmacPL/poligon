@@ -14,6 +14,8 @@
 #include "poligon_shaders/cloud_shadow_frag_spirv.h"
 #include "poligon_shaders/clouds_composite_frag_dxil.h"
 #include "poligon_shaders/clouds_composite_frag_spirv.h"
+#include "poligon_shaders/clouds_resolve_frag_dxil.h"
+#include "poligon_shaders/clouds_resolve_frag_spirv.h"
 #include "poligon_shaders/clouds_frag_dxil.h"
 #include "poligon_shaders/clouds_frag_spirv.h"
 #include "poligon_shaders/depth_copy_frag_dxil.h"
@@ -464,6 +466,8 @@ void Renderer::Impl::CreatePipelines() {
          sizeof(kCloudShadowFragSpirv), SDL_GPU_TEXTUREFORMAT_R8_UNORM, FullscreenBlend::Replace},
         {&clouds_composite_pipeline, 2, kCloudsCompositeFragDxil, sizeof(kCloudsCompositeFragDxil), kCloudsCompositeFragSpirv,
          sizeof(kCloudsCompositeFragSpirv), kSceneFormat, FullscreenBlend::AddAndDim},
+        {&clouds_resolve_pipeline, 2, kCloudsResolveFragDxil, sizeof(kCloudsResolveFragDxil), kCloudsResolveFragSpirv,
+         sizeof(kCloudsResolveFragSpirv), kSceneFormat, FullscreenBlend::Replace},
     };
     for (const FullscreenPass& pass : passes) {
         SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, pass.sampler_count, 1, pass.dxil,

@@ -94,9 +94,14 @@ void Renderer::Impl::CreateSizedTargets() {
     water_scene_copy = CreateTarget(kSceneFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                                     "copy of the scene for water");
     const float cloud_scale = glm::clamp(config.cloud_resolution, 0.125f, 1.0f);
-    cloud_target = CreateTarget(kSceneFormat, drawn_and_read, glm::max(8, static_cast<int>(static_cast<float>(width) * cloud_scale)),
-                                glm::max(8, static_cast<int>(static_cast<float>(height) * cloud_scale)), SDL_GPU_SAMPLECOUNT_1,
-                                nullptr, "cloud image");
+    const int cloud_width = glm::max(8, static_cast<int>(static_cast<float>(width) * cloud_scale));
+    const int cloud_height = glm::max(8, static_cast<int>(static_cast<float>(height) * cloud_scale));
+    cloud_target = CreateTarget(kSceneFormat, drawn_and_read, cloud_width, cloud_height, SDL_GPU_SAMPLECOUNT_1, nullptr, "cloud image");
+    for (SDL_GPUTexture*& history : cloud_history) {
+        history = CreateTarget(kSceneFormat, drawn_and_read, cloud_width, cloud_height, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                               "cloud image built over frames");
+    }
+    cloud_history_valid = false;
     water_depth_copy = CreateTarget(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1,
                                     nullptr, "copy of the depth for water");
 
@@ -133,7 +138,7 @@ void Renderer::Impl::CreateFixedTargets() {
 void Renderer::Impl::ReleaseSizedTargets() {
     SDL_GPUTexture** sized[] = {&scene_color,  &scene_resolved, &scene_depth,      &output_target,  &prepass_depth,
                                 &ao_target,    &ao_scratch,     &fog_target,       &taa_targets[0], &taa_targets[1],
-                                &water_scene_copy, &cloud_target, &water_depth_copy};
+                                &water_scene_copy, &cloud_target, &water_depth_copy, &cloud_history[0], &cloud_history[1]};
     for (SDL_GPUTexture** texture : sized) {
         if (*texture != nullptr) {
             SDL_ReleaseGPUTexture(device, *texture);

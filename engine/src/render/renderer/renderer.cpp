@@ -152,14 +152,14 @@ Renderer::~Renderer() {
              {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
               impl_->luminance_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline,
-              impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline}) {
+              impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline, impl_->clouds_resolve_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
         }
         for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
                                         impl_->luminance_targets[0], impl_->luminance_targets[1], impl_->taa_targets[0],
                                         impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy,
                                         impl_->no_trample_texture, impl_->trample_texture, impl_->cloud_shape, impl_->cloud_detail,
-                                        impl_->cloud_weather, impl_->cloud_target, impl_->cloud_shadow_target,
+                                        impl_->cloud_weather, impl_->cloud_target, impl_->cloud_history[0], impl_->cloud_history[1], impl_->cloud_shadow_target,
                                         impl_->sky_occlusion_texture}) {
             SDL_ReleaseGPUTexture(impl_->device, texture);
         }
@@ -744,6 +744,7 @@ void Renderer::SetPostSettings(const PostSettings& settings) {
 
 void Renderer::ResetTemporalHistory() {
     impl_->has_taa_history = false;
+    impl_->cloud_history_valid = false;
 }
 
 bool Renderer::IsDebugUiActive() const {

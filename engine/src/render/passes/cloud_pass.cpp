@@ -61,8 +61,24 @@ void Renderer::Impl::RenderCloudPass(FrameContext& frame) {
     CloudUniforms& cloud_uniforms = frame.cloud_uniforms;
     SDL_GPUTexture*& scene_image = frame.scene_image;
 
-    // --- Pass 4c: clouds, walked at a smaller size where the sky shows, then laid over it. ---
+    // --- Pass 4c: clouds, walked at a smaller size where the sky shows, built up over frames,
+    // then laid over it. ---
     if (clouds_on) {
+        // One pixel of every 2 x 2 block is walked per frame, in turn; the rest comes from the
+        // previous frame's image, unless there is none to use (first frame, a camera jump,
+        // a frame without clouds in between): then every pixel is walked.
+        const bool history_usable = impl.cloud_history_valid && impl.cloud_history_frame + 1 == impl.frame_index &&
+                                    glm::distance(camera.position, impl.previous_camera_position) <= kTaaCutDistance;
+        const int phase = static_cast<int>(impl.frame_index % 4);
+        cloud_uniforms.weather.y = static_cast<float>(phase);
+        cloud_uniforms.weather.z = history_usable ? 0.0f : 1.0f;
+        // Each pixel is walked every fourth frame: its step offset moves by the golden ratio
+        // per walk, so that over its walks the offsets cover the step evenly (the frame-based
+        // offset would give the four phases different sets and stripe the image by rows).
+        if (history_usable) {
+            const float walk = static_cast<float>((impl.frame_index / 4) % 64);
+            cloud_uniforms.camera_position.w = walk * 0.618034f - std::floor(walk * 0.618034f);
+        }
         cloud_uniforms.quality.w = static_cast<float>(width);
         cloud_uniforms.shadow_area.w = static_cast<float>(height);
         SDL_GPUTextureSamplerBinding bindings[4]{};
@@ -74,10 +90,30 @@ void Renderer::Impl::RenderCloudPass(FrameContext& frame) {
         bindings[2].sampler = impl.repeat_sampler;
         bindings[3].texture = impl.cloud_weather;
         bindings[3].sampler = impl.repeat_sampler;
-        impl.DrawFullscreenPass(commands, impl.cloud_target, false, impl.clouds_pipeline, bindings, 4, &cloud_uniforms,
+        impl.DrawFullscreenPass(commands, impl.cloud_target, history_usable, impl.clouds_pipeline, bindings, 4, &cloud_uniforms,
                                 sizeof(cloud_uniforms));
+
+        const int write = 1 - impl.cloud_history_index;
+        CloudResolveUniforms resolve;
+        resolve.inverse_view_projection = cloud_uniforms.inverse_view_projection;
+        resolve.previous_view_projection = impl.previous_cloud_view_projection;
+        resolve.camera_position = glm::vec4(camera.position, 0.0f);
+        // A walked pixel keeps half of what it was: the step pattern averages out over frames.
+        resolve.params = glm::vec4(static_cast<float>(phase), history_usable ? 0.0f : 1.0f, history_usable ? 1.0f : 0.0f, 0.5f);
+        SDL_GPUTextureSamplerBinding resolve_bindings[2]{};
+        resolve_bindings[0].texture = impl.cloud_target;
+        resolve_bindings[0].sampler = impl.clamp_sampler;
+        resolve_bindings[1].texture = impl.cloud_history[impl.cloud_history_index];
+        resolve_bindings[1].sampler = impl.linear_clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.cloud_history[write], false, impl.clouds_resolve_pipeline, resolve_bindings, 2,
+                                &resolve, sizeof(resolve));
+        impl.cloud_history_index = write;
+        impl.cloud_history_valid = true;
+        impl.cloud_history_frame = impl.frame_index;
+        impl.previous_cloud_view_projection = frame.view_projection;
+
         SDL_GPUTextureSamplerBinding composite[2]{};
-        composite[0].texture = impl.cloud_target;
+        composite[0].texture = impl.cloud_history[write];
         composite[0].sampler = impl.linear_clamp_sampler;
         composite[1].texture = impl.prepass_depth;
         composite[1].sampler = impl.clamp_sampler;

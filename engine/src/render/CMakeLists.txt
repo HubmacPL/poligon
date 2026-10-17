@@ -101,6 +101,7 @@ poligon_embed_shader(shaders/vegetation/impostor_after_depth.frag.hlsl fragment 
 poligon_embed_shader(shaders/sky/clouds.frag.hlsl fragment kCloudsFrag clouds_frag)
 poligon_embed_shader(shaders/sky/cloud_shadow.frag.hlsl fragment kCloudShadowFrag cloud_shadow_frag)
 poligon_embed_shader(shaders/sky/clouds_composite.frag.hlsl fragment kCloudsCompositeFrag clouds_composite_frag)
+poligon_embed_shader(shaders/sky/clouds_resolve.frag.hlsl fragment kCloudsResolveFrag clouds_resolve_frag)
 poligon_embed_shader(shaders/sky/sky.frag.hlsl fragment kSkyFrag sky_frag)
 # water
 poligon_embed_shader(shaders/water/water.frag.hlsl fragment kWaterFrag water_frag)

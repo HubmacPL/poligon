@@ -394,6 +394,7 @@ int main(int argc, char** argv) {
             std::printf("  floor %d in sun, %d under the clouds\n", lit, under_cloud);
         }
         Expect(under_cloud < lit * 0.7f, "clouds shade the land under them");
+
         environment.clouds = false;
 
         // The haze of distance: a white floor hundreds of meters away takes the horizon's color.
@@ -452,6 +453,58 @@ int main(int argc, char** argv) {
             std::printf("  open floor %d, floor that sees a fifth of the sky %d\n", open, hidden);
         }
         Expect(open > 60 && hidden < open * 0.5f, "floor that sees less sky gets less sky light");
+    }
+
+    // --- Clouds built up over frames (each frame walks a quarter of the pixels): the same
+    // frames give the same picture in a fresh renderer, and the built-up picture stays close
+    // to one with every pixel walked (the first frame). One renderer at a time. ---
+    {
+        poligon::DirectionalLight sun;
+        sun.direction = {0.0f, -1.0f, 0.0f};
+        sun.color = {1.0f, 1.0f, 1.0f, 1.0f};
+        poligon::Environment environment;
+        environment.draw_sky = true;
+        environment.sky_light = true;
+        environment.sky_light_intensity = 0.3f;
+        environment.shadows = false;
+        environment.clouds = true;
+        environment.cloud_coverage = 0.5f;
+        poligon::Camera tilted;
+        tilted.position = {0.0f, 2.0f, 0.0f};
+        tilted.target = {0.0f, 40.0f, -100.0f};
+        const auto render_frames = [&](int frames, poligon::Image& image) {
+            poligon::Renderer clouds_renderer(MakeConfig(backend));
+            clouds_renderer.PrepareClouds();
+            for (int i = 0; i < frames; ++i) {
+                clouds_renderer.BeginFrame(tilted, sun, environment);
+                clouds_renderer.EndFrame();
+            }
+            clouds_renderer.CaptureFrame(image);
+        };
+        const auto mean_of = [](const poligon::Image& image) {
+            double sum[3] = {0.0, 0.0, 0.0};
+            for (size_t i = 0; i < image.pixels.size(); i += 4) {
+                for (int c = 0; c < 3; ++c) {
+                    sum[c] += image.pixels[i + static_cast<size_t>(c)];
+                }
+            }
+            const double count = static_cast<double>(image.pixels.size() / 4);
+            return glm::vec3(static_cast<float>(sum[0] / count), static_cast<float>(sum[1] / count), static_cast<float>(sum[2] / count));
+        };
+        poligon::Image first;
+        poligon::Image built;
+        poligon::Image built_again;
+        render_frames(1, first);
+        render_frames(12, built);
+        render_frames(12, built_again);
+        Expect(built.pixels == built_again.pixels, "clouds built over frames repeat to the bit");
+        const glm::vec3 one = mean_of(first);
+        const glm::vec3 many = mean_of(built);
+        const float difference = glm::length(one - many);
+        if (difference >= 6.0f) {
+            std::printf("  sky after one frame %.1f %.1f %.1f, after twelve %.1f %.1f %.1f\n", one.x, one.y, one.z, many.x, many.y, many.z);
+        }
+        Expect(difference < 6.0f, "clouds built over frames look like clouds walked in one");
     }
 
     // --- Bloom ---

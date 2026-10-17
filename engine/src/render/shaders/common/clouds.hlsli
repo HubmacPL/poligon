@@ -32,7 +32,7 @@ cbuffer CloudUniforms : register(b0, space3) {
     float4 shape;            // x: meters across the shape volume, y: meters across the weather map, z: wind offset x, w: wind offset z
     float4 quality;          // x: steps along a view ray, y: steps towards the sun, z: farthest distance walked, w: target width in pixels
     float4 shadow_area;      // xy: world x and z of the cloud shadow image's corner, z: its size in meters, w: target height in pixels
-    float4 weather;          // x: how much the weather map varies the coverage (Environment::cloud_variation)
+    float4 weather;          // x: how much the weather map varies the coverage (Environment::cloud_variation), y: which pixel of each 2 x 2 block the cloud pass walks this frame, z: 1 = every pixel
 };
 
 float RemapRange(float value, float old_low, float old_high, float new_low, float new_high) {
@@ -85,7 +85,9 @@ bool LayerSpan(float3 origin, float3 direction, out float enter, out float leave
 }
 
 // Share of sunlight that gets through the clouds above a point, along the sun's direction.
-float CloudTransmittanceTowardsSun(float3 position, int steps) {
+// `offset` (0..1) places the steps within their stretches: the cloud pass moves it every
+// frame, so that the few steps do not show as bands of brightness once frames are averaged.
+float CloudTransmittanceTowardsSun(float3 position, int steps, float offset) {
     float3 to_sun = -light_direction.xyz;
     if (to_sun.y <= 0.01) {
         return 1.0;
@@ -98,7 +100,7 @@ float CloudTransmittanceTowardsSun(float3 position, int steps) {
     float step_length = (leave - enter) / steps;
     float optical_depth = 0.0;
     for (int i = 0; i < steps; ++i) {
-        optical_depth += CloudDensity(position + to_sun * (enter + (i + 0.5) * step_length), false) * step_length;
+        optical_depth += CloudDensity(position + to_sun * (enter + (i + offset) * step_length), false) * step_length;
     }
     return exp(-optical_depth);
 }

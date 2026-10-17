@@ -71,6 +71,14 @@ struct FragmentFrameUniforms {
     glm::vec4 foliage;
 };
 
+// Must match clouds_resolve.frag.hlsl.
+struct CloudResolveUniforms {
+    glm::mat4 inverse_view_projection;
+    glm::mat4 previous_view_projection;
+    glm::vec4 camera_position;
+    glm::vec4 params;
+};
+
 struct CloudUniforms {
     glm::mat4 inverse_view_projection;
     glm::vec4 camera_position;
@@ -555,6 +563,7 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* clouds_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* cloud_shadow_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* clouds_composite_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* clouds_resolve_pipeline = nullptr;
     SDL_GPUSampler* repeat_sampler = nullptr;
     // What the lighting shaders read this frame: the cloud shadow image (or white) and the
     // sky occlusion map (or white).
@@ -584,6 +593,13 @@ struct Renderer::Impl {
     glm::mat4 previous_view_projection{1.0f};
     glm::vec3 previous_camera_position{0.0f};
     std::uint64_t frame_index = 0;
+    // Clouds built up over frames (RenderCloudPass): two images written in turn, the size of
+    // cloud_target; usable when the previous frame wrote one.
+    SDL_GPUTexture* cloud_history[2] = {nullptr, nullptr};
+    int cloud_history_index = 0;
+    bool cloud_history_valid = false;
+    std::uint64_t cloud_history_frame = 0;
+    glm::mat4 previous_cloud_view_projection{1.0f};
     // Added to the pixel position of every noise pattern (dithered fades, ambient
     // occlusion, fog steps) while TAA is on, so that the patterns change every frame and
     // TAA averages them out. 0 with TAA off, so single frames stay as they were.
