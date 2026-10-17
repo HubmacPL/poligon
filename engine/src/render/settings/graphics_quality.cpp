@@ -15,6 +15,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.msaa_samples = 1;
         quality.ambient_occlusion = false;
         quality.volumetric_fog = false;
+        quality.soft_shadows = false;
         quality.shadow_distance_scale = 0.6f;
         quality.ambient_occlusion_samples = 8;
         quality.fog_steps = 16;
@@ -97,6 +98,7 @@ void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environme
     environment.volumetric_fog = environment.volumetric_fog && quality.volumetric_fog;
     environment.shadow_distance *= quality.shadow_distance_scale;
     environment.ambient_occlusion_samples = quality.ambient_occlusion_samples;
+    environment.soft_shadows = quality.soft_shadows;
     environment.fog_steps = quality.fog_steps;
     environment.water_reflection_steps = quality.water_reflection_steps;
     environment.clouds = environment.clouds && quality.clouds;

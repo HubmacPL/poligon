@@ -31,6 +31,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Bool("shadows.on", environment.shadows);
     visitor.Float("shadows.distance", environment.shadow_distance, 5.0f, 300.0f);
     visitor.Bool("shadows.show_cascades", environment.show_shadow_cascades);
+    visitor.Float("shadows.sun_size", environment.sun_angular_size, 0.0f, 10.0f);
 
     visitor.Section("fog");
     visitor.Float("fog.density", environment.fog_density, 0.0f, 0.1f);
@@ -115,6 +116,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     quality.msaa_samples = static_cast<int>(msaa_samples);
     visitor.Float("quality.render_scale", quality.render_scale, 0.5f, 1.0f);
     visitor.Bool("quality.shadows", quality.shadows);
+    visitor.Bool("quality.soft_shadows", quality.soft_shadows);
     visitor.Bool("quality.ambient_occlusion", quality.ambient_occlusion);
     visitor.Bool("quality.volumetric_fog", quality.volumetric_fog);
     visitor.Bool("quality.bloom", quality.bloom);

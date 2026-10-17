@@ -1157,6 +1157,8 @@ poligon::RenderSettings MakeForestSettings() {
     environment.sky_horizon = {0.72f, 0.76f, 0.80f, 1.0f};
     environment.sky_ground = {0.20f, 0.19f, 0.16f, 1.0f};
     environment.shadow_distance = kShadowDistance;
+    // The real sun's size: shadows sharp at a trunk's foot, softer under the crowns.
+    environment.sun_angular_size = 0.53f;
     environment.ambient_occlusion = true;
     environment.ambient_occlusion_radius = 0.5f;
     environment.volumetric_fog = true;

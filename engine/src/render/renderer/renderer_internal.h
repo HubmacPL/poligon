@@ -70,6 +70,8 @@ struct FragmentFrameUniforms {
     glm::vec4 aerial;
     glm::vec4 foliage;
     glm::vec4 sky_radiance;  // x: the sky light map's level for roughness 1, y: 1 = in use, z: its level for ambient light
+    glm::vec4 cascade_depth;  // meters across each cascade's depth range
+    glm::vec4 shadow_soft;    // x: penumbra width per meter from the caster (0 = fixed filter), y: widest filter, in filter widths
 };
 
 // The sky light map (RenderSkyLightPass): the captured sky, faces kSkyCaptureSize pixels wide
@@ -771,6 +773,8 @@ struct Renderer::Impl {
         glm::vec4 texel_size;
         // Share of its tile's width and height each cascade uses (see far_shadow_scale).
         glm::vec4 tile_scale{1.0f};
+        // Meters across each cascade's depth range (towards the sun).
+        glm::vec4 depth_range{1.0f};
     };
 
     float CascadeTileScale(int cascade) const;

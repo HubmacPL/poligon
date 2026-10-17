@@ -592,6 +592,58 @@ int main(int argc, char** argv) {
         Expect(fogged[1].z > fogged[1].x * 2, "with fog_sky_color the fog takes the sky's color");
     }
 
+    // --- Shadows that soften with distance from their caster: a plate 10 m above the floor,
+    // the sun straight above; the shadow's edge on the floor, seen from 0.4 m above it, is
+    // wider with a sun of 3 degrees than with the fixed filter, and stays the same from frame
+    // to frame. ---
+    {
+        poligon::Renderer renderer(MakeConfig(backend));
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        poligon::DirectionalLight sun;
+        sun.direction = {0.0f, -1.0f, 0.0f};
+        sun.color = {1.0f, 1.0f, 1.0f, 1.0f};
+        sun.ambient = {0.0f, 0.0f, 0.0f, 1.0f};
+        poligon::Environment environment;
+        environment.shadow_distance = 30.0f;
+        poligon::Camera down = MakeTopDownCamera(0.4f);
+        const poligon::Material floor_material = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+        poligon::Material plate_material = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+        plate_material.double_sided = false;
+        // The plate covers x < 0, 10 m up, facing down (so the camera below sees nothing of it).
+        const glm::mat4 plate = glm::translate(identity, {-10.0f, 10.0f, 0.0f}) *
+                                glm::rotate(identity, glm::radians(180.0f), {1.0f, 0.0f, 0.0f}) * glm::scale(identity, {20.0f, 1.0f, 40.0f});
+        int edge_widths[2] = {0, 0};
+        poligon::Image first;
+        for (int soft = 0; soft < 2; ++soft) {
+            environment.sun_angular_size = soft == 1 ? 3.0f : 0.0f;
+            for (int i = 0; i < 2; ++i) {
+                renderer.BeginFrame(down, sun, environment);
+                renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), floor_material);
+                renderer.DrawMesh(plane, plate, plate_material);
+                renderer.EndFrame();
+                renderer.CaptureFrame(frame);
+                if (i == 0) {
+                    first = frame;
+                }
+            }
+            if (soft == 1) {
+                Expect(first.pixels == frame.pixels, "soft shadows stay the same from frame to frame");
+            }
+            // Pixels across the edge (along x, through the middle row) that are neither lit nor dark.
+            for (int x = 0; x < kSize; ++x) {
+                const int red = RedAt(frame, x, kSize / 2);
+                if (red > 25 && red < 230) {
+                    ++edge_widths[soft];
+                }
+            }
+        }
+        if (!(edge_widths[1] > edge_widths[0] * 3 / 2)) {
+            std::printf("  shadow edge %d pixels wide with the fixed filter, %d with a 3 degree sun\n", edge_widths[0],
+                        edge_widths[1]);
+        }
+        Expect(edge_widths[1] > edge_widths[0] * 3 / 2, "a shadow cast from 10 m up is softer with a sun of some size");
+    }
+
     // --- Bloom ---
     // A small, very bright square on black. Without bloom the black next to it stays black;
     // with bloom the square's light spills over, less so far away.

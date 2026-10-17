@@ -236,6 +236,12 @@ struct Environment {
     // Debug aid: tints surfaces by the shadow cascade that shades them (red, green, blue,
     // yellow from near to far).
     bool show_shadow_cascades = false;
+    // Shadows soften with distance from what casts them, as under a real sun: sharp at a
+    // trunk's foot, soft under a crown. The sun's apparent size in degrees (the real one is
+    // 0.53; a hazy sky spreads it); 0 = every shadow edge as soft as the fixed filter.
+    // soft_shadows turns it off (GraphicsQuality::soft_shadows).
+    float sun_angular_size = 0.0f;
+    bool soft_shadows = true;
 };
 
 struct MeshVertex {

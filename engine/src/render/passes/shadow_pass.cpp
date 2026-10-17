@@ -67,6 +67,7 @@ Renderer::Impl::Cascades Renderer::Impl::ComputeCascades() const {
         const glm::mat4 light_projection =
             glm::ortho(-radius, radius, -radius, radius, 0.0f, radius * 2.0f + kShadowCasterDistance);
         cascades.light_view_projection[i] = light_projection * light_view;
+        cascades.depth_range[i] = radius * 2.0f + kShadowCasterDistance;
 
         // Clip coordinates (-1..1, y up) to this cascade's tile in the 2 x 2 shadow image
         // (0..1, y down).

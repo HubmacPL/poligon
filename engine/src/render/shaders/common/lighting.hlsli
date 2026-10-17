@@ -69,6 +69,8 @@ cbuffer FrameUniforms : register(b0, space3) {
     float4 aerial;                // rgb: color of the haze of distance, a: its density per meter (0 = off)
     float4 foliage;               // x: how much sunlight thin leaves let through
     float4 sky_radiance;          // x: the sky light map's level for roughness 1, y: 1 = ambient light and reflections come from it, z: its level for ambient light, w: share of the sky's color in fog and haze
+    float4 cascade_depth;         // meters across each cascade's depth range (towards the sun)
+    float4 shadow_soft;           // x: penumbra width per meter from the caster (0 = fixed filter), y: widest filter, in filter widths
 };
 
 // The sky light map in a direction, as a surface of the given roughness (0..1) reflects it.
@@ -196,22 +198,55 @@ float CascadeVisibility(int cascade, float3 world_position, float3 normal) {
     float3 offset_position = world_position + normal * (cascade_texel[cascade] * 2.5);
     float4 shadow_position = mul(shadow_matrices[cascade], float4(offset_position, 1.0));
     float texel = options.w;
+    float2 tile_min = float2(cascade & 1, cascade >> 1) * 0.5 + texel * 0.5;
+    float2 tile_max = tile_min + 0.5 * cascade_scale[cascade] - texel;
 
-    // A tent filter 5 pixels wide, read with 9 bilinear comparisons: soft edges without the
-    // steps a box of single pixels shows. The fetches stay inside the cascade's tile.
-    float2 pixel = shadow_position.xy / texel;
+    // Shadows soften with distance from their caster (percentage-closer soft shadows,
+    // Fernando 2005, without the usual random sampling, so that the picture stays still):
+    // the average depth of what blocks the sun around the point (9 reads, 3 pixels apart)
+    // gives the distance to the caster, the sun's size the penumbra, and the filter below
+    // is stretched to match, from its own width up to shadow_soft.y times it.
+    float scale = 1.0;
+    if (shadow_soft.x > 0.0) {
+        int2 base = int2(shadow_position.xy / texel);
+        int2 lowest = int2(tile_min / texel);
+        int2 highest = int2(tile_max / texel);
+        float receiver = shadow_position.z;
+        float blocker_sum = 0.0;
+        float blockers = 0.0;
+        [unroll] for (int by = -1; by <= 1; ++by) {
+            [unroll] for (int bx = -1; bx <= 1; ++bx) {
+                float stored = shadow_texture.Load(int3(clamp(base + int2(bx, by) * 3, lowest, highest), 0));
+                if (stored < receiver - 0.0002) {
+                    blocker_sum += stored;
+                    blockers += 1.0;
+                }
+            }
+        }
+        if (blockers > 0.0) {
+            float caster_distance = (receiver - blocker_sum / blockers) * cascade_depth[cascade];
+            float penumbra_pixels = caster_distance * shadow_soft.x / cascade_texel[cascade];
+            scale = clamp(penumbra_pixels / 5.0, 1.0, shadow_soft.y);
+            // The wider filter reaches further; move the point off the surface to match.
+            offset_position = world_position + normal * (cascade_texel[cascade] * 2.5 * scale);
+            shadow_position = mul(shadow_matrices[cascade], float4(offset_position, 1.0));
+        }
+    }
+
+    // A tent filter 5 pixels wide (5 x scale), read with 9 bilinear comparisons: soft edges
+    // without the steps a box of single pixels shows. The fetches stay inside the cascade's tile.
+    float stretched = texel * scale;
+    float2 pixel = shadow_position.xy / stretched;
     float2 center = floor(pixel - 0.5) + 0.5;
     float2 offset = pixel - center;
     float3 weights_x, positions_x, weights_y, positions_y;
     TentWeights(offset.x, weights_x, positions_x);
     TentWeights(offset.y, weights_y, positions_y);
-    float2 tile_min = float2(cascade & 1, cascade >> 1) * 0.5 + texel * 0.5;
-    float2 tile_max = tile_min + 0.5 * cascade_scale[cascade] - texel;
     float depth = shadow_position.z - 0.0002;
     float lit = 0.0;
     [unroll] for (int y = 0; y < 3; ++y) {
         [unroll] for (int x = 0; x < 3; ++x) {
-            float2 uv = clamp((center + float2(positions_x[x], positions_y[y])) * texel, tile_min, tile_max);
+            float2 uv = clamp((center + float2(positions_x[x], positions_y[y])) * stretched, tile_min, tile_max);
             lit += weights_x[x] * weights_y[y] * shadow_texture.SampleCmpLevelZero(shadow_sampler, uv, depth);
         }
     }

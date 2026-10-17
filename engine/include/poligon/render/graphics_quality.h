@@ -36,6 +36,8 @@ struct GraphicsQuality {
     // --- Every frame (ApplyGraphicsQuality) ---
     // Effects the scene asked for are drawn only when these allow them.
     bool shadows = true;
+    // Shadows that soften with distance from their caster (Environment::sun_angular_size).
+    bool soft_shadows = true;
     bool ambient_occlusion = true;
     bool volumetric_fog = true;
     bool bloom = true;

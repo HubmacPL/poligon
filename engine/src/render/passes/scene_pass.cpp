@@ -1,4 +1,4 @@
-// Pass 4: the sky and every lit surface, in linear wide-range colors.
+﻿// Pass 4: the sky and every lit surface, in linear wide-range colors.
 
 #include "../renderer/renderer_internal.h"
 
@@ -79,6 +79,11 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
         frame_uniforms.cascade_far = cascades.far_distance;
         frame_uniforms.cascade_texel = cascades.texel_size;
         frame_uniforms.cascade_scale = cascades.tile_scale;
+        frame_uniforms.cascade_depth = cascades.depth_range;
+        // Shadows soften with distance from what casts them: the sun is a disc, not a point.
+        const float sun_size = glm::radians(glm::clamp(environment.sun_angular_size, 0.0f, 10.0f));
+        frame_uniforms.shadow_soft =
+            glm::vec4(environment.soft_shadows && sun_size > 0.0f ? 2.0f * std::tan(sun_size * 0.5f) : 0.0f, 2.0f, 0.0f, 0.0f);
         frame_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
                                                      clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
         if (impl.sky_map.resolution >= 2 && impl.sky_occlusion_texture != nullptr) {
