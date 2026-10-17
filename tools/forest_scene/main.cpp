@@ -1173,7 +1173,10 @@ poligon::RenderSettings MakeForestSettings() {
     // Fair-weather clouds, their shadows drifting over the land, and the haze of distance
     // that turns far hills blue.
     environment.clouds = true;
-    environment.cloud_coverage = 0.32f;
+    // Scattered fair-weather cumulus: coverage is not the share of the land in shade, and
+    // with the sun 30 degrees up a cloud's shadow falls far to one side, so 0.24 already
+    // shades about two fifths of the land (seen with post.debug_view cloud_shadow).
+    environment.cloud_coverage = 0.24f;
     environment.cloud_bottom = 1400.0f;
     environment.cloud_top = 3200.0f;
     environment.cloud_density = 0.025f;

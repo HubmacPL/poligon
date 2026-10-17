@@ -21,5 +21,5 @@ struct FragmentInput {
 
 float main(FragmentInput input) : SV_Target0 {
     float2 place = shadow_area.xy + input.uv * shadow_area.z;
-    return CloudTransmittanceTowardsSun(float3(place.x, camera_position.y, place.y), 8);
+    return CloudShadowTowardsSun(float3(place.x, camera_position.y, place.y), 16);
 }

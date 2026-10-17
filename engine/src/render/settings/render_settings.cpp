@@ -49,6 +49,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("clouds.density", environment.cloud_density, 0.001f, 0.2f);
     visitor.Float("clouds.size", environment.cloud_size, 1000.0f, 40000.0f);
     visitor.Float("clouds.speed", environment.cloud_speed, 0.0f, 60.0f);
+    visitor.Float("clouds.variation", environment.cloud_variation, 0.0f, 1.0f);
     visitor.Bool("clouds.shadows", environment.cloud_shadows);
     visitor.Float("haze.density", environment.aerial_density, 0.0f, 0.002f);
     visitor.Float("foliage.translucency", environment.foliage_translucency, 0.0f, 2.0f);
@@ -131,9 +132,9 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("quality.terrain_detail", quality.terrain_detail, 0.2f, 3.0f);
 
     visitor.Section("debug view");
-    static const char* const kDebugViews[] = {"none", "ambient_occlusion", "fog", "bloom"};
+    static const char* const kDebugViews[] = {"none", "ambient_occlusion", "fog", "bloom", "cloud_shadow"};
     int debug_view = static_cast<int>(post.debug_view);
-    visitor.Choice("post.debug_view", debug_view, kDebugViews, 4);
+    visitor.Choice("post.debug_view", debug_view, kDebugViews, 5);
     post.debug_view = static_cast<DebugView>(debug_view);
 }
 

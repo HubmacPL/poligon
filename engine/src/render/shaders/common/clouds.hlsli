@@ -32,6 +32,7 @@ cbuffer CloudUniforms : register(b0, space3) {
     float4 shape;            // x: meters across the shape volume, y: meters across the weather map, z: wind offset x, w: wind offset z
     float4 quality;          // x: steps along a view ray, y: steps towards the sun, z: farthest distance walked, w: target width in pixels
     float4 shadow_area;      // xy: world x and z of the cloud shadow image's corner, z: its size in meters, w: target height in pixels
+    float4 weather;          // x: how much the weather map varies the coverage (Environment::cloud_variation)
 };
 
 float RemapRange(float value, float old_low, float old_high, float new_low, float new_high) {
@@ -42,14 +43,14 @@ float RemapRange(float value, float old_low, float old_high, float new_low, floa
 float CloudDensity(float3 position, bool detailed) {
     float height = saturate((position.y - layer.x) / max(layer.y - layer.x, 1.0));
     float2 wind = shape.zw;
-    float4 weather = cloud_weather_texture.SampleLevel(cloud_weather_sampler, (position.xz + wind * 0.5) / shape.y, 0.0);
+    float4 weather_sample = cloud_weather_texture.SampleLevel(cloud_weather_sampler, (position.xz + wind * 0.5) / shape.y, 0.0);
     // How much of the sky is cloud here: the coverage setting, more or less by the weather map.
-    float coverage = saturate(layer.z + (weather.r - 0.5) * 0.9);
+    float coverage = saturate(layer.z + (weather_sample.r - 0.5) * weather.x);
     if (coverage <= 0.01) {
         return 0.0;
     }
     // Their profile by height: flat clouds sit low in the layer, towering ones fill it.
-    float type = weather.g;
+    float type = weather_sample.g;
     float bottom_fade = RemapRange(height, 0.0, 0.08 + 0.1 * (1.0 - type), 0.0, 1.0);
     float top_fade = RemapRange(height, lerp(0.35, 0.95, type), 1.0, 1.0, 0.0);
     float profile = bottom_fade * top_fade;
@@ -100,4 +101,29 @@ float CloudTransmittanceTowardsSun(float3 position, int steps) {
         optical_depth += CloudDensity(position + to_sun * (enter + (i + 0.5) * step_length), false) * step_length;
     }
     return exp(-optical_depth);
+}
+
+// Share of sunlight that reaches the ground under the clouds, for the cloud shadow image.
+// Unlike CloudTransmittanceTowardsSun (light inside a cloud) it uses the clouds' detailed
+// shape, the one the sky shows, so that shadows fall only under the clouds one sees; with
+// the base shape alone, a long slanting path through the layer meets some cloud almost
+// everywhere. Light scattered forward inside a cloud still reaches the ground, so a thin
+// cloud's shadow is not black: transmittance from three scattering orders (Wrenninge,
+// "Oz: The Great and Volumetric", 2013, as in Hillaire's Frostbite clouds, 2016).
+float CloudShadowTowardsSun(float3 position, int steps) {
+    float3 to_sun = -light_direction.xyz;
+    if (to_sun.y <= 0.01) {
+        return 1.0;
+    }
+    float enter;
+    float leave;
+    if (!LayerSpan(position, to_sun, enter, leave)) {
+        return 1.0;
+    }
+    float step_length = (leave - enter) / steps;
+    float optical_depth = 0.0;
+    for (int i = 0; i < steps; ++i) {
+        optical_depth += CloudDensity(position + to_sun * (enter + (i + 0.5) * step_length), true) * step_length;
+    }
+    return (exp(-optical_depth) + 0.5 * exp(-0.5 * optical_depth) + 0.25 * exp(-0.25 * optical_depth)) / 1.75;
 }

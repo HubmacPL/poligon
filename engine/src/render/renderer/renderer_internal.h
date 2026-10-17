@@ -82,6 +82,7 @@ struct CloudUniforms {
     glm::vec4 shape;
     glm::vec4 quality;
     glm::vec4 shadow_area;
+    glm::vec4 weather;  // x: Environment::cloud_variation
 };
 
 struct MaterialUniforms {

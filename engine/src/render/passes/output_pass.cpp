@@ -39,6 +39,10 @@ void Renderer::Impl::RenderOutputPass(FrameContext& frame) {
             debug_image = bloom_on ? impl.bloom_levels[0].texture : white;
             debug_mode = 2.0f;
             break;
+        case DebugView::CloudShadow:
+            debug_image = impl.frame_cloud_shadow;
+            debug_mode = 1.0f;
+            break;
         }
 
         SDL_GPUTextureSamplerBinding bindings[4]{};

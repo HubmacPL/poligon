@@ -33,6 +33,7 @@ void Renderer::Impl::RenderCloudShadowPass(FrameContext& frame) {
         cloud_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.cloud_steps, 4, 256)),
                                            static_cast<float>(glm::clamp(environment.cloud_light_steps, 1, 16)), 40000.0f, 0.0f);
         cloud_uniforms.shadow_area = glm::vec4(cloud_shadow_corner, cloud_shadow_size, 0.0f);
+        cloud_uniforms.weather = glm::vec4(glm::clamp(environment.cloud_variation, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f);
         if (environment.cloud_shadows) {
             SDL_GPUTextureSamplerBinding bindings[3]{};
             bindings[0].texture = impl.cloud_shape;

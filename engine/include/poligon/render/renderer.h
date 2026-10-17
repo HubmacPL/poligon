@@ -24,6 +24,7 @@ enum class DebugView {
     AmbientOcclusion,  // white = open, dark = occluded
     Fog,               // the light added by volumetric fog
     Bloom,             // the blurred image that bloom mixes in
+    CloudShadow,       // the cloud shadow image seen from above (north up, the camera in the middle): white = sunlit
 };
 
 // What happens to the picture after the scene is drawn. Starts as RendererConfig::post and
@@ -184,7 +185,8 @@ struct Environment {
     float water_reflection_distance = 400.0f;
 
     // Volumetric clouds in a layer of the sky, with their shadows on the land (drawn where
-    // the sky shows, so only with draw_sky). Coverage: 0 = clear, 1 = overcast; they also
+    // the sky shows, so only with draw_sky). Coverage: 0 = clear, 1 = overcast (it moves a
+    // threshold on the clouds' shape, so it is not the share of sky or land covered); they also
     // turn the sky's light greyer and softer. Heights in meters; density is the light lost
     // per meter inside a cloud. They drift downwind (wind_direction, wind_time) at
     // cloud_speed meters per second. Steps along each line of sight and towards the sun:
@@ -196,6 +198,10 @@ struct Environment {
     float cloud_density = 0.02f;
     float cloud_size = 6000.0f;     // meters across one repeat of the cloud shapes
     float cloud_speed = 8.0f;
+    // How much the weather map varies the coverage across the land: 0 = the same everywhere
+    // (scattered clouds of one kind), 1 = large clear areas and large overcast ones, several
+    // kilometers across. Fair-weather cumulus is about 0.4.
+    float cloud_variation = 0.9f;
     bool cloud_shadows = true;
     int cloud_steps = 48;
     int cloud_light_steps = 5;
