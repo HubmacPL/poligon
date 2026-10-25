@@ -50,6 +50,13 @@ float3 ViewPosition(float2 uv, float depth, float4 projection_info) {
     return float3(ndc * projection_info.zw * distance, -distance);
 }
 
+// World position of the point seen at `uv` ((0, 0) top-left) with the given depth image value,
+// from the inverse of the camera's view-projection matrix (water, decals, particles).
+float3 WorldPositionFromDepth(float2 uv, float depth, float4x4 inverse_view_projection) {
+    float4 world = mul(inverse_view_projection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0));
+    return world.xyz / world.w;
+}
+
 // A different value in 0..1 for every pixel, evenly spread over neighbors (Jorge Jimenez).
 // Used to turn the banding of low sample counts into fine noise that a blur then removes.
 float InterleavedGradientNoise(float2 pixel) {

@@ -100,7 +100,7 @@ SDL_GPUShader* Renderer::Impl::CreateShader(SDL_GPUShaderStage stage, Uint32 sam
 }
 
 SDL_GPUGraphicsPipeline* Renderer::Impl::CreateFullscreenPipeline(SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader,
-                                                  SDL_GPUTextureFormat format, FullscreenBlend blend) {
+                                                  SDL_GPUTextureFormat format, FullscreenBlend blend, SDL_GPUCullMode cull) {
     SDL_GPUColorTargetDescription color_description{};
     color_description.format = format;
     if (blend != FullscreenBlend::Replace) {
@@ -125,7 +125,8 @@ SDL_GPUGraphicsPipeline* Renderer::Impl::CreateFullscreenPipeline(SDL_GPUShader*
     info.fragment_shader = fragment_shader;
     info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-    info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    info.rasterizer_state.cull_mode = cull;
+    info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
     info.target_info.color_target_descriptions = &color_description;
     info.target_info.num_color_targets = 1;

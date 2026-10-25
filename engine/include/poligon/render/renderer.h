@@ -447,6 +447,8 @@ struct Material {
     float wind_flutter = 0.0f;
 };
 
+struct DecalMaterial;  // poligon/render/decal.h
+
 // At most this many levels in a MeshLodGroup.
 inline constexpr int kMaxMeshLods = 8;
 
@@ -726,6 +728,15 @@ public:
     // window's new size, so a game need not. Call outside BeginFrame/EndFrame. Returns false,
     // and changes nothing, for a size below 16 or above 8192 pixels.
     bool Resize(int width, int height);
+
+    // A decal (poligon/render/decal.h): its picture pressed onto the opaque surfaces (grass
+    // included) inside the box `transform` makes of the cube from -0.5 to 0.5, along the box's
+    // y axis; the picture's x runs along the box's x, its top edge along -z (like
+    // CreatePlaneMesh). Lit like a material on those surfaces (sun, shadows, sky light).
+    // Decals are laid on in the order of these calls; consecutive calls with the same
+    // material are drawn in one call. Meant for hundreds a frame; each costs about the
+    // pixels its box covers on screen.
+    void DrawDecal(const glm::mat4& transform, const DecalMaterial& material);
 
     // --- 2D over the finished picture (HUD, crosshair, markers, subtitles) ---
     // Positions and sizes in pixels of the output image, (0, 0) at its top-left corner, y down;

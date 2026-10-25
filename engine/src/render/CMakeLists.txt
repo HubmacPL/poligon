@@ -5,6 +5,7 @@
 add_library(poligon_render STATIC
   passes/bloom_pass.cpp
   passes/cloud_pass.cpp
+  passes/decal_pass.cpp
   passes/depth_pass.cpp
   passes/fog_pass.cpp
   passes/output_pass.cpp
@@ -20,6 +21,7 @@ add_library(poligon_render STATIC
   renderer/targets.cpp
   resources/cloud_noise.cpp
   resources/cloud_textures.cpp
+  resources/decals.cpp
   resources/dynamic_buffer.cpp
   resources/fonts.cpp
   resources/impostor_file.cpp
@@ -116,6 +118,9 @@ poligon_embed_shader(shaders/sky/sky.frag.hlsl fragment kSkyFrag sky_frag)
 poligon_embed_shader(shaders/water/water.frag.hlsl fragment kWaterFrag water_frag)
 poligon_embed_shader(shaders/water/depth_copy.frag.hlsl fragment kDepthCopyFrag depth_copy_frag)
 # post
+poligon_embed_shader(shaders/decals/decal.vert.hlsl vertex kDecalVert decal_vert)
+poligon_embed_shader(shaders/decals/decal.frag.hlsl fragment kDecalFrag decal_frag)
+
 poligon_embed_shader(shaders/overlay/overlay.vert.hlsl vertex kOverlayVert overlay_vert)
 poligon_embed_shader(shaders/overlay/overlay.frag.hlsl fragment kOverlayFrag overlay_frag)
 

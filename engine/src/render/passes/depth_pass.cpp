@@ -54,7 +54,9 @@ void Renderer::Impl::RenderDepthPass(FrameContext& frame) {
         SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
         return pass;
     };
-    if (ao_on || fog_on || taa_on || scene_after_depth || water_on || (environment.clouds && environment.draw_sky)) {
+    // Decals find the surfaces they lie on in this depth image.
+    if (ao_on || fog_on || taa_on || scene_after_depth || water_on || (environment.clouds && environment.draw_sky) ||
+        !impl.decals.commands.empty()) {
         SDL_GPURenderPass* pass = begin_depth_pass(true);
         // With ambient occlusion on, what does not cast it is left out here and added after it.
         impl.DrawDepthGeometry(commands, pass, ao_on ? Impl::kAoCasters : Impl::kAllBatches);

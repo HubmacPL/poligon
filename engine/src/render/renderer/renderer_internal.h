@@ -27,6 +27,7 @@
 #include "poligon/core/fatal_error.h"
 #include "poligon/core/texture_compression.h"
 #include "poligon/render/renderer.h"
+#include "../resources/decal_state.h"
 #include "../resources/overlay_state.h"
 
 namespace poligon {
@@ -768,6 +769,8 @@ struct Renderer::Impl {
     bool in_frame = false;
     // 2D over the picture: recorded quads, fonts (resources/overlay.cpp, passes/overlay_pass.cpp).
     OverlayState overlay;
+    // Decals recorded this frame (resources/decals.cpp, passes/decal_pass.cpp).
+    DecalState decals;
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
     int mesh_lod_draws[kMaxMeshLods] = {};
     bool has_finished_frame = false;
@@ -803,8 +806,11 @@ struct Renderer::Impl {
     void CreateSamplers();
 
     // A pipeline for a pass that covers the whole target with one triangle (fullscreen.vert.hlsl).
+    // Also for passes whose vertex shader makes its own geometry (overlay quads, decal boxes,
+    // particle cards); `cull` leaves out front or back faces.
     SDL_GPUGraphicsPipeline* CreateFullscreenPipeline(SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader,
-                                                      SDL_GPUTextureFormat format, FullscreenBlend blend);
+                                                      SDL_GPUTextureFormat format, FullscreenBlend blend,
+                                                      SDL_GPUCullMode cull = SDL_GPU_CULLMODE_NONE);
 
     // Draws one full-screen pass into `target`. keep_target: blend with what the target
     // holds instead of overwriting it.
@@ -949,6 +955,9 @@ struct Renderer::Impl {
     void RenderBloomPass(FrameContext& frame);
     void RenderOutputPass(FrameContext& frame);
     void RenderOverlayPass(FrameContext& frame);
+    void RenderDecalPass(FrameContext& frame);
+    void CreateDecalPipeline();
+    void ReleaseDecals();
 
     // 2D drawing (resources/overlay.cpp).
     void CreateOverlayPipeline();

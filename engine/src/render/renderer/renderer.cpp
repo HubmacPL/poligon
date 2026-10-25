@@ -67,6 +67,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     impl_->CreateSamplers();
     impl_->CreatePipelines();
     impl_->CreateOverlayPipeline();
+    impl_->CreateDecalPipeline();
 
     TextureOptions plain_color;
     plain_color.generate_mipmaps = false;
@@ -150,6 +151,7 @@ Renderer::~Renderer() {
             }
         }
         impl_->ReleaseOverlay();
+        impl_->ReleaseDecals();
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
@@ -327,6 +329,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->instance_sources.clear();
     impl_->overlay.quads.clear();
     impl_->overlay.batches.clear();
+    impl_->decals.commands.clear();
     impl_->instance_batches.clear();
     if (impl_->debug_ui_active) {
         ImGui_ImplSDLGPU3_NewFrame();
@@ -772,6 +775,7 @@ void Renderer::EndFrame() {
     impl.RenderSkyLightPass(frame);
     impl.RenderDepthPass(frame);
     impl.RenderScenePass(frame);
+    impl.RenderDecalPass(frame);
     impl.RenderWaterPass(frame);
     impl.RenderCloudPass(frame);
     impl.RenderFogPass(frame);

@@ -9,3 +9,4 @@ poligon_add_example(graphics_quality ${CMAKE_BINARY_DIR}/test_output/example_gra
 poligon_add_example(emissive ${CMAKE_BINARY_DIR}/test_output/example_emissive.png)
 poligon_add_example(mesh_lod ${CMAKE_BINARY_DIR}/test_output/example_mesh_lod.png)
 poligon_add_example(hud ${CMAKE_BINARY_DIR}/test_output/example_hud.png)
+poligon_add_example(decals ${CMAKE_BINARY_DIR}/test_output/example_decals.png)

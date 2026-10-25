@@ -103,11 +103,6 @@ float2 WaveSlope(float2 place) {
     return slope * size;
 }
 
-float3 PositionFromDepth(float2 uv, float depth) {
-    float4 world = mul(inverse_view_projection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0));
-    return world.xyz / world.w;
-}
-
 float4 main(FragmentInput input) : SV_Target0 {
     float3 position = input.world_position;
     float3 to_camera = normalize(camera_position.xyz - position);
@@ -119,11 +114,11 @@ float4 main(FragmentInput input) : SV_Target0 {
 
     // 2. Under the water. Depth 0 is the sky: treat it as very deep water.
     float ground_depth = scene_depth_texture.Load(int3(int2(input.clip_position.xy), 0));
-    float3 ground = ground_depth > 0.0 ? PositionFromDepth(uv, ground_depth) : position - to_camera * 1000.0;
+    float3 ground = ground_depth > 0.0 ? WorldPositionFromDepth(uv, ground_depth, inverse_view_projection) : position - to_camera * 1000.0;
     float water_depth = max(position.y - ground.y, 0.0);
     float2 bent_uv = uv + normal.xz * waves.w * saturate(water_depth * 0.5);
     float bent_depth = scene_depth_texture.SampleLevel(scene_depth_sampler, bent_uv, 0.0);
-    float3 bent_ground = bent_depth > 0.0 ? PositionFromDepth(bent_uv, bent_depth) : position - to_camera * 1000.0;
+    float3 bent_ground = bent_depth > 0.0 ? WorldPositionFromDepth(bent_uv, bent_depth, inverse_view_projection) : position - to_camera * 1000.0;
     if (bent_ground.y > position.y - 0.01) {
         // The bent view lands on something above the water (a shore stone, a reed): look straight.
         bent_uv = uv;
@@ -165,7 +160,7 @@ float4 main(FragmentInput input) : SV_Target0 {
             float ray_depth = clip.z / clip.w;
             // Reversed depth: the ray is behind what the screen shows when its depth is smaller.
             if (scene_depth > 0.0 && ray_depth < scene_depth) {
-                float3 surface = PositionFromDepth(ray_uv, scene_depth);
+                float3 surface = WorldPositionFromDepth(ray_uv, scene_depth, inverse_view_projection);
                 float behind = length(ray - camera_position.xyz) - length(surface - camera_position.xyz);
                 if (behind < step_length * 1.5 + 0.3) {
                     float2 edge = saturate(min(ray_uv, 1.0 - ray_uv) * 12.0);
