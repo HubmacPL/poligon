@@ -86,6 +86,7 @@ void Renderer::Impl::RenderWaterPass(FrameContext& frame) {
             const glm::vec2 wind = glm::length(environment.wind_direction) > 0.0f ? glm::normalize(environment.wind_direction)
                                                                                  : glm::vec2(1.0f, 0.0f);
             water_uniforms.wind = glm::vec4(wind, environment.wind_strength, look.shore_fade);
+            water_uniforms.noise_shift = glm::vec4(command.noise_shift, 0.0f);
             water_uniforms.screen = glm::vec4(width, height, static_cast<float>(glm::clamp(environment.water_reflection_steps, 0, 128)),
                                               environment.water_reflection_distance);
             SDL_PushGPUFragmentUniformData(commands, 1, &water_uniforms, sizeof(water_uniforms));

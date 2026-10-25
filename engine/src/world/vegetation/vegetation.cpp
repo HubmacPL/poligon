@@ -12,13 +12,15 @@ namespace {
 
 constexpr int kMaxLevels = 8;
 
-// The plants of one species in one cell.
+// The plants of one species in one cell, relative to the cell's corner.
 struct CellSpecies {
     int species;
     std::vector<glm::mat4> transforms;
 };
 
 struct Cell {
+    // The cell's corner in the world (y = 0); everything below is relative to it.
+    glm::dvec3 corner{0.0};
     // Box around the feet of the cell's plants.
     glm::vec2 min{1.0e30f};
     glm::vec2 max{-1.0e30f};
@@ -35,8 +37,9 @@ constexpr float kPlantReach = 30.0f;
 struct ViewVolume {
     glm::vec4 planes[6];
 
-    static ViewVolume FromCamera(const Camera& camera, float aspect_ratio) {
-        const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    // The view seen from `origin`: positions given to Sees are relative to it.
+    static ViewVolume FromCamera(const Camera& camera, const glm::dvec3& origin, float aspect_ratio) {
+        const glm::mat4 view = glm::lookAt(glm::vec3(camera.position - origin), glm::vec3(camera.target - origin), camera.up);
         const glm::mat4 projection =
             glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio, camera.near_plane, camera.far_plane);
         const glm::mat4 clip = projection * view;
@@ -138,14 +141,22 @@ int Vegetation::AddSpecies(const VegetationSpecies& species) {
     return static_cast<int>(impl_->species.size()) - 1;
 }
 
-void Vegetation::AddInstance(int species, const glm::mat4& transform) {
+void Vegetation::AddInstance(int species, const Transform& transform) {
+    AddInstance(species, transform.position, transform.GetLocalMatrix());
+}
+
+void Vegetation::AddInstance(int species, const glm::dvec3& origin, const glm::mat4& local) {
     if (species < 0 || species >= static_cast<int>(impl_->species.size())) {
         FatalError("Vegetation::AddInstance: no such species");
     }
-    const glm::vec2 foot{transform[3].x, transform[3].z};
-    const std::pair<int, int> key{static_cast<int>(std::floor(foot.x / impl_->cell_size)),
-                                  static_cast<int>(std::floor(foot.y / impl_->cell_size))};
+    const glm::dvec3 world_foot = origin + glm::dvec3(local[3]);
+    const double cell_size = static_cast<double>(impl_->cell_size);
+    const std::pair<int, int> key{static_cast<int>(std::floor(world_foot.x / cell_size)),
+                                  static_cast<int>(std::floor(world_foot.z / cell_size))};
     Cell& cell = impl_->cells[key];
+    cell.corner = glm::dvec3(static_cast<double>(key.first) * cell_size, 0.0, static_cast<double>(key.second) * cell_size);
+    const glm::mat4 transform = RelativeTo(origin, local, cell.corner);
+    const glm::vec2 foot{transform[3].x, transform[3].z};
     cell.min = glm::min(cell.min, foot);
     cell.max = glm::max(cell.max, foot);
     cell.min_y = glm::min(cell.min_y, transform[3].y);
@@ -201,15 +212,27 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
         }
     }
 
+    // The lists of this frame are relative to a point near the camera (rounded to 4096 m,
+    // so that it seldom changes, and 0 near the origin); each cell's plants are moved there by
+    // its corner's offset.
+    const glm::dvec3 origin(std::round(camera.position.x / 4096.0) * 4096.0, 0.0, std::round(camera.position.z / 4096.0) * 4096.0);
     // Distances are measured along the ground: a plant seen from a hill top is as detailed
     // as one seen from the same distance on the flat.
-    const glm::vec2 eye{camera.position.x, camera.position.z};
+    const glm::vec2 eye(glm::dvec2(camera.position.x, camera.position.z) - glm::dvec2(origin.x, origin.z));
     // Cells wholly outside the camera's view only cast shadows: their plants skip the
     // picture lists, which saves the renderer most of its per-plant culling.
     const ViewVolume view = ViewVolume::FromCamera(
-        camera, static_cast<float>(renderer.GetWidth()) / static_cast<float>(glm::max(renderer.GetHeight(), 1)));
-    for (const auto& [key, cell] : impl.cells) {
+        camera, origin, static_cast<float>(renderer.GetWidth()) / static_cast<float>(glm::max(renderer.GetHeight(), 1)));
+    for (const auto& [key, stored_cell] : impl.cells) {
         ++impl.stats.cells_total;
+        // The cell's box, relative to this frame's origin.
+        const glm::vec3 shift(stored_cell.corner - origin);
+        const glm::vec4 shift4(shift, 0.0f);
+        Cell cell;
+        cell.min = stored_cell.min + glm::vec2(shift.x, shift.z);
+        cell.max = stored_cell.max + glm::vec2(shift.x, shift.z);
+        cell.min_y = stored_cell.min_y;
+        cell.max_y = stored_cell.max_y;
         const glm::vec3 cell_center((cell.min.x + cell.max.x) * 0.5f, (cell.min_y + cell.max_y) * 0.5f + kPlantReach * 0.5f,
                                     (cell.min.y + cell.max.y) * 0.5f);
         const float cell_radius =
@@ -228,7 +251,7 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
         const float farthest = glm::distance(eye, farthest_corner);
 
         bool cell_used = false;
-        for (const CellSpecies& entry : cell.species) {
+        for (const CellSpecies& entry : stored_cell.species) {
             SpeciesData& data = impl.species[static_cast<size_t>(entry.species)];
             const int level_count = static_cast<int>(data.species.levels.size());
             if (nearest > data.level_distance[level_count - 1] || (!cell_visible && nearest > data.shadow_distance)) {
@@ -269,10 +292,14 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                 std::vector<glm::mat4>& list = !cell_visible                      ? lists.shadow_only
                                                : nearest <= data.shadow_distance ? lists.with_shadow
                                                                                  : lists.without_shadow;
-                list.insert(list.end(), entry.transforms.begin(), entry.transforms.end());
+                for (glm::mat4 transform : entry.transforms) {
+                    transform[3] += shift4;
+                    list.push_back(transform);
+                }
                 continue;
             }
-            for (const glm::mat4& transform : entry.transforms) {
+            for (glm::mat4 transform : entry.transforms) {
+                transform[3] += shift4;
                 const float distance = glm::distance(eye, glm::vec2(transform[3].x, transform[3].z));
                 float fade = 0.0f;
                 const int level = choose(distance, fade);
@@ -323,13 +350,13 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
     }
 
     // Hands a list to the renderer once per part of the level's meshes, or once as an impostor.
-    const auto submit = [&impl, &renderer](const VegetationLevel& level, const std::vector<glm::mat4>& transforms,
+    const auto submit = [&impl, &renderer, &origin](const VegetationLevel& level, const std::vector<glm::mat4>& transforms,
                                            const InstanceOptions& options) {
         if (transforms.empty()) {
             return;
         }
         if (level.impostor.id != 0) {
-            renderer.DrawImpostorInstances(level.impostor, transforms.data(), static_cast<int>(transforms.size()), options);
+            renderer.DrawImpostorInstances(level.impostor, origin, transforms.data(), static_cast<int>(transforms.size()), options);
             ++impl.stats.batches;
             return;
         }
@@ -344,7 +371,7 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
                 }
                 data = impl.part_transforms.data();
             }
-            renderer.DrawMeshInstances(part.mesh, part.material, data, static_cast<int>(transforms.size()), options);
+            renderer.DrawMeshInstances(part.mesh, part.material, origin, data, static_cast<int>(transforms.size()), options);
             ++impl.stats.batches;
         }
     };

@@ -18,15 +18,15 @@ int main() {
     for (int step = 0; step <= 200; ++step) {
         trail.Update({0.0f, 0.0f, -0.05f * static_cast<float>(step)});
     }
-    const std::vector<glm::mat4>& prints = trail.GetPrints();
+    const std::vector<poligon::Transform>& prints = trail.GetPrints();
     Expect(prints.size() == 20, "a print every stride");
     bool alternate = true;
     bool facing = true;
     for (size_t i = 0; i < prints.size(); ++i) {
-        const float x = prints[i][3].x;
+        const float x = static_cast<float>(prints[i].position.x);
         alternate = alternate && (i % 2 == 0 ? x < 0.0f : x > 0.0f) && std::abs(std::abs(x) - settings.step_width) < 1e-4f;
         // The box's -z (its picture's top) points the way walked (-z here).
-        const glm::vec3 up_in_picture = glm::normalize(glm::vec3(prints[i] * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
+        const glm::vec3 up_in_picture = glm::normalize(prints[i].rotation * glm::vec3(0.0f, 0.0f, -1.0f));
         facing = facing && up_in_picture.z < -0.999f;
     }
     Expect(alternate, "left and right of the path in turn");
@@ -40,12 +40,12 @@ int main() {
     trail.Update({100.0f, 0.0f, 0.0f});  // teleport
     trail.Update({100.0f, 0.0f, -0.3f});
     trail.Update({100.0f, 0.0f, -0.6f});
-    Expect(trail.GetPrints().back()[3].x > 99.0f && glm::distance(glm::vec3(trail.GetPrints()[48][3]), glm::vec3(trail.GetPrints()[49][3])) > 50.0f,
+    Expect(trail.GetPrints().back().position.x > 99.0 && glm::distance(trail.GetPrints()[48].position, trail.GetPrints()[49].position) > 50.0,
            "after a teleport the trail goes on from the new place");
 
     poligon::FootprintTrail picky(settings);
     for (int step = 0; step <= 200; ++step) {
-        picky.Update({0.0f, 0.0f, -0.05f * static_cast<float>(step)}, [](float, float z) { return z > -4.75f; });
+        picky.Update({0.0f, 0.0f, -0.05f * static_cast<float>(step)}, [](double, double z) { return z > -4.75; });
     }
     Expect(picky.GetPrints().size() == 9, "only where the ground takes prints");
 

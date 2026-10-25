@@ -15,7 +15,7 @@ constexpr int kSize = 256;
 
 // The pixel a world position is drawn at, computed the way the renderer does.
 glm::ivec2 ToPixel(const poligon::Camera& camera, glm::vec3 position) {
-    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    const glm::mat4 view = glm::lookAt(glm::vec3(camera.position), glm::vec3(camera.target), camera.up);
     const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), 1.0f, camera.near_plane, camera.far_plane);
     const glm::vec4 clip = projection * view * glm::vec4(position, 1.0f);
     return {static_cast<int>((clip.x / clip.w * 0.5f + 0.5f) * kSize), static_cast<int>((0.5f - clip.y / clip.w * 0.5f) * kSize)};
@@ -76,15 +76,15 @@ int main(int argc, char** argv) {
     const glm::mat4 wall = glm::translate(identity, {0.7f, 1.0f, 0.0f}) * glm::scale(identity, {0.2f, 2.0f, 4.0f});
     const glm::mat4 slab = glm::translate(identity, {-0.5f, 6.0f, -2.0f}) * glm::scale(identity, {4.0f, 0.1f, 4.0f});
     // The decal: a box 2 m across and 1 m high around the origin, pressed along y.
-    const glm::mat4 box = glm::scale(identity, {2.0f, 1.0f, 2.0f});
+    const poligon::Transform box(glm::dvec3(0.0), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), {2.0f, 1.0f, 2.0f});
 
     poligon::Image with_decal;
     poligon::Image without_decal;
     for (int pass = 0; pass < 2; ++pass) {
         renderer.BeginFrame(camera, sun, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-        renderer.DrawMesh(cube, wall, white);
-        renderer.DrawMesh(cube, slab, white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), wall, white);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), slab, white);
         if (pass == 0) {
             renderer.DrawDecal(box, blood);
         }

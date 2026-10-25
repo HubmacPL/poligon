@@ -15,9 +15,9 @@
 // state dump of the flecs world shows the whole state of the game.
 namespace toy {
 
-// Center of a box, in world space.
+// Center of a box, in world space. World positions are double (see docs/en/rendering.md).
 struct Position {
-    glm::vec3 value;
+    glm::dvec3 value;
 };
 
 struct Rotation {
@@ -33,7 +33,7 @@ struct Box {
     poligon::Color color;
 };
 
-// The flat ground square; its top is at height 0.
+// The flat ground square; its top is at the height of its Position.
 struct Ground {
     float size;
     poligon::Color color;
@@ -93,8 +93,9 @@ struct ToyActions {
 
 // Registers components, creates all systems and the starting entities, and their bodies in
 // `physics`. The physics world must be empty, must outlive the flecs world's last
-// progress() call, and must not be stepped by anyone else.
-void SetUpToyWorld(flecs::world& world, poligon::PhysicsWorld& physics);
+// progress() call, and must not be stepped by anyone else. `origin` moves the whole scene
+// (the middle of the ground's top); the game uses 0, tests move it far away.
+void SetUpToyWorld(flecs::world& world, poligon::PhysicsWorld& physics, const glm::dvec3& origin = glm::dvec3(0.0));
 
 // Creates the toy's actions and their key bindings:
 // A/D or Left/Right, W/S or Up/Down, Space to jump, hold the right mouse button and move the mouse to look.

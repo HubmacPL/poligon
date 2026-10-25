@@ -159,7 +159,7 @@ struct Animal {
     float start_angle = 0.0f;
     glm::vec2 place{0.0f, 0.0f};      // x and z; for a standing animal
     float facing_degrees = 0.0f;      // for a standing animal
-    glm::mat4 transform{1.0f};
+    poligon::Transform transform;
 };
 
 struct ForestActions {
@@ -278,12 +278,20 @@ public:
 
     int GetLoadedKindCount() const { return loaded_kind_count_; }
     // Height of the land at a world position.
-    float Ground(float x, float z) const { return terrain_->GetHeight(x, z); }
+    double Ground(double x, double z) const { return terrain_->GetHeight(x, z); }
     void ShowCollision(bool show) { show_collision_ = show; }
     // How fast the world's own time runs (wind, clouds, water, animals): 1 = real time,
     // 0 = stopped. The player and physics always run in real time. Also in the Simulation window.
     void SetTimeScale(float scale) { time_scale_ = glm::clamp(scale, 0.0f, 20.0f); }
-    glm::vec3 GetCameraPosition() const { return camera_.position; }
+    glm::dvec3 GetCameraPosition() const { return camera_.position; }
+
+    // Where the crates are, exactly (the first six are the pile, the rest thrown).
+    void PrintCrates() const {
+        for (const poligon::BodyHandle crate : crates_) {
+            const glm::dvec3 position = physics_.GetPosition(crate);
+            std::printf("crate %u at %.17g %.17g %.17g\n", crate.id, position.x, position.y, position.z);
+        }
+    }
 
     void BeginFrame(poligon::GameLoop& loop) override {
         if (!poligon::ProcessPlatformEvents()) {
@@ -343,7 +351,7 @@ public:
         const float right = input_.GetValue(actions_.strafe) * speed;
         if (input_.WasPressed(actions_.toggle_fly) && !flying_) {
             // Back to walking: the character continues from below where the camera is.
-            physics_.SetCharacterPosition(walker_, camera_.position - glm::vec3(0.0f, kEyeHeight, 0.0f));
+            physics_.SetCharacterPosition(walker_, camera_.position - glm::dvec3(0.0, kEyeHeight, 0.0));
         }
         if (flying_) {
             camera_.Move(forward * delta, right * delta, input_.GetValue(actions_.rise) * speed * delta);
@@ -353,29 +361,32 @@ public:
             // world keeps the character on the ground and out of trunks and rocks.
             poligon::FreeCamera level = camera_;
             level.pitch_degrees = 0.0f;
-            level.position = glm::vec3(0.0f);
+            level.position = glm::dvec3(0.0);
             level.Move(forward, right, 0.0f);
-            physics_.SetCharacterInput(walker_, level.position, input_.WasPressed(actions_.jump));
+            physics_.SetCharacterInput(walker_, glm::vec3(level.position), input_.WasPressed(actions_.jump));
         }
+        const auto physics_start = std::chrono::steady_clock::now();  // statistics only
         physics_.Step(delta);
+        physics_milliseconds_sum_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - physics_start).count();
+        ++physics_steps_;
         if (!flying_) {
-            camera_.position = physics_.GetCharacterPosition(walker_) + glm::vec3(0.0f, kEyeHeight, 0.0f);
+            camera_.position = physics_.GetCharacterPosition(walker_) + glm::dvec3(0.0, kEyeHeight, 0.0);
         }
         // Grass under walking feet goes flat in about half a second and stands up again
         // over about a minute and a half; walking the same way again makes a path.
-        const glm::vec2 feet(camera_.position.x, camera_.position.z);
+        const glm::dvec2 feet(camera_.position.x, camera_.position.z);
         trample_.Recenter(feet);
         if (!flying_ && (forward != 0.0f || right != 0.0f)) {
             trample_.Trample(feet, 0.5f, 2.0f * delta);
         }
         for (const Animal& animal : animals_) {
             if (animal.circle_radius > 0.0f) {
-                trample_.Trample({animal.transform[3].x, animal.transform[3].z}, 0.3f, 1.5f * delta);
+                trample_.Trample({animal.transform.position.x, animal.transform.position.z}, 0.3f, 1.5f * delta);
             }
         }
         trample_.Recover(0.011f * delta);
         if (!flying_) {
-            footprints_.Update(physics_.GetCharacterPosition(walker_), [this](float x, float z) { return TakesPrints(x, z); });
+            footprints_.Update(physics_.GetCharacterPosition(walker_), [this](double x, double z) { return TakesPrints(x, z); });
         }
         UpdateWeather(delta);
     }
@@ -383,6 +394,9 @@ public:
     // Average processor time of EndFrame over the run, for the summary at the end.
     float GetAverageCpuMilliseconds() const {
         return cpu_frames_ > 0 ? static_cast<float>(cpu_milliseconds_sum_ / cpu_frames_) : 0.0f;
+    }
+    float GetAveragePhysicsMilliseconds() const {
+        return physics_steps_ > 0 ? static_cast<float>(physics_milliseconds_sum_ / physics_steps_) : 0.0f;
     }
     float GetAverageWaitMilliseconds() const {
         return cpu_frames_ > 0 ? static_cast<float>(wait_milliseconds_sum_ / cpu_frames_) : 0.0f;
@@ -419,12 +433,13 @@ public:
         }
         terrain_->Draw(camera);
         for (const poligon::WaterSurface& lake : lakes_) {
-            renderer_.DrawWater(lake.mesh, lake.transform, water_material_);
+            renderer_.DrawWater(lake.mesh, lake.origin, glm::mat4(1.0f), water_material_);
         }
         // Object ids (crates by body, foxes by number) let temporal anti-aliasing follow them.
         for (const poligon::BodyHandle crate : crates_) {
-            renderer_.DrawMesh(cube_mesh_, physics_.GetTransform(crate) * glm::scale(glm::mat4(1.0f), glm::vec3(kCrateSize)),
-                               crate_material_, kCrateObjectIds + crate.id);
+            poligon::Transform placed = physics_.GetTransform(crate);
+            placed.scale = glm::vec3(kCrateSize);
+            renderer_.DrawMesh(cube_mesh_, placed, crate_material_, kCrateObjectIds + crate.id);
         }
         if (show_collision_) {
             // Every body except the ground and the fences, as the box that encloses it:
@@ -434,17 +449,17 @@ public:
                 if (!physics_.IsBody(body)) {
                     continue;
                 }
-                glm::vec3 bounds_min;
-                glm::vec3 bounds_max;
+                glm::dvec3 bounds_min;
+                glm::dvec3 bounds_max;
                 physics_.GetBounds(body, bounds_min, bounds_max);
-                if (glm::distance((bounds_min + bounds_max) * 0.5f, camera.position) > 60.0f) {
+                if (glm::distance((bounds_min + bounds_max) * 0.5, camera.position) > 60.0) {
                     continue;
                 }
                 const poligon::Color color = physics_.IsDynamic(body) ? poligon::Color{1.0f, 0.9f, 0.1f, 1.0f}
                                                                        : poligon::Color{1.0f, 0.15f, 0.3f, 1.0f};
                 renderer_.DrawMesh(cube_mesh_,
-                                   glm::translate(glm::mat4(1.0f), (bounds_min + bounds_max) * 0.5f) *
-                                       glm::scale(glm::mat4(1.0f), bounds_max - bounds_min),
+                                   poligon::Transform((bounds_min + bounds_max) * 0.5, glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                                      glm::vec3(bounds_max - bounds_min)),
                                    color);
             }
         }
@@ -686,8 +701,8 @@ private:
         const int first_z = std::clamp(center_z - half_points, 0, map.depth - size);
         const poligon::HeightMap window = poligon::CropHeightMap(map, first_x, first_z, size, size);
         physics_.AddHeightField(window.heights.data(), size, map.spacing,
-                                config.origin + glm::vec3(static_cast<float>(first_x) * map.spacing, 0.0f,
-                                                          static_cast<float>(first_z) * map.spacing));
+                                config.origin + glm::dvec3(static_cast<double>(first_x) * map.spacing, 0.0,
+                                                           static_cast<double>(first_z) * map.spacing));
         // Four fences keep the player on the part of the land that has collisions.
         const float fence = kPlayHalfSize - 5.0f;
         for (int side = 0; side < 4; ++side) {
@@ -728,13 +743,12 @@ private:
                 continue;
             }
             const poligon::PlantVariant& variant = kind->plants.variants.front();
-            const float x = object.position.x - map_offset_.x;
-            const float z = object.position.y - map_offset_.y;
+            const double x = object.position.x - map_offset_.x;
+            const double z = object.position.y - map_offset_.y;
             const float turn = glm::radians(object.turn_degrees);
-            const glm::vec3 foot(x, Ground(x, z) - variant.height * object.scale * 0.15f, z);
-            vegetation_.AddInstance(variant.species_id, glm::translate(glm::mat4(1.0f), foot) *
-                                                            glm::rotate(glm::mat4(1.0f), turn, {0.0f, 1.0f, 0.0f}) *
-                                                            glm::scale(glm::mat4(1.0f), glm::vec3(object.scale)));
+            const glm::dvec3 foot(x, Ground(x, z) - static_cast<double>(variant.height * object.scale * 0.15f), z);
+            vegetation_.AddInstance(variant.species_id,
+                                    poligon::Transform(foot, glm::angleAxis(turn, glm::vec3(0.0f, 1.0f, 0.0f)), glm::vec3(object.scale)));
             poligon::AddPlantCollider(physics_, kind->plants, variant, foot, turn, object.scale);
         }
     }
@@ -844,7 +858,7 @@ private:
         crate_material_.color = {0.55f, 0.38f, 0.20f, 1.0f};
         crate_material_.roughness = 0.9f;
         const glm::vec2 place{-4.0f, 4.0f};
-        const float ground = Ground(place.x, place.y);
+        const double ground = Ground(place.x, place.y);
         for (int layer = 0; layer < 3; ++layer) {
             for (int i = 0; i < 3 - layer; ++i) {
                 poligon::BodySettings settings;
@@ -871,7 +885,7 @@ private:
         settings.mass = 8.0f;
         settings.friction = 0.7f;
         settings.bounciness = 0.2f;
-        settings.position = camera_.position + forward * 0.9f;
+        settings.position = camera_.position + glm::dvec3(forward * 0.9f);
         settings.velocity = forward * 12.0f + glm::vec3(0.0f, 2.0f, 0.0f);
         crates_.push_back(physics_.AddBox(glm::vec3(kCrateSize * 0.5f), settings));
     }
@@ -954,28 +968,26 @@ private:
             const float direction = animal.meters_per_second >= 0.0f ? 1.0f : -1.0f;
             facing = std::atan2(-std::sin(angle) * direction, std::cos(angle) * direction);
         }
-        animal.transform = glm::translate(glm::mat4(1.0f), {place.x, Ground(place.x, place.y), place.y}) *
-                           glm::rotate(glm::mat4(1.0f), facing, {0.0f, 1.0f, 0.0f}) *
-                           glm::scale(glm::mat4(1.0f), glm::vec3(fox_scale_));
+        animal.transform = poligon::Transform(glm::dvec3(place.x, Ground(place.x, place.y), place.y),
+                                              glm::angleAxis(facing, glm::vec3(0.0f, 1.0f, 0.0f)), glm::vec3(fox_scale_));
     }
 
     // Puts one plant where a rule placed it (map coordinates; its foot at `placement.height`
     // on the map, pushed into the ground by `sink` of its height).
     void PlaceAt(const Kind& kind, const poligon::PlantPlacement& placement, float sink) {
         const poligon::PlantVariant& variant = kind.plants.variants[static_cast<size_t>(placement.variant)];
-        const float x = placement.position.x - map_offset_.x;
-        const float z = placement.position.y - map_offset_.y;
-        const glm::vec3 foot(x, placement.height + world_height_offset_ - variant.height * placement.scale * sink, z);
-        vegetation_.AddInstance(variant.species_id, glm::translate(glm::mat4(1.0f), foot) *
-                                                        glm::rotate(glm::mat4(1.0f), placement.turn, {0.0f, 1.0f, 0.0f}) *
-                                                        glm::scale(glm::mat4(1.0f), glm::vec3(placement.scale)));
+        const double x = static_cast<double>(placement.position.x) - map_offset_.x;
+        const double z = static_cast<double>(placement.position.y) - map_offset_.y;
+        const glm::dvec3 foot(x, static_cast<double>(placement.height - variant.height * placement.scale * sink) + world_height_offset_, z);
+        vegetation_.AddInstance(variant.species_id, poligon::Transform(foot, glm::angleAxis(placement.turn, glm::vec3(0.0f, 1.0f, 0.0f)),
+                                                                       glm::vec3(placement.scale)));
         // What blocks the way gets a body in the physics world, where the player can walk.
         if (std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize) {
             poligon::AddPlantCollider(physics_, kind.plants, variant, foot, placement.turn, placement.scale);
         }
         // Tall plants' crowns hide part of the sky from the ground below them.
         if (variant.height * placement.scale > 6.0f) {
-            crowns_.push_back({x, z, (variant.half_width.x + variant.half_width.y) * 0.5f * placement.scale * 0.9f});
+            crowns_.push_back({{x, z}, (variant.half_width.x + variant.half_width.y) * 0.5f * placement.scale * 0.9f});
         }
         ++placed_count_;
     }
@@ -1045,8 +1057,8 @@ private:
     void BuildSkyOcclusion() {
         const auto started = std::chrono::steady_clock::now();
         sky_occlusion_ = poligon::MakeTerrainSkyOcclusion(*terrain_, {0.0f, 0.0f}, 2400.0f, 4.0f);
-        for (const glm::vec3& crown : crowns_) {
-            poligon::AddCanopy(sky_occlusion_, {crown.x, crown.y}, crown.z, 0.55f);
+        for (const Crown& crown : crowns_) {
+            poligon::AddCanopy(sky_occlusion_, crown.position, crown.radius, 0.55f);
         }
         renderer_.SetSkyOcclusion(&sky_occlusion_);
         std::printf("forest_scene: sky occlusion of the land and %zu crowns in %.1f s\n", crowns_.size(),
@@ -1126,7 +1138,7 @@ private:
     poligon::TerrainMaps maps_;
     glm::vec2 map_offset_{0.0f};
     // World height = map height + world_height_offset_.
-    float world_height_offset_ = 0.0f;
+    double world_height_offset_ = 0.0;
     float start_yaw_ = 270.0f;
     float start_lake_level_ = -1.0e30f;
     // Direction (map x, z) and distance from the start to the largest lake's middle.
@@ -1149,11 +1161,11 @@ private:
         const glm::vec2 forward(-std::sin(yaw), -std::cos(yaw));
         for (int step = 0; step <= 800; ++step) {
             const glm::vec2 at = start - forward * (40.0f - 0.05f * static_cast<float>(step));
-            footprints_.Update({at.x, Ground(at.x, at.y), at.y}, [this](float x, float z) { return TakesPrints(x, z); });
+            footprints_.Update({at.x, Ground(at.x, at.y), at.y}, [this](double x, double z) { return TakesPrints(x, z); });
         }
         // Blood a little in front of the fox that stands still.
-        blood_transform_ = glm::translate(glm::mat4(1.0f), {-1.1f, Ground(-1.1f, -2.0f), -2.0f}) *
-                           glm::rotate(glm::mat4(1.0f), 0.7f, {0.0f, 1.0f, 0.0f}) * glm::scale(glm::mat4(1.0f), {0.7f, 0.6f, 0.5f});
+        blood_transform_ = poligon::Transform({-1.1, Ground(-1.1, -2.0), -2.0}, glm::angleAxis(0.7f, glm::vec3(0.0f, 1.0f, 0.0f)),
+                                              {0.7f, 0.6f, 0.5f});
         dot_texture_ = renderer_.CreateTexture(poligon::MakeParticleDotImage(32));
         // The weather starts as if it had been going on for a while.
         for (int step = 0; step < 240; ++step) {
@@ -1163,8 +1175,8 @@ private:
 
     // Bare ground keeps prints: where the ground cover grows fewer than 4 grass plants per
     // square meter (half of what the short grass alone grows on open ground), not in water.
-    bool TakesPrints(float x, float z) const {
-        if (maps_.GetWaterDepth(x + map_offset_.x, z + map_offset_.y) > 0.0f) {
+    bool TakesPrints(double x, double z) const {
+        if (maps_.GetWaterDepth(static_cast<float>(x + map_offset_.x), static_cast<float>(z + map_offset_.y)) > 0.0f) {
             return false;
         }
         float grass = 0.0f;
@@ -1180,7 +1192,7 @@ private:
         const glm::vec2 wind = settings_.environment.wind_direction * (1.5f * settings_.environment.wind_strength);
         rain_.SetSettings(poligon::MakeRainSettings(settings_.weather.rain, wind));
         rain_.SetEmitting(settings_.weather.rain > 0.0f);
-        rain_.SetPosition(camera_.position + glm::vec3(0.0f, 8.0f, 0.0f));
+        rain_.SetPosition(camera_.position + glm::dvec3(0.0, 8.0, 0.0));
         rain_.Update(delta);
         dust_.SetSettings(poligon::MakeDustSettings(settings_.weather.dust));
         dust_.SetEmitting(settings_.weather.dust > 0.0f);
@@ -1193,10 +1205,10 @@ private:
             poligon::ParticleOptions streaks;
             streaks.stretch = 0.03f;
             streaks.soft_distance = 0.1f;
-            renderer_.DrawParticles(poligon::TextureHandle{}, rain_.GetParticles().data(), rain_.GetParticleCount(), streaks);
+            renderer_.DrawParticles(poligon::TextureHandle{}, rain_.GetOrigin(), rain_.GetParticles().data(), rain_.GetParticleCount(), streaks);
         }
         if (dust_.GetParticleCount() > 0) {
-            renderer_.DrawParticles(dot_texture_, dust_.GetParticles().data(), dust_.GetParticleCount());
+            renderer_.DrawParticles(dot_texture_, dust_.GetOrigin(), dust_.GetParticles().data(), dust_.GetParticleCount());
         }
     }
 
@@ -1229,7 +1241,11 @@ private:
     std::vector<poligon::PlantRule> rules_;
     poligon::TrampleMap trample_{128.0f, 256};
     // Crowns of tall plants (x, z, radius) and the sky occlusion made from them and the land.
-    std::vector<glm::vec3> crowns_;
+    struct Crown {
+        glm::dvec2 position;
+        float radius;
+    };
+    std::vector<Crown> crowns_;
     poligon::SkyOcclusionMap sky_occlusion_;
     int loaded_kind_count_ = 0;
     // All plants, rocks and stumps: placed once, drawn by distance.
@@ -1250,6 +1266,8 @@ private:
     float time_scale_ = 1.0f;  // see SetTimeScale
     double cpu_milliseconds_sum_ = 0.0;
     double wait_milliseconds_sum_ = 0.0;
+    double physics_milliseconds_sum_ = 0.0;
+    int physics_steps_ = 0;
     int cpu_frames_ = 0;
 
     // Ground, trunks, rocks, crates and the walking player.
@@ -1267,7 +1285,7 @@ private:
     std::vector<int> grass_layers_;  // ground cover layers of grass, for TakesPrints
     poligon::DecalMaterial print_material_;
     poligon::DecalMaterial blood_material_;
-    glm::mat4 blood_transform_{1.0f};
+    poligon::Transform blood_transform_;
     poligon::ParticleEmitter rain_{poligon::ParticleEmitterSettings{}, 11};
     poligon::ParticleEmitter dust_{poligon::ParticleEmitterSettings{}, 12};
     poligon::TextureHandle dot_texture_;
@@ -1513,14 +1531,16 @@ int main(int argc, char** argv) {
     const auto run_start = std::chrono::steady_clock::now();
     const poligon::GameLoopResult result = loop.Run(game);
 
-    const glm::vec3 standing = game.GetCameraPosition();
-    std::printf("camera at %.3f %.3f %.3f\n", static_cast<double>(standing.x), static_cast<double>(standing.y),
-                static_cast<double>(standing.z));
+    // Exact, so that two runs (or two builds) can be compared to the last digit.
+    const glm::dvec3 standing = game.GetCameraPosition();
+    std::printf("camera at %.17g %.17g %.17g\n", standing.x, standing.y, standing.z);
+    game.PrintCrates();
     const poligon::FrameStats stats = renderer.GetFrameStats();
     std::printf("last frame: %d meshes submitted, %d drawn, %d shadow draws; processor per frame on average: %.2f ms "
                 "preparing, %.2f ms waiting for the card\n",
                 stats.meshes_submitted, stats.meshes_drawn, stats.shadow_draws,
                 static_cast<double>(game.GetAverageCpuMilliseconds()), static_cast<double>(game.GetAverageWaitMilliseconds()));
+    std::printf("physics step on average: %.3f ms\n", static_cast<double>(game.GetAveragePhysicsMilliseconds()));
     std::printf("instances: %d submitted, %d in view, %d in shadow cascades, %d draw calls\n", stats.instances_submitted,
                 stats.instances_drawn, stats.shadow_instances, stats.instance_draw_calls);
     if (!options.dump_frame_path.empty()) {

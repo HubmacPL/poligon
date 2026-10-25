@@ -39,7 +39,7 @@ void Renderer::Impl::RenderSkyLightPass(FrameContext& frame) {
     capture.zenith = ToVec4(environment.sky_zenith) * intensity;
     capture.horizon = ToVec4(environment.sky_horizon) * intensity;
     capture.ground = ToVec4(environment.sky_ground) * intensity;
-    capture.eye = glm::vec4(camera.position, 0.0f);
+    capture.eye = glm::vec4(glm::vec3(camera.position), 0.0f);  // world float: the clouds' noise is kilometers wide
     SDL_GPUTextureSamplerBinding capture_bindings[3]{};
     capture_bindings[0].texture = clouds ? cloud_shape : dummy_volume;
     capture_bindings[0].sampler = repeat_sampler;

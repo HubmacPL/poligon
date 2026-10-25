@@ -37,6 +37,10 @@ W `game/CMakeLists.txt`:
 
 Powiązane: `tests/ecs/ecs_order_probe.cpp` (powtarzalność flecs), `game/tests/toy_world_test.cpp` (dwa światy w jednym procesie), `tests/physics/physics_test.cpp` (sam świat fizyki).
 
+Daleko od początku układu: pozycje w świecie są w double (patrz [rendering.md](rendering.md) i [physics.md](physics.md)), więc scena przesunięta daleko przebiega tak samo jak blisko początku, tylko przesunięta. `toy_world_test` przesuwa scenę gry-zabawki o (20000, 50, -16000) i wymaga po 300 tickach tych samych miejsc plus przesunięcie, z dokładnością 1e-6 m; `physics_test` robi to samo dla skrzyni i idącej postaci 16 km dalej. To sprawdzenie precyzji, nie obietnica identyczności co do bitu: przesunięta scena daje nieco inne bity (zmierzone: 1e-11 m).
+
+Nagrania zrobione, zanim pozycje stały się double (2026-10-25), odtwarzają się po tej zmianie do nieco innej fizyki: w próbnym marszu `forest_scene` gracz kończy w tym samym miejscu z dokładnością do milimetra (tyle wypisywała stara wersja), ale rzucone skrzynie lądują nieco inaczej.
+
 Grę-zabawkę symuluje silnik fizyki, więc wszystkie powyższe testy obejmują także jego; co utrzymuje powtarzalność fizyki, opisuje [physics.md](physics.md).
 
 ## Co psuje determinizm

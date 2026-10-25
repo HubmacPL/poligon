@@ -71,16 +71,16 @@ int main(int argc, char** argv) {
     environment.wind_time = 2.0f;  // a game gives its own running time here, every frame
 
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {200.0f, 1.0f, 200.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
     for (int i = 0; i < 5; ++i) {
         const glm::vec3 foot{(static_cast<float>(i) - 2.0f) * 6.0f, 0.0f, -14.0f};
         // The model's origin is the foot the tree bends about, so the trunk and the crown
         // are placed relative to it.
         const glm::mat4 at_foot = glm::translate(identity, foot);
-        renderer.DrawMesh(cube, at_foot * glm::translate(identity, {0.0f, 3.0f, 0.0f}) * glm::scale(identity, {0.5f, 6.0f, 0.5f}), bark);
-        renderer.DrawMesh(cube, at_foot * glm::translate(identity, {0.0f, 7.0f, 0.0f}) * glm::scale(identity, glm::vec3(3.5f)), leaves);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), at_foot * glm::translate(identity, {0.0f, 3.0f, 0.0f}) * glm::scale(identity, {0.5f, 6.0f, 0.5f}), bark);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), at_foot * glm::translate(identity, {0.0f, 7.0f, 0.0f}) * glm::scale(identity, glm::vec3(3.5f)), leaves);
     }
-    renderer.DrawMeshInstances(blade, grass, blades.data(), static_cast<int>(blades.size()));
+    renderer.DrawMeshInstances(blade, grass, glm::dvec3(0.0), blades.data(), static_cast<int>(blades.size()));
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(argv[1])) {

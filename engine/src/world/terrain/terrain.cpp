@@ -37,7 +37,7 @@ struct Terrain::Impl {
     float GetSquareSize(int level) const { return static_cast<float>(kPatchCells << level) * map.spacing; }
 
     // Adds the square (column, row) of the given level, or its four quarters if the camera is close.
-    void Select(int level, int column, int row, const glm::vec3& eye) {
+    void Select(int level, int column, int row, const glm::dvec3& eye) {
         const LevelRanges& ranges = levels[static_cast<size_t>(level)];
         if (column >= ranges.columns || row >= ranges.rows) {
             return;  // wholly beyond the map's edge
@@ -45,17 +45,17 @@ struct Terrain::Impl {
         const size_t index = static_cast<size_t>(row) * static_cast<size_t>(ranges.columns) + static_cast<size_t>(column);
         const float size = GetSquareSize(level);
         TerrainPatch patch;
-        patch.x = config.origin.x + static_cast<float>(column) * size;
-        patch.z = config.origin.z + static_cast<float>(row) * size;
+        patch.x = config.origin.x + static_cast<double>(column) * static_cast<double>(size);
+        patch.z = config.origin.z + static_cast<double>(row) * static_cast<double>(size);
         patch.size = size;
-        patch.min_height = config.origin.y + ranges.lowest[index];
-        patch.max_height = config.origin.y + ranges.highest[index];
+        patch.min_height = static_cast<float>(config.origin.y + static_cast<double>(ranges.lowest[index]));
+        patch.max_height = static_cast<float>(config.origin.y + static_cast<double>(ranges.highest[index]));
 
         if (level > 0) {
             // Distance from the camera to the nearest point of the box around the square's land.
-            const glm::vec3 nearest = glm::clamp(eye, glm::vec3(patch.x, patch.min_height, patch.z),
-                                                 glm::vec3(patch.x + size, patch.max_height, patch.z + size));
-            if (glm::distance(eye, nearest) < size * config.detail) {
+            const glm::dvec3 nearest = glm::clamp(eye, glm::dvec3(patch.x, patch.min_height, patch.z),
+                                                  glm::dvec3(patch.x + size, patch.max_height, patch.z + size));
+            if (glm::distance(eye, nearest) < static_cast<double>(size * config.detail)) {
                 for (int quarter = 0; quarter < 4; ++quarter) {
                     Select(level - 1, column * 2 + (quarter & 1), row * 2 + (quarter >> 1), eye);
                 }
@@ -142,23 +142,25 @@ void Terrain::Draw(const Camera& camera) {
     impl.renderer->DrawTerrain(impl.handle, impl.config.material, impl.patches.data(), static_cast<int>(impl.patches.size()));
 }
 
-float Terrain::GetHeight(float x, float z) const {
-    return impl_->config.origin.y + impl_->map.GetHeight(x - impl_->config.origin.x, z - impl_->config.origin.z);
+// The height map counts in float from its own first point; world positions are moved there in double.
+double Terrain::GetHeight(double x, double z) const {
+    return impl_->config.origin.y + static_cast<double>(impl_->map.GetHeight(static_cast<float>(x - impl_->config.origin.x),
+                                                                             static_cast<float>(z - impl_->config.origin.z)));
 }
 
-glm::vec3 Terrain::GetNormal(float x, float z) const {
-    return impl_->map.GetNormal(x - impl_->config.origin.x, z - impl_->config.origin.z);
+glm::vec3 Terrain::GetNormal(double x, double z) const {
+    return impl_->map.GetNormal(static_cast<float>(x - impl_->config.origin.x), static_cast<float>(z - impl_->config.origin.z));
 }
 
-float Terrain::GetSlopeDegrees(float x, float z) const {
-    return impl_->map.GetSlopeDegrees(x - impl_->config.origin.x, z - impl_->config.origin.z);
+float Terrain::GetSlopeDegrees(double x, double z) const {
+    return impl_->map.GetSlopeDegrees(static_cast<float>(x - impl_->config.origin.x), static_cast<float>(z - impl_->config.origin.z));
 }
 
-glm::vec2 Terrain::GetMin() const {
+glm::dvec2 Terrain::GetMin() const {
     return {impl_->config.origin.x, impl_->config.origin.z};
 }
 
-glm::vec2 Terrain::GetMax() const {
+glm::dvec2 Terrain::GetMax() const {
     return {impl_->config.origin.x + impl_->map.GetSizeX(), impl_->config.origin.z + impl_->map.GetSizeZ()};
 }
 

@@ -31,17 +31,17 @@ public:
     // `feet`: where the walker stands, on the ground. `takes_prints(x, z)`: whether the ground
     // there keeps a print (bare earth, mud, snow; not grass or rock); null = everywhere.
     // A jump of more than 5 m (a teleport) starts a new trail without a print in between.
-    void Update(const glm::vec3& feet, const std::function<bool(float x, float z)>& takes_prints = nullptr);
+    void Update(const glm::dvec3& feet, const std::function<bool(double x, double z)>& takes_prints = nullptr);
     // Decal transforms, oldest first.
-    const std::vector<glm::mat4>& GetPrints() const;
+    const std::vector<Transform>& GetPrints() const;
     void Clear();
     // Draws every print with `material` (its picture lies along the box's -z, the way walked).
     void Draw(Renderer& renderer, const DecalMaterial& material) const;
 
 private:
     FootprintSettings settings_;
-    std::vector<glm::mat4> prints_;
-    glm::vec3 last_feet_{0.0f};
+    std::vector<Transform> prints_;
+    glm::dvec3 last_feet_{0.0};
     bool has_last_ = false;
     float walked_ = 0.0f;
     bool left_ = true;

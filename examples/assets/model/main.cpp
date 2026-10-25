@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
     const poligon::DirectionalLight light;
 
     renderer.BeginFrame(camera, light);
-    poligon::DrawModel(renderer, render_model, glm::mat4(1.0f));
+    poligon::DrawModel(renderer, render_model, poligon::Transform());
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(frame_path.c_str())) {

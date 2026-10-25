@@ -127,9 +127,12 @@ struct RendererConfig {
     bool debug_ui = false;
 };
 
+// Where the picture is taken from: world positions in double (see poligon/core/math.h). The
+// renderer draws everything relative to `position` (subtracted in double on the processor),
+// so a camera tens of kilometers from the origin sees as sharp a picture as one at it.
 struct Camera {
-    glm::vec3 position{0.0f, 2.0f, 5.0f};
-    glm::vec3 target{0.0f, 0.0f, 0.0f};
+    glm::dvec3 position{0.0, 2.0, 5.0};
+    glm::dvec3 target{0.0, 0.0, 0.0};
     glm::vec3 up{0.0f, 1.0f, 0.0f};
     float vertical_fov_degrees = 60.0f;
     float near_plane = 0.1f;
@@ -289,7 +292,7 @@ struct CompressedImage;  // poligon/core/texture_compression.h
 struct GroundMap {
     const std::uint8_t* values = nullptr;  // resolution x resolution, row by row from `corner`
     int resolution = 0;
-    glm::vec2 corner{0.0f};  // world x and z of the grid's outer corner with the smallest x and z
+    glm::dvec2 corner{0.0};  // world x and z of the grid's outer corner with the smallest x and z
     float size = 0.0f;       // meters from edge to edge
     std::uint32_t version = 0;  // changes whenever the values change; the renderer copies them only then
 };
@@ -383,8 +386,8 @@ struct WaterMaterial {
 // coordinates, in world meters. min_height and max_height enclose the land inside it
 // (world heights); they are used for culling.
 struct TerrainPatch {
-    float x = 0.0f;
-    float z = 0.0f;
+    double x = 0.0;
+    double z = 0.0;
     float size = 0.0f;
     float min_height = 0.0f;
     float max_height = 0.0f;
@@ -585,7 +588,7 @@ public:
     // Copies a height map to the graphics card: `heights` holds width x depth values, row
     // by row, `spacing` meters apart. `origin` is the world position of the first point;
     // its y is added to every height. See poligon/world/terrain.h, which is the usual way in.
-    TerrainHandle CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::vec3& origin);
+    TerrainHandle CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::dvec3& origin);
     void DestroyTerrain(TerrainHandle terrain);
     // Draws pieces of a terrain. Each patch is one flat grid of 64 x 64 cells stretched
     // over its square and lifted to the land's height, so a large patch is coarse and a
@@ -607,7 +610,8 @@ public:
     // Draws a water surface: usually a flat mesh at the water's level (poligon/world/water.h makes
     // them for lakes). It is drawn after everything else in the scene and reads what was
     // drawn under it: see WaterMaterial and Environment::water_reflection_steps.
-    void DrawWater(MeshHandle mesh, const glm::mat4& transform, const WaterMaterial& material);
+    // The mesh is placed at `origin` + `local`, as for DrawMesh.
+    void DrawWater(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, const WaterMaterial& material);
 
     // Copies the image to the graphics card. Textures repeat outside the 0..1 coordinate range.
     TextureHandle CreateTexture(const Image& image, const TextureOptions& options = TextureOptions{});
@@ -634,13 +638,23 @@ public:
     // (motion vectors) instead of smearing it. 0 = the object stands still (plants moving in
     // the wind are followed anyway). Several draws with one id in a frame (the meshes of one
     // model) are told apart by their order.
-    void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material, std::uint64_t object_id = 0);
+    //
+    // World placement: a Transform (double position, rotation, scale), or a double `origin`
+    // with a float matrix `local` relative to it, for what a Transform cannot say (a shear, a
+    // model's node inside it): the mesh is placed at origin + local. Either way the renderer
+    // subtracts the camera's position in double and draws in float relative to the camera.
+    void DrawMesh(MeshHandle mesh, const Transform& transform, const Material& material, std::uint64_t object_id = 0);
+    void DrawMesh(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
+                  std::uint64_t object_id = 0);
     // Same, with a plain color and no texture.
-    void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
+    void DrawMesh(MeshHandle mesh, const Transform& transform, Color color);
+    void DrawMesh(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, Color color);
     // Draws the level of `group` that the distance from the camera to the transform's origin
     // calls for: two levels while fading from one to the next, none beyond the last level's
     // distance. Returns the level drawn (the nearer one while fading), -1 for none.
-    int DrawMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material, std::uint64_t object_id = 0);
+    int DrawMesh(const MeshLodGroup& group, const Transform& transform, const Material& material, std::uint64_t object_id = 0);
+    int DrawMesh(const MeshLodGroup& group, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
+                 std::uint64_t object_id = 0);
     // Draws one mesh many times in a single draw call per pass: `transforms` holds one
     // matrix per copy. This is the way to draw vegetation. Each copy is culled on its own
     // against the camera's view and against each shadow cascade. The matrices are copied,
@@ -649,17 +663,24 @@ public:
     // between levels of detail: between 0 and 1 that share of the copy's pixels is drawn,
     // between -1 and 0 that share is left out, by a fixed pattern, so that a copy fading out
     // and one fading in at the same place fill each pixel exactly once. Vegetation sets it.
-    void DrawMeshInstances(MeshHandle mesh, const Material& material, const glm::mat4* transforms, int count,
-                           const InstanceOptions& options = InstanceOptions{});
+    // The matrices are relative to `origin` (a cell's or a region's corner): float stays
+    // precise near it, and the renderer moves them to the camera with one double subtraction.
+    void DrawMeshInstances(MeshHandle mesh, const Material& material, const glm::dvec3& origin, const glm::mat4* transforms,
+                           int count, const InstanceOptions& options = InstanceOptions{});
     // Draws a mesh made by CreateSkinnedMesh in a pose. `joint_matrices` come from
     // ComputeJointMatrices (poligon/animation/animation.h), one per joint of the skeleton; they are
     // copied, so the array need not outlive the call. `transform` places the whole model.
     // `object_id` as in DrawMesh: with it, the previous frame's pose gives motion vectors.
-    void DrawSkinnedMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material,
+    // The joint matrices are in the model's own space (float), as animation gives them.
+    void DrawSkinnedMesh(MeshHandle mesh, const Transform& transform, const Material& material, const glm::mat4* joint_matrices,
+                         int joint_count, std::uint64_t object_id = 0);
+    void DrawSkinnedMesh(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
                          const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id = 0);
     // Same with levels of detail (see DrawMesh with a MeshLodGroup): every level is drawn with
     // these joint matrices. Returns the level drawn, -1 for none.
-    int DrawSkinnedMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material,
+    int DrawSkinnedMesh(const MeshLodGroup& group, const Transform& transform, const Material& material,
+                        const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id = 0);
+    int DrawSkinnedMesh(const MeshLodGroup& group, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
                         const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id = 0);
 
     // Photographs a model for an impostor (see Impostor): frames_per_side x frames_per_side
@@ -680,7 +701,8 @@ public:
     // its meshes; rotation about the vertical and uniform scale are allowed. Impostors cast
     // no shadows (options.shadow_cascades is ignored): they are meant for distances beyond
     // the shadows' reach. The fade in [3][3] works as for DrawMeshInstances.
-    void DrawImpostorInstances(ImpostorHandle impostor, const glm::mat4* transforms, int count,
+    // The transforms are relative to `origin`, as for DrawMeshInstances.
+    void DrawImpostorInstances(ImpostorHandle impostor, const glm::dvec3& origin, const glm::mat4* transforms, int count,
                                const InstanceOptions& options = InstanceOptions{});
     void EndFrame();
 
@@ -737,14 +759,16 @@ public:
     // Decals are laid on in the order of these calls; consecutive calls with the same
     // material are drawn in one call. Meant for hundreds a frame; each costs about the
     // pixels its box covers on screen.
-    void DrawDecal(const glm::mat4& transform, const DecalMaterial& material);
+    void DrawDecal(const Transform& transform, const DecalMaterial& material);
 
     // Particles (poligon/render/particles.h): `count` cards facing the camera, with one texture
     // (an atlas of pictures, see ParticleOptions) and one way of blending. They are copied and
     // sorted from back to front within the call; calls are drawn in order, after the opaque
     // scene, water and fog. Hidden where the scene is in front of them (by its depth image),
     // softened where they near it. Meant for some thousands a frame.
-    void DrawParticles(TextureHandle texture, const Particle* particles, int count, const ParticleOptions& options = ParticleOptions{});
+    // Particle positions are relative to `origin` (the emitter's, see ParticleEmitter::GetOrigin).
+    void DrawParticles(TextureHandle texture, const glm::dvec3& origin, const Particle* particles, int count,
+                       const ParticleOptions& options = ParticleOptions{});
 
     // --- 2D over the finished picture (HUD, crosshair, markers, subtitles) ---
     // Positions and sizes in pixels of the output image, (0, 0) at its top-left corner, y down;
@@ -774,6 +798,14 @@ public:
 private:
     TextureHandle CreateTextureArray(const CompressedImage* images, int count, bool plain);
     void CreateBuiltinFont();
+    // The draws above after the world placement has become a matrix relative to the camera
+    // (see poligon/core/math.h); `noise_shift` keeps world-fixed noise (wind gusts) in place.
+    void DrawMeshRelative(MeshHandle mesh, const glm::mat4& relative, const Material& material, std::uint64_t object_id,
+                          const glm::vec3& noise_shift);
+    void DrawSkinnedMeshRelative(MeshHandle mesh, const glm::mat4& relative, const Material& material, const glm::mat4* joint_matrices,
+                                 int joint_count, std::uint64_t object_id, const glm::vec3& noise_shift);
+    int DrawLodRelative(const MeshLodGroup& group, const glm::mat4& relative, const Material& material, std::uint64_t object_id,
+                        const glm::vec3& noise_shift, const glm::mat4* joint_matrices, int joint_count);
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -73,8 +73,8 @@ int main(int argc, char** argv) {
 
         renderer.SetPostSettings(settings.post);
         renderer.BeginFrame(camera.ToCamera(), settings.sun, settings.environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {20.0f, 1.0f, 20.0f}), poligon::Color{0.4f, 0.5f, 0.3f, 1.0f});
-        renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.8f, 0.3f, 0.2f, 1.0f});
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {20.0f, 1.0f, 20.0f}), poligon::Color{0.4f, 0.5f, 0.3f, 1.0f});
+        renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.8f, 0.3f, 0.2f, 1.0f});
 
         // Ready-made windows. Each does nothing when there are no debug windows.
         poligon::ShowRenderSettingsWindow(renderer, settings, settings_path);

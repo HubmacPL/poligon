@@ -106,10 +106,10 @@ void DestroyRenderModel(Renderer& renderer, RenderModel& model);
 // Draws every instance of the model. `transform` places the whole model in the world.
 // A skinned model is drawn in its rest pose. `object_id` as in Renderer::DrawMesh: nonzero
 // for a model that moves, so that temporal anti-aliasing follows it.
-void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform, std::uint64_t object_id = 0);
+void DrawModel(Renderer& renderer, const RenderModel& model, const Transform& transform, std::uint64_t object_id = 0);
 // Draws a skinned model in a pose: `joint_matrices` from ComputeJointMatrices, one per joint
 // of Model::skeleton. Rigid meshes of the model are drawn as usual.
-void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform,
+void DrawModel(Renderer& renderer, const RenderModel& model, const Transform& transform,
                const std::vector<glm::mat4>& joint_matrices, std::uint64_t object_id = 0);
 
 } // namespace poligon

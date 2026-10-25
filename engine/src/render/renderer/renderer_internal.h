@@ -62,6 +62,9 @@ struct ObjectUniforms {
     // Turns normals into the world: the inverse transpose of the model's 3 x 3 part, so that
     // normals stay square to the surface under any scale (columns 0 to 2; the rest unused).
     glm::mat4 normal_matrix{1.0f};
+    // Added to camera-relative positions where a shader needs world-fixed noise or waves
+    // (wind gusts): see NoiseShift.
+    glm::vec4 noise_shift{0.0f};
 };
 
 struct FragmentFrameUniforms {
@@ -176,13 +179,15 @@ struct WaterUniforms {
     glm::vec4 waves;
     glm::vec4 wind;
     glm::vec4 screen;
+    glm::vec4 noise_shift;  // xyz: see NoiseShift (the waves stay in place as the camera moves)
 };
 
 // One water surface to draw (Renderer::DrawWater).
 struct WaterCommand {
     std::uint32_t mesh_id = 0;
-    glm::mat4 transform{1.0f};
+    glm::mat4 transform{1.0f};  // relative to the camera
     WaterMaterial material;
+    glm::vec3 noise_shift{0.0f};
 };
 
 struct TerrainMaterialUniforms {
@@ -192,6 +197,10 @@ struct TerrainMaterialUniforms {
     glm::vec4 steep_color;
     glm::vec4 tile_scales[2];
     glm::vec4 weight_map;
+    // Per layer: where the texture's repeat stands at the camera (xy for the layer's own
+    // size, zw for seven times larger), so that camera-relative positions tile as world ones.
+    glm::vec4 tile_phases[8];
+    glm::vec4 noise_shift;  // xy: camera-relative x and z to the terrain's own (for its mottling)
 };
 
 struct TonemapUniforms {
@@ -209,6 +218,16 @@ struct TaaUniforms {
     glm::vec4 parameters;
     glm::vec4 input;
 };
+
+// What a shader adds to a camera-relative position to get one fixed in the world for noise
+// and waves (wind gusts, water ripples): the camera minus `origin` rounded to 4096 m, so that
+// the sum (world position minus that snapped origin) stays small and exact in float. The
+// pattern is continuous within a 4096 m square and jumps at its edges, once, for things
+// whose origin crosses one.
+inline glm::vec3 NoiseShift(const glm::dvec3& camera, const glm::dvec3& origin) {
+    const glm::dvec3 snapped = glm::round(origin / 4096.0) * 4096.0;
+    return glm::vec3(camera - snapped);
+}
 
 // Sub-pixel camera shifts for temporal anti-aliasing: the first 8 points of the Halton
 // sequence in bases 2 and 3, which cover a pixel evenly whatever prefix is used.
@@ -349,6 +368,7 @@ struct DrawCommand {
     std::uint32_t previous_first_joint = 0;
     // Dithered fade between levels of detail (KeptByFade in common.hlsli): 1 = drawn whole.
     float fade = 1.0f;
+    glm::vec3 noise_shift{0.0f};  // see NoiseShift
 };
 
 // A draw with an object id (Renderer::DrawMesh), told apart from other draws with the same id
@@ -369,7 +389,7 @@ struct DrawnObjectKeyHash {
 
 // What the next frame needs to know about a draw with an object id.
 struct DrawnObject {
-    glm::mat4 transform{1.0f};
+    glm::mat4 transform{1.0f};  // relative to that frame's camera
     std::uint32_t first_joint = 0;  // in that frame's joint_palette
     int joint_count = 0;
 };
@@ -394,7 +414,7 @@ struct TerrainData {
     int width = 0;
     int depth = 0;
     float spacing = 1.0f;
-    glm::vec3 origin{0.0f};  // world position of the first point; y is that of image value 0
+    glm::dvec3 origin{0.0};  // world position of the first point; y is that of image value 0
     float height_range = 1.0f;
 };
 
@@ -430,6 +450,7 @@ inline void ImpostorFrameAxes(const glm::vec3& direction, glm::vec3& right, glm:
 struct InstanceBatch {
     std::uint32_t mesh_id;
     Material material;
+    glm::vec3 noise_shift{0.0f};  // see NoiseShift
     // Not 0: the batch draws patches of this terrain, with this look.
     std::uint32_t terrain_id = 0;
     TerrainMaterial terrain_material;
@@ -683,8 +704,9 @@ struct Renderer::Impl {
     int taa_index = 0;
     bool has_taa_history = false;
     WindowMode window_mode = WindowMode::Windowed;
+    // The previous frame's camera without its shift, relative to that frame's camera position.
     glm::mat4 previous_view_projection{1.0f};
-    glm::vec3 previous_camera_position{0.0f};
+    glm::dvec3 previous_camera_position{0.0};
     std::uint64_t frame_index = 0;
     // Clouds built up over frames (RenderCloudPass): two images written in turn, the size of
     // cloud_target; usable when the previous frame wrote one.
@@ -773,6 +795,9 @@ struct Renderer::Impl {
 
     // Recorded between BeginFrame and EndFrame.
     bool in_frame = false;
+    // The camera's position this frame: everything is drawn relative to it (subtracted in
+    // double, then float). See poligon/core/math.h.
+    glm::dvec3 origin{0.0};
     // 2D over the picture: recorded quads, fonts (resources/overlay.cpp, passes/overlay_pass.cpp).
     OverlayState overlay;
     // Decals recorded this frame (resources/decals.cpp, passes/decal_pass.cpp).
@@ -917,6 +942,14 @@ struct Renderer::Impl {
         glm::mat4 projection{1.0f};
         glm::mat4 view_projection{1.0f};
         glm::mat4 unshifted_view_projection{1.0f};
+        // The previous frame's unshifted camera, taking positions relative to this frame's
+        // camera (motion vectors, reprojection).
+        glm::mat4 previous_view_projection{1.0f};
+        // The camera's world position in float, and the view-projection in world float
+        // coordinates: for clouds and the sky capture, which walk world-fixed noise
+        // kilometers wide and need no finer precision.
+        glm::vec3 camera_world{0.0f};
+        glm::mat4 world_view_projection{1.0f};
         glm::vec2 jitter_pixels{0.0f};
         glm::vec3 light_direction{0.0f, -1.0f, 0.0f};
         // What runs this frame.
@@ -939,7 +972,7 @@ struct Renderer::Impl {
         // Cloud shadows cover this square around the camera.
         CloudUniforms cloud_uniforms{};
         float cloud_shadow_size = 8000.0f;
-        glm::vec2 cloud_shadow_corner{0.0f};
+        glm::dvec2 cloud_shadow_corner{0.0};  // world x and z
         // Filled by the scene pass; the water pass uses it again.
         FragmentFrameUniforms frame_uniforms{};
         // The scene's image with one sample per pixel; temporal anti-aliasing replaces it with its result.
@@ -974,6 +1007,8 @@ struct Renderer::Impl {
     void CreateOverlayPipeline();
     void ReleaseOverlay();
     void AddOverlayQuads(SDL_GPUTexture* texture, bool pixelated, const OverlayQuad* quads, size_t count);
+    // Instance matrices relative to `source_origin`, added to instance_sources relative to the camera.
+    void AddInstanceSources(const glm::dvec3& source_origin, const glm::mat4* transforms, int count);
     const Font* FindFont(FontHandle handle) const;
 };
 

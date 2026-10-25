@@ -1,6 +1,7 @@
 // Checks the physics world: bodies fall and come to rest, bounce, stack, are hit by rays;
 // a character walks, is stopped by obstacles, steps onto ledges and jumps; and a run is
 // repeatable bit for bit.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -19,11 +20,11 @@ void StepFor(poligon::PhysicsWorld& world, float seconds) {
     }
 }
 
-bool Near(float value, float expected, float tolerance) {
+// Positions are double, other values float (promoted).
+bool Near(double value, double expected, double tolerance) {
     const bool near = std::fabs(value - expected) <= tolerance;
     if (!near) {
-        std::printf("  got %.4f, expected %.4f +- %.4f\n", static_cast<double>(value), static_cast<double>(expected),
-                    static_cast<double>(tolerance));
+        std::printf("  got %.4f, expected %.4f +- %.4f\n", value, expected, tolerance);
     }
     return near;
 }
@@ -92,11 +93,11 @@ int main() {
         Expect(world.IsAsleep(box), "a body at rest falls asleep");
         Expect(Near(world.GetPosition(floor).y, -0.5f, 0.0f), "the floor has not moved");
 
-        const glm::mat4 transform = world.GetTransform(box);
-        Expect(Near(transform[3].y, world.GetPosition(box).y, 0.0f), "GetTransform carries the position");
+        const poligon::Transform transform = world.GetTransform(box);
+        Expect(transform.position == world.GetPosition(box), "GetTransform carries the position");
 
-        glm::vec3 bounds_min;
-        glm::vec3 bounds_max;
+        glm::dvec3 bounds_min;
+        glm::dvec3 bounds_max;
         world.GetBounds(box, bounds_min, bounds_max);
         Expect(Near(bounds_min.y, 0.0f, 0.02f) && Near(bounds_max.y, 0.5f, 0.02f) && Near(bounds_max.x, 0.5f, 0.02f),
                "the bounds enclose the box where it lies");
@@ -117,15 +118,15 @@ int main() {
         const poligon::BodyHandle ball = world.AddSphere(0.25f, bouncy);
         const poligon::BodyHandle lump = world.AddSphere(0.25f, DynamicAt({3.0f, 3.0f, 0.0f}));
 
-        float ball_top = 0.0f;
-        float lump_top = 0.0f;
+        double ball_top = 0.0;
+        double lump_top = 0.0;
         bool landed = false;
         for (int tick = 0; tick < 150; ++tick) {
             world.Step(kTick);
             landed = landed || world.GetPosition(lump).y < 0.3f;
             if (landed) {
-                ball_top = std::fmax(ball_top, world.GetPosition(ball).y);
-                lump_top = std::fmax(lump_top, world.GetPosition(lump).y);
+                ball_top = std::max(ball_top, world.GetPosition(ball).y);
+                lump_top = std::max(lump_top, world.GetPosition(lump).y);
             }
         }
         Expect(ball_top > 1.0f, "a bouncy ball jumps back up");
@@ -160,7 +161,7 @@ int main() {
             boxes.push_back(world.AddBox({0.5f, 0.5f, 0.5f}, DynamicAt({0.0f, 0.5f + static_cast<float>(i), 0.0f})));
         }
         StepFor(world, 5.0f);
-        const glm::vec3 top = world.GetPosition(boxes[4]);
+        const glm::dvec3 top = world.GetPosition(boxes[4]);
         Expect(Near(top.y, 4.5f, 0.05f) && Near(top.x, 0.0f, 0.05f) && Near(top.z, 0.0f, 0.05f),
                "five stacked boxes stay stacked");
     }
@@ -199,7 +200,7 @@ int main() {
         settings.friction = 1.0f;
         const poligon::BodyHandle box = world.AddBox({0.3f, 0.3f, 0.3f}, settings);
         StepFor(world, 3.0f);
-        const glm::vec3 position = world.GetPosition(box);
+        const glm::dvec3 position = world.GetPosition(box);
         Expect(position.y > 0.2f * position.x && position.y < 0.2f * position.x + 0.5f, "a box lands on the slope and stays on it");
     }
 
@@ -228,7 +229,7 @@ int main() {
             world.SetCharacterInput(character, {2.0f, 0.0f, 0.0f}, false);
             world.Step(kTick);
         }
-        const glm::vec3 position = world.GetCharacterPosition(character);
+        const glm::dvec3 position = world.GetCharacterPosition(character);
         // Walked about 6 m uphill: the land there is 1.5 m higher.
         Expect(position.x > 15.0f && Near(position.y, 5.0f + (position.x + 10.0f) * 0.25f, 0.1f),
                "a character walks up the land and stays on it");
@@ -258,7 +259,7 @@ int main() {
 
         world.SetCharacterInput(character, {2.0f, 0.0f, 0.0f}, false);
         world.Step(kTick);
-        const float start_x = world.GetCharacterPosition(character).x;
+        const double start_x = world.GetCharacterPosition(character).x;
         for (int tick = 0; tick < 60; ++tick) {
             world.SetCharacterInput(character, {2.0f, 0.0f, 0.0f}, false);
             world.Step(kTick);
@@ -279,7 +280,7 @@ int main() {
             world.SetCharacterInput(character, {0.0f, 0.0f, 2.0f}, false);
             world.Step(kTick);
         }
-        const glm::vec3 on_ledge = world.GetCharacterPosition(character);
+        const glm::dvec3 on_ledge = world.GetCharacterPosition(character);
         Expect(on_ledge.z > 5.3f && on_ledge.z < 6.7f && Near(on_ledge.y, 0.3f, 0.03f),
                "a ledge of 30 cm is stepped onto without a jump");
 
@@ -294,14 +295,67 @@ int main() {
         world.SetCharacterPosition(character, {-8.0f, 0.0f, 0.0f});
         StepFor(world, 0.2f);
         world.SetCharacterInput(character, {0.0f, 0.0f, 0.0f}, true);
-        float highest = 0.0f;
+        double highest = 0.0;
         for (int tick = 0; tick < 90; ++tick) {
             world.Step(kTick);
-            highest = std::fmax(highest, world.GetCharacterPosition(character).y);
+            highest = std::max(highest, world.GetCharacterPosition(character).y);
         }
         // Jump speed 4.5 m/s: 4.5^2 / (2 * 9.81) = 1.03 m.
         Expect(Near(highest, 1.03f, 0.1f), "a jump reaches about a meter");
         Expect(world.IsCharacterOnGround(character), "and ends back on the ground");
+    }
+
+    // --- Far from the origin ---
+    // Positions are double (Jolt built with JPH_DOUBLE_PRECISION), so 16 km away a crate rests
+    // as still as near the origin, and a character's walk ends where it ends near the origin.
+    {
+        struct FarResult {
+            double crate_drift;       // largest distance the resting crate moves over 600 ticks
+            glm::dvec3 walker_end;    // where the walk ends, relative to the land's middle
+        };
+        const auto run = [](const glm::dvec3& middle) {
+            poligon::PhysicsWorld world;
+            // Gently rolling land 64 m across, centered on `middle`.
+            const int size = 33;
+            std::vector<float> heights;
+            for (int iz = 0; iz < size; ++iz) {
+                for (int ix = 0; ix < size; ++ix) {
+                    heights.push_back(0.4f * std::sin(static_cast<float>(ix) * 0.35f) * std::cos(static_cast<float>(iz) * 0.25f));
+                }
+            }
+            world.AddHeightField(heights.data(), size, 2.0f, middle + glm::dvec3(-32.0, 0.0, -32.0));
+            poligon::BodySettings crate;
+            crate.dynamic = true;
+            crate.mass = 8.0f;
+            crate.friction = 0.8f;
+            crate.position = middle + glm::dvec3(0.0, 0.8, 0.0);  // land at (0, 0) is 0 high
+            const poligon::BodyHandle box = world.AddBox({0.3f, 0.3f, 0.3f}, crate);
+            for (int tick = 0; tick < 180; ++tick) {
+                world.Step(kTick);
+            }
+            FarResult result{0.0, glm::dvec3(0.0)};
+            const glm::dvec3 rested = world.GetPosition(box);
+            poligon::CharacterSettings walker_settings;
+            walker_settings.position = middle + glm::dvec3(-6.0, 1.0, 8.0);
+            const poligon::CharacterHandle walker = world.AddCharacter(walker_settings);
+            for (int tick = 0; tick < 600; ++tick) {
+                // Two seconds to settle, four seconds there across the bumps, four back.
+                const float speed = tick < 120 ? 0.0f : tick < 360 ? 3.0f : -3.0f;
+                world.SetCharacterInput(walker, {speed, 0.0f, 0.0f}, false);
+                world.Step(kTick);
+                result.crate_drift = std::max(result.crate_drift, glm::distance(world.GetPosition(box), rested));
+            }
+            result.walker_end = world.GetCharacterPosition(walker) - middle;
+            return result;
+        };
+        const FarResult near_result = run(glm::dvec3(0.0));
+        const FarResult far_result = run(glm::dvec3(16000.0, 0.0, -16000.0));
+        const double walk_difference = glm::distance(near_result.walker_end, far_result.walker_end);
+        std::printf("16 km from the origin: crate drift %.3g m (near the origin %.3g m), walk ends %.3g m from where it ends near the origin\n",
+                    far_result.crate_drift, near_result.crate_drift, walk_difference);
+        Expect(far_result.crate_drift <= 1.0e-4, "16 km away a crate resting on the land stays put to 0.1 mm over 600 ticks");
+        Expect(Near(near_result.walker_end.x, -6.0, 0.2), "the walk there and back ends near where it started");
+        Expect(walk_difference <= 1.0e-3, "16 km away the same walk ends in the same place, to 1 mm");
     }
 
     // --- Repeatability ---

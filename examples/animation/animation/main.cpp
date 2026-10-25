@@ -101,10 +101,10 @@ int main(int argc, char** argv) {
     bar_material.double_sided = true;
 
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::scale(identity, {30.0f, 1.0f, 30.0f}), poligon::Color{0.4f, 0.5f, 0.3f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {30.0f, 1.0f, 30.0f}), poligon::Color{0.4f, 0.5f, 0.3f, 1.0f});
     // The joint matrices for this moment bend the mesh; the transform lifts the whole bar.
     const std::vector<glm::mat4>& joint_matrices = player.GetJointMatrices();
-    renderer.DrawSkinnedMesh(bar, glm::translate(identity, {0.0f, 0.5f, 0.0f}), bar_material, joint_matrices.data(),
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), bar_material, joint_matrices.data(),
                              static_cast<int>(joint_matrices.size()));
     renderer.EndFrame();
 

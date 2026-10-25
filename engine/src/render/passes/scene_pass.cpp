@@ -16,7 +16,7 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
     const bool scene_after_depth = frame.scene_after_depth;
     Cascades& cascades = frame.cascades;
     const float cloud_shadow_size = frame.cloud_shadow_size;
-    const glm::vec2& cloud_shadow_corner = frame.cloud_shadow_corner;
+    const glm::dvec2& cloud_shadow_corner = frame.cloud_shadow_corner;
     FragmentFrameUniforms& frame_uniforms = frame.frame_uniforms;
 
     // --- Pass 4: the scene, in linear wide-range colors. ---
@@ -56,7 +56,7 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
         if (environment.draw_sky) {
             SkyUniforms sky_uniforms;
             sky_uniforms.inverse_view_projection = glm::inverse(view_projection);
-            sky_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
+            sky_uniforms.camera_position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);  // relative to the camera
             sky_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
             sky_uniforms.sun_color = ToVec4(light.color);
             sky_uniforms.sky_zenith = ToVec4(environment.sky_zenith);
@@ -84,10 +84,11 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
         const float sun_size = glm::radians(glm::clamp(environment.sun_angular_size, 0.0f, 10.0f));
         frame_uniforms.shadow_soft =
             glm::vec4(environment.soft_shadows && sun_size > 0.0f ? 2.0f * std::tan(sun_size * 0.5f) : 0.0f, 2.0f, 0.0f, 0.0f);
-        frame_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
+        const glm::dvec2 camera_xz(camera.position.x, camera.position.z);
+        frame_uniforms.cloud_shadow_area = glm::vec4(glm::vec2(cloud_shadow_corner - camera_xz), 1.0f / cloud_shadow_size,
                                                      clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
         if (impl.sky_map.resolution >= 2 && impl.sky_occlusion_texture != nullptr) {
-            frame_uniforms.sky_occlusion_area = glm::vec4(impl.sky_map.corner, 1.0f / impl.sky_map.size, 1.0f);
+            frame_uniforms.sky_occlusion_area = glm::vec4(glm::vec2(impl.sky_map.corner - camera_xz), 1.0f / impl.sky_map.size, 1.0f);
         }
         frame_uniforms.aerial = glm::vec4(environment.sky_horizon.r * environment.sky_light_intensity,
                                           environment.sky_horizon.g * environment.sky_light_intensity,
@@ -98,8 +99,9 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
                                                 environment.sky_light && impl.sky_radiance_ready ? 1.0f : 0.0f,
                                                 static_cast<float>(kSkyRadianceLevels - 1),
                                                 environment.sky_light && impl.sky_radiance_ready ? glm::clamp(environment.fog_sky_color, 0.0f, 1.0f) : 0.0f);
-        frame_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
-        frame_uniforms.camera_forward = glm::vec4(glm::normalize(camera.target - camera.position), 0.0f);
+        // Lit surfaces are drawn relative to the camera, which is at 0 (see poligon/core/math.h).
+        frame_uniforms.camera_position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        frame_uniforms.camera_forward = glm::vec4(glm::normalize(glm::vec3(camera.target - camera.position)), 0.0f);
         frame_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
         frame_uniforms.light_color = ToVec4(light.color);
         if (environment.sky_light) {

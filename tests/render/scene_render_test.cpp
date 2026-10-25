@@ -110,8 +110,8 @@ int main(int argc, char** argv) {
                 environment.shadows = pass == 0;
                 environment.shadow_distance = 30.0f;
                 renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
-                renderer.DrawMesh(plane, floor_transform, white);
-                renderer.DrawMesh(cube, cube_transform, white);
+                renderer.DrawMesh(plane, glm::dvec3(0.0), floor_transform, white);
+                renderer.DrawMesh(cube, glm::dvec3(0.0), cube_transform, white);
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
 
@@ -143,10 +143,10 @@ int main(int argc, char** argv) {
             poligon::Environment environment;
             environment.shadow_distance = 30.0f;
             renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), white);
-            renderer.DrawMesh(cube, glm::translate(identity, {-3.0f, 0.5f, 3.0f}), white);
-            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 20.0f, 0.0f}), white);
-            renderer.DrawMesh(cube, glm::translate(identity, {12.0f, 8.0f, 0.0f}), white);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {-3.0f, 0.5f, 3.0f}), white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 20.0f, 0.0f}), white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {12.0f, 8.0f, 0.0f}), white);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const poligon::FrameStats stats = renderer.GetFrameStats();
@@ -191,16 +191,16 @@ int main(int argc, char** argv) {
 
             poligon::Image one_by_one;
             renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
-            renderer.DrawMesh(plane, floor_transform, white);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor_transform, white);
             for (const glm::mat4& transform : transforms) {
-                renderer.DrawMesh(cube, transform, red);
+                renderer.DrawMesh(cube, glm::dvec3(0.0), transform, red);
             }
             renderer.EndFrame();
             renderer.CaptureFrame(one_by_one);
 
             renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
-            renderer.DrawMesh(plane, floor_transform, white);
-            renderer.DrawMeshInstances(cube, red, transforms.data(), static_cast<int>(transforms.size()));
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor_transform, white);
+            renderer.DrawMeshInstances(cube, red, glm::dvec3(0.0), transforms.data(), static_cast<int>(transforms.size()));
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
 
@@ -231,8 +231,8 @@ int main(int argc, char** argv) {
             poligon::InstanceOptions no_shadow;
             no_shadow.shadow_cascades = 0;
             renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
-            renderer.DrawMesh(plane, floor_transform, white);
-            renderer.DrawMeshInstances(cube, red, transforms.data(), 9, no_shadow);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor_transform, white);
+            renderer.DrawMeshInstances(cube, red, glm::dvec3(0.0), transforms.data(), 9, no_shadow);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             Expect(PixelAt(frame, shadow_x, shadow_z)[0] > 180, "with no cascade selected the shadow is gone");
@@ -241,8 +241,8 @@ int main(int argc, char** argv) {
             poligon::InstanceOptions only_shadow;
             only_shadow.draw_in_view = false;
             renderer.BeginFrame(MakeTopDownCamera(height), sun, environment);
-            renderer.DrawMesh(plane, floor_transform, white);
-            renderer.DrawMeshInstances(cube, red, transforms.data(), 9, only_shadow);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor_transform, white);
+            renderer.DrawMeshInstances(cube, red, glm::dvec3(0.0), transforms.data(), 9, only_shadow);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             Expect(PixelIs(frame, shadow_x, shadow_z, 124, 124, 124, 6), "instances hidden from view still cast shadows");
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
             flat.color = {0.0f, 0.0f, 0.0f, 1.0f};
             flat.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
             renderer.BeginFrame(MakeTopDownCamera(5.0f), flat);
-            renderer.DrawMesh(plane, glm::scale(identity, {4.0f, 1.0f, 4.0f}), MakeMatte({0.0f, 1.0f, 0.0f, 1.0f}));
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {4.0f, 1.0f, 4.0f}), MakeMatte({0.0f, 1.0f, 0.0f, 1.0f}));
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             Expect(PixelIs(frame, kSize / 2, kSize / 2, 0, 255, 0, 1), "drawing works after other resources were destroyed");
@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
             environment.fog_density = 0.0069315f;  // ln(2) / 100
             environment.fog_color = {1.0f, 1.0f, 1.0f, 1.0f};
             renderer.BeginFrame(MakeTopDownCamera(100.0f), dark, environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {400.0f, 1.0f, 400.0f}), MakeMatte({0.0f, 0.0f, 0.0f, 1.0f}));
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {400.0f, 1.0f, 400.0f}), MakeMatte({0.0f, 0.0f, 0.0f, 1.0f}));
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             Expect(PixelIs(frame, kSize / 2, kSize / 2, 188, 188, 188, 3), "fog covers half of a surface 100 m away");
@@ -350,7 +350,7 @@ int main(int argc, char** argv) {
                 poligon::Material material = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
                 material.normal_texture = test_case.normal_map;
                 renderer.BeginFrame(MakeTopDownCamera(5.0f), light, no_shadows);
-                renderer.DrawMesh(plane, floor_transform, material);
+                renderer.DrawMesh(plane, glm::dvec3(0.0), floor_transform, material);
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
                 const int value = PixelAt(frame, kSize / 2, kSize / 2)[0];
@@ -366,7 +366,7 @@ int main(int argc, char** argv) {
             flat.color = {0.0f, 0.0f, 0.0f, 1.0f};
             flat.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
             renderer.BeginFrame(MakeTopDownCamera(5.0f), flat);
-            renderer.DrawMesh(plane, glm::rotate(identity, glm::radians(30.0f), {0, 1, 0}) * glm::scale(identity, {3.0f, 1.0f, 3.0f}),
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::rotate(identity, glm::radians(30.0f), {0, 1, 0}) * glm::scale(identity, {3.0f, 1.0f, 3.0f}),
                               MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
         flat.color = {0.0f, 0.0f, 0.0f, 1.0f};
         flat.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat);
-        renderer.DrawMesh(plane, glm::rotate(identity, glm::radians(30.0f), {0, 1, 0}) * glm::scale(identity, {3.0f, 1.0f, 3.0f}),
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::rotate(identity, glm::radians(30.0f), {0, 1, 0}) * glm::scale(identity, {3.0f, 1.0f, 3.0f}),
                           MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
@@ -416,7 +416,7 @@ int main(int argc, char** argv) {
         flat.color = {0.0f, 0.0f, 0.0f, 1.0f};
         flat.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat);
-        renderer.DrawMesh(plane, glm::scale(glm::mat4(1.0f), {4.0f, 1.0f, 4.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(glm::mat4(1.0f), {4.0f, 1.0f, 4.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(PixelIs(frame, kSize / 2, kSize / 2, 231, 231, 231, 3), "filmic tone mapping keeps white below the maximum");

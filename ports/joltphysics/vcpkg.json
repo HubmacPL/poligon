@@ -1,0 +1,29 @@
+{
+  "name": "joltphysics",
+  "version": "5.6.0",
+  "port-version": 2,
+  "description": "Jolt Physics with double precision positions (our overlay of the vcpkg port)",
+  "homepage": "https://github.com/jrouwe/JoltPhysics",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "features": {
+    "debugrenderer": {
+      "description": "Enable debug renderer in Debug and Release builds"
+    },
+    "profiler": {
+      "description": "Enable the profiler in Debug and Release builds"
+    },
+    "rtti": {
+      "description": "Enable C++ RTTI"
+    }
+  }
+}

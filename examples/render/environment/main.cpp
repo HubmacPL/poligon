@@ -53,18 +53,18 @@ int main(int argc, char** argv) {
     poligon::Material ground;
     ground.color = {0.35f, 0.45f, 0.25f, 1.0f};
     ground.roughness = 1.0f;
-    renderer.DrawMesh(plane, glm::scale(identity, {60.0f, 1.0f, 60.0f}), ground);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {60.0f, 1.0f, 60.0f}), ground);
 
     poligon::Material matte;
     matte.color = {0.8f, 0.3f, 0.2f, 1.0f};
     matte.roughness = 0.9f;
-    renderer.DrawMesh(cube, glm::translate(identity, {-1.0f, 0.5f, 0.0f}), matte);
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {-1.0f, 0.5f, 0.0f}), matte);
 
     poligon::Material polished_metal;
     polished_metal.color = {0.9f, 0.8f, 0.5f, 1.0f};
     polished_metal.metallic = 1.0f;
     polished_metal.roughness = 0.25f;
-    renderer.DrawMesh(cube, glm::translate(identity, {1.0f, 0.75f, 0.0f}) * glm::scale(identity, {1.0f, 1.5f, 1.0f}),
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {1.0f, 0.75f, 0.0f}) * glm::scale(identity, {1.0f, 1.5f, 1.0f}),
                       polished_metal);
 
     // Posts between the camera and the sun; each casts a dark stripe into the fog.
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 7; ++i) {
         const float along = static_cast<float>(i) - 3.0f;
         const glm::vec3 position{2.0f + along * 0.9f, 4.0f, 2.5f - along * 1.3f};
-        renderer.DrawMesh(cube, glm::translate(identity, position) * glm::scale(identity, {0.35f, 8.0f, 0.35f}), wood);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, position) * glm::scale(identity, {0.35f, 8.0f, 0.35f}), wood);
     }
 
     renderer.EndFrame();

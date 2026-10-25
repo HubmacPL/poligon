@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
     rain.start_color = {0.7f, 0.75f, 0.8f, 0.5f};
     rain.end_color = {0.7f, 0.75f, 0.8f, 0.5f};
     poligon::ParticleEmitter rain_emitter(rain, 1);
-    rain_emitter.SetPosition(camera.position + glm::vec3(0.0f, 6.0f, -4.0f));
+    rain_emitter.SetPosition(camera.position + glm::dvec3(0.0, 6.0, -4.0));
 
     // Dust: slow motes near a ray of sun, lit by it and shaded where the block's shadow falls.
     poligon::ParticleEmitterSettings dust;
@@ -86,15 +86,17 @@ int main(int argc, char** argv) {
     sun.color = {1.2f, 1.1f, 0.95f, 1.0f};
     renderer.BeginFrame(camera, sun);
     const glm::mat4 identity(1.0f);
-    renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), poligon::Color{0.35f, 0.4f, 0.28f, 1.0f});
-    renderer.DrawMesh(cube, glm::translate(identity, {0.8f, 1.0f, 0.0f}) * glm::scale(identity, {1.0f, 2.0f, 1.0f}),
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), poligon::Color{0.35f, 0.4f, 0.28f, 1.0f});
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.8f, 1.0f, 0.0f}) * glm::scale(identity, {1.0f, 2.0f, 1.0f}),
                       poligon::Color{0.5f, 0.45f, 0.4f, 1.0f});
 
     poligon::ParticleOptions streaks;
     streaks.stretch = 0.03f;      // a drop's path during about a 30th of a second
     streaks.soft_distance = 0.1f;
-    renderer.DrawParticles(poligon::TextureHandle{}, rain_emitter.GetParticles().data(), rain_emitter.GetParticleCount(), streaks);
-    renderer.DrawParticles(dot, dust_emitter.GetParticles().data(), dust_emitter.GetParticleCount());
+    // Particles are relative to their emitter's origin (double).
+    renderer.DrawParticles(poligon::TextureHandle{}, rain_emitter.GetOrigin(), rain_emitter.GetParticles().data(),
+                           rain_emitter.GetParticleCount(), streaks);
+    renderer.DrawParticles(dot, dust_emitter.GetOrigin(), dust_emitter.GetParticles().data(), dust_emitter.GetParticleCount());
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(argv[1])) {

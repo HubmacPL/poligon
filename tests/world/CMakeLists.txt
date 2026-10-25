@@ -15,3 +15,15 @@ poligon_add_render_test(vegetation_render_test)
 poligon_add_render_test(terrain_render_test)
 poligon_add_render_test(ground_cover_test)
 poligon_add_render_test(water_render_test)
+
+# The same scene at the origin and 28 km away must look the same (double world positions,
+# camera-relative drawing). Small differences come from shadow texels snapped to a world grid;
+# the tolerance is the one used between the two graphics backends.
+poligon_add_render_test(far_from_origin_test ${CMAKE_BINARY_DIR}/test_output)
+foreach(backend d3d12 vulkan)
+  set_tests_properties(far_from_origin_test_${backend} PROPERTIES FIXTURES_SETUP far_from_origin_${backend})
+  add_test(NAME far_from_origin_looks_the_same_${backend}
+    COMMAND image_compare ${CMAKE_BINARY_DIR}/test_output/far_from_origin_${backend}_near.png
+            ${CMAKE_BINARY_DIR}/test_output/far_from_origin_${backend}_far.png --channel-tolerance 12)
+  set_tests_properties(far_from_origin_looks_the_same_${backend} PROPERTIES FIXTURES_REQUIRED far_from_origin_${backend})
+endforeach()

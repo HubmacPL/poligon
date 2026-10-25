@@ -13,7 +13,7 @@ namespace poligon {
 namespace render_internal {
 
 struct DecalCommand {
-    glm::mat4 transform;
+    glm::mat4 transform;  // relative to the camera
     DecalMaterial material;
 };
 

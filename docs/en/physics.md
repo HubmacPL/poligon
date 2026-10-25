@@ -8,6 +8,8 @@ Header: `poligon/physics/physics.h`. Example: `examples/physics/physics`. Test: 
 
 - The work is done by the Jolt Physics library (MIT). Nothing of it shows outside `physics.cpp`; `PhysicsWorld` is the whole interface.
 - Units: meters, kilograms, seconds. +Y is up. Gravity is `PhysicsConfig::gravity`.
+- Positions are `double` (`glm::dvec3`): body and character positions, ray origins and hits, height field origins, bounds. Jolt is built with `JPH_DOUBLE_PRECISION` from our overlay port `ports/joltphysics` (the vcpkg port of the same Jolt 5.6.0 with `DOUBLE_PRECISION=ON`; Jolt's code is unchanged). Velocities, sizes and rotations stay `float`. `GetTransform` returns a `poligon::Transform` (see "World positions and camera-relative drawing" in [rendering.md](rendering.md)).
+- Far from the origin it works as near it: `physics_test` puts land, a resting crate and a walking character 16 km away (22.6 km from the origin) and requires the crate to stay put to 0.1 mm over 600 ticks and the walk to end where it ends near the origin, to 1 mm (measured: 0 m and 2e-12 m). Jolt keeps double positions and works out collisions in float relative to a nearby point, so precision does not fall with distance.
 - The renderer knows nothing of physics. A game asks the world where a body is (`GetTransform`) and draws a mesh there.
 - `Step(delta_seconds)` moves the world forward by one tick. Call it once per tick with the tick's length, never with measured time.
 
@@ -38,7 +40,8 @@ Header: `poligon/physics/physics.h`. Example: `examples/physics/physics`. Test: 
 - A `PhysicsWorld` that receives the same calls in the same order with the same step length gives bit-identical results, on the same machine with the same program. Jolt promises this under those conditions, and we check it: `physics_test` runs a script twice and compares `HashState()` on every tick, and the toy game's replay tests compare the whole state dump.
 - What keeps it so: the fixed tick; one thread (`JobSystemSingleThreaded`); bodies added and removed in an order that depends only on the game state. In an ECS system, create a body at once and not from a deferred callback whose order might vary.
 - `HashState()` is a hash of every body's and character's position, rotation and velocities.
-- Not promised: the same results from a Debug and a Release build, from another compiler, or on another processor family. Jolt has an option for that (about 8% slower) which the vcpkg build does not turn on.
+- Not promised: the same results from a Debug and a Release build, from another compiler, or on another processor family. Jolt has an option for that (about 8% slower) which our build does not turn on.
+- Double positions changed Jolt's arithmetic: a recording made before the change (2026-10-25) replays to slightly different positions after it.
 
 ## In a game with flecs
 

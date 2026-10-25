@@ -37,6 +37,10 @@ In `game/CMakeLists.txt`:
 
 Related: `tests/ecs/ecs_order_probe.cpp` (flecs repeatability), `game/tests/toy_world_test.cpp` (two worlds in one process), `tests/physics/physics_test.cpp` (the physics world alone).
 
+Far from the origin: world positions are double (see [rendering.md](rendering.md) and [physics.md](physics.md)), so a scene moved far away plays out as near the origin, only moved. `toy_world_test` moves the toy's scene by (20000, 50, -16000) and requires the same places plus the shift after 300 ticks, to 1e-6 m; `physics_test` does the same for a crate and a walking character 16 km away. This is a check of precision, not a promise of bit identity: a moved scene gives slightly different bits (measured: 1e-11 m).
+
+Recordings made before positions became double (2026-10-25) replay to slightly different physics after it: in a test walk of `forest_scene` the player ends in the same place to the millimeter (all the old build printed), but thrown crates land a little differently.
+
 The toy game is simulated by the physics engine, so all of the tests above cover it too; see [physics.md](physics.md) for what keeps physics repeatable.
 
 ## What breaks determinism

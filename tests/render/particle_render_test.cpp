@@ -62,8 +62,8 @@ int main(int argc, char** argv) {
         particle.size = 1.0f;
         particle.color = {1.0f, 1.0f, 1.0f, 1.0f};
         renderer.BeginFrame(camera, light, environment);
-        renderer.DrawMesh(plane, wall, black);
-        renderer.DrawParticles(poligon::TextureHandle{}, &particle, 1, options);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), wall, black);
+        renderer.DrawParticles(poligon::TextureHandle{}, glm::dvec3(0.0), &particle, 1, options);
         renderer.EndFrame();
         poligon::Image frame;
         renderer.CaptureFrame(frame);
@@ -108,8 +108,8 @@ int main(int argc, char** argv) {
         poligon::ParticleOptions additive = unlit;
         additive.blend = poligon::ParticleBlend::Additive;
         renderer.BeginFrame(camera, dark, environment);
-        renderer.DrawMesh(plane, wall, black);
-        renderer.DrawParticles(poligon::TextureHandle{}, cards, 2, additive);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), wall, black);
+        renderer.DrawParticles(poligon::TextureHandle{}, glm::dvec3(0.0), cards, 2, additive);
         renderer.EndFrame();
         poligon::Image frame;
         renderer.CaptureFrame(frame);

@@ -32,7 +32,7 @@ namespace poligon {
 
 struct LevelObject {
     std::string asset;
-    glm::vec2 position{0.0f};  // meters on the map
+    glm::dvec2 position{0.0};  // meters on the map
     float turn_degrees = 0.0f;
     float scale = 1.0f;
 };
@@ -43,7 +43,7 @@ struct Level {
     std::string render_settings;
     // true: above the largest lake (FindLakeViewpoint); false: start_position and start_turn.
     bool start_at_lake = true;
-    glm::vec2 start_position{0.0f};
+    glm::dvec2 start_position{0.0};
     float start_turn_degrees = 0.0f;
     std::vector<LevelObject> objects;
     // Lines this file did not understand by itself, for parts of the engine that read the

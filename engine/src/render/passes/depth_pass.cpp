@@ -31,7 +31,7 @@ void Renderer::Impl::RenderDepthPass(FrameContext& frame) {
     frame_uniforms.wind = impl.WindUniform();
     frame_uniforms.trample = impl.trample_info;
     frame_uniforms.motion_view_projection = unshifted_view_projection;
-    frame_uniforms.previous_view_projection = impl.previous_view_projection;
+    frame_uniforms.previous_view_projection = frame.previous_view_projection;
     frame_uniforms.previous_wind = impl.has_previous_wind ? impl.previous_wind : frame_uniforms.wind;
     frame_uniforms.motion = glm::vec4(taa_on ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
     const auto begin_depth_pass = [&](bool clear) {

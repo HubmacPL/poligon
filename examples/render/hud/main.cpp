@@ -36,8 +36,8 @@ int main(int argc, char** argv) {
     camera.target = {0.0f, 0.5f, 0.0f};
     renderer.BeginFrame(camera, poligon::DirectionalLight{});
     const glm::mat4 identity(1.0f);
-    renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.45f, 0.3f, 1.0f});
-    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.6f, 0.4f, 0.25f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.45f, 0.3f, 1.0f});
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.6f, 0.4f, 0.25f, 1.0f});
 
     // Crosshair: four short bars around the middle, leaving the aim point free.
     const float cx = static_cast<float>(renderer.GetWidth()) * 0.5f;

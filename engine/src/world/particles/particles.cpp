@@ -26,16 +26,36 @@ void AppendVec3(std::string& text, const glm::vec3& value) {
     text += ']';
 }
 
+// Doubles with 17 significant digits, as the ECS state dump writes them.
+void AppendDvec3(std::string& text, const glm::dvec3& value) {
+    char buffer[96];
+    std::snprintf(buffer, sizeof(buffer), "[%.17g,%.17g,%.17g]", value.x, value.y, value.z);
+    text += buffer;
+}
+
 } // namespace
 
 ParticleEmitter::ParticleEmitter(const ParticleEmitterSettings& settings, std::uint64_t seed) : settings_(settings), random_state_(seed) {}
 
-void ParticleEmitter::SetPosition(const glm::vec3& position) {
+void ParticleEmitter::SetPosition(const glm::dvec3& position) {
     position_ = position;
+    if (glm::distance(position_, origin_) > 1000.0) {
+        // Move the origin to the box: every particle moves back
+        // by the same float offset, so the change is repeatable.
+        const glm::vec3 step(origin_ - position_);
+        for (Particle& particle : particles_) {
+            particle.position += step;
+        }
+        origin_ = position_;
+    }
 }
 
-const glm::vec3& ParticleEmitter::GetPosition() const {
+const glm::dvec3& ParticleEmitter::GetPosition() const {
     return position_;
+}
+
+const glm::dvec3& ParticleEmitter::GetOrigin() const {
+    return origin_;
 }
 
 void ParticleEmitter::SetSettings(const ParticleEmitterSettings& settings) {
@@ -71,7 +91,7 @@ void ParticleEmitter::Start() {
         return;
     }
     Particle particle;
-    particle.position = position_ + glm::vec3(RandomSigned(), RandomSigned(), RandomSigned()) * settings_.box_size * 0.5f;
+    particle.position = glm::vec3(position_ - origin_) + glm::vec3(RandomSigned(), RandomSigned(), RandomSigned()) * settings_.box_size * 0.5f;
     particle.velocity = settings_.velocity + glm::vec3(RandomSigned(), RandomSigned(), RandomSigned()) * settings_.velocity_variation;
     particle.rotation = Random() * 6.2831853f;
     particle.size = settings_.start_size;
@@ -152,7 +172,9 @@ std::string ParticleEmitter::DumpStateToJson() const {
     text += ",\"emitting\":";
     text += emitting_ ? "true" : "false";
     text += ",\"position\":";
-    AppendVec3(text, position_);
+    AppendDvec3(text, position_);
+    text += ",\"origin\":";
+    AppendDvec3(text, origin_);
     text += ",\"particles\":[";
     for (size_t i = 0; i < particles_.size(); ++i) {
         const Particle& particle = particles_[i];

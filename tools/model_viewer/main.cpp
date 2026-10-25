@@ -300,14 +300,14 @@ public:
         const float floor_size = radius_ * 8.0f;
         floor_material.uv_scale = {8.0f, 8.0f};
         renderer_.DrawMesh(floor_mesh_,
-                           glm::translate(identity, {center_.x, floor_height_, center_.z}) *
+                           glm::dvec3(0.0), glm::translate(identity, {center_.x, floor_height_, center_.z}) *
                                glm::scale(identity, {floor_size, 1.0f, floor_size}),
                            floor_material);
 
         if (player_) {
-            poligon::DrawModel(renderer_, render_model_, identity, player_->GetJointMatrices());
+            poligon::DrawModel(renderer_, render_model_, poligon::Transform(), player_->GetJointMatrices());
         } else {
-            poligon::DrawModel(renderer_, render_model_, identity);
+            poligon::DrawModel(renderer_, render_model_, poligon::Transform());
         }
         renderer_.EndFrame();
     }

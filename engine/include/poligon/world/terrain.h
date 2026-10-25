@@ -21,7 +21,7 @@ namespace poligon {
 
 struct TerrainConfig {
     // World position of the height map's first point. Its y is added to every height.
-    glm::vec3 origin{0.0f};
+    glm::dvec3 origin{0.0};
     TerrainMaterial material;
     // A square is split while the camera is nearer to it than its size times this.
     // Larger = finer land further out, and more to draw.
@@ -48,12 +48,13 @@ public:
 
     // The land at a world position (x, z): height, facing direction, steepness in degrees.
     // Outside the map the nearest edge counts.
-    float GetHeight(float x, float z) const;
-    glm::vec3 GetNormal(float x, float z) const;
-    float GetSlopeDegrees(float x, float z) const;
+    // World positions are double; the height is one too.
+    double GetHeight(double x, double z) const;
+    glm::vec3 GetNormal(double x, double z) const;
+    float GetSlopeDegrees(double x, double z) const;
     // The map's extent in world coordinates.
-    glm::vec2 GetMin() const;
-    glm::vec2 GetMax() const;
+    glm::dvec2 GetMin() const;
+    glm::dvec2 GetMax() const;
     const HeightMap& GetHeightMap() const;
 
     void SetMaterial(const TerrainMaterial& material);

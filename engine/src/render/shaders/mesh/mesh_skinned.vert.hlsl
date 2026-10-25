@@ -30,6 +30,7 @@ cbuffer ObjectUniforms : register(b1, space1) {
     float4 wind_response;  // z: fade between levels of detail (KeptByFade)
     float4x4 previous_model;  // the transform in the previous frame (motion vectors)
     float4x4 normal_matrix;   // inverse transpose of the model's 3 x 3 part: normals under any scale
+    float4 noise_shift;       // unused here (skinned meshes do not bend in the wind)
 };
 
 struct VertexInput {

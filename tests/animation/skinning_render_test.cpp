@@ -247,7 +247,7 @@ int main(int argc, char** argv) {
     // Straight bar.
     const glm::mat4 straight[2] = {identity, identity};
     renderer.BeginFrame(camera, light);
-    renderer.DrawSkinnedMesh(bar, identity, white, straight, 2);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), identity, white, straight, 2);
     renderer.EndFrame();
     renderer.CaptureFrame(frame);
     Expect(RedAt(frame, 1.0f, 0.0f) == 255 && RedAt(frame, 3.5f, 0.0f) == 255, "the straight bar lies along +x");
@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
     pose[1].rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     const std::vector<glm::mat4> bent = poligon::ComputeJointMatrices(skeleton, pose);
     renderer.BeginFrame(camera, light);
-    renderer.DrawSkinnedMesh(bar, identity, white, bent.data(), 2);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), identity, white, bent.data(), 2);
     renderer.EndFrame();
     renderer.CaptureFrame(frame);
     Expect(RedAt(frame, 1.0f, 0.0f) == 255, "the half of the bar that follows the still joint stays");
@@ -268,9 +268,9 @@ int main(int argc, char** argv) {
 
     // Two skinned draws in one frame, each with its own pose, plus a rigid mesh.
     renderer.BeginFrame(camera, light);
-    renderer.DrawMesh(plane, glm::translate(identity, {-3.0f, 0.0f, 3.0f}), white);
-    renderer.DrawSkinnedMesh(bar, identity, white, straight, 2);
-    renderer.DrawSkinnedMesh(bar, glm::translate(identity, {-4.0f, 0.0f, 0.0f}), white, bent.data(), 2);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {-3.0f, 0.0f, 3.0f}), white);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), identity, white, straight, 2);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), glm::translate(identity, {-4.0f, 0.0f, 0.0f}), white, bent.data(), 2);
     renderer.EndFrame();
     renderer.CaptureFrame(frame);
     Expect(RedAt(frame, 3.5f, 0.0f) == 255, "the first of two skinned meshes keeps its own (straight) pose");
@@ -289,8 +289,8 @@ int main(int argc, char** argv) {
     black.color = {0.0f, 0.0f, 0.0f, 1.0f};
     black.roughness = 1.0f;
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::translate(identity, {0.0f, -3.0f, 0.0f}) * glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-    renderer.DrawSkinnedMesh(bar, glm::translate(identity, {50.0f, 0.0f, 0.0f}), black, straight, 2);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {0.0f, -3.0f, 0.0f}) * glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), glm::translate(identity, {50.0f, 0.0f, 0.0f}), black, straight, 2);
     renderer.EndFrame();
     Expect(renderer.GetFrameStats().meshes_drawn == 1, "a skinned mesh outside the view is culled");
 
@@ -298,8 +298,8 @@ int main(int argc, char** argv) {
     // leaning sideways so that the shadow falls beside the bar and not under it.
     sun.direction = {0.6f, -1.0f, 0.0f};
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::translate(identity, {0.0f, -3.0f, 0.0f}) * glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-    renderer.DrawSkinnedMesh(bar, identity, black, bent.data(), 2);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {0.0f, -3.0f, 0.0f}) * glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), identity, black, bent.data(), 2);
     renderer.EndFrame();
     renderer.CaptureFrame(frame);
     // The sun leans towards +x, so shadows fall 1.8 m further along x than the bar (3 m
@@ -321,10 +321,10 @@ int main(int argc, char** argv) {
     post.debug_view = poligon::DebugView::Motion;
     renderer.SetPostSettings(post);
     renderer.BeginFrame(camera, light);
-    renderer.DrawSkinnedMesh(bar, identity, white, straight, 2, 5);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), identity, white, straight, 2, 5);
     renderer.EndFrame();
     renderer.BeginFrame(camera, light);
-    renderer.DrawSkinnedMesh(bar, identity, white, bent.data(), 2, 5);
+    renderer.DrawSkinnedMesh(bar, glm::dvec3(0.0), identity, white, bent.data(), 2, 5);
     renderer.EndFrame();
     renderer.CaptureFrame(frame);
     const int still_red = RedAt(frame, 1.0f, 0.0f);

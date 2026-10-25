@@ -49,6 +49,7 @@ cbuffer WaterUniforms : register(b1, space3) {
     float4 waves;        // x: size of the waves in meters, y: their strength, z: time in seconds, w: refraction strength
     float4 wind;         // xy: wind direction, z: wind strength, w: water depth over which the shore fades in, meters
     float4 water_screen; // xy: size of the drawn image, z: reflection steps (0 = sky only), w: longest reflection, meters
+    float4 noise_shift;  // xyz: added to camera-relative positions for world-fixed waves
 };
 
 struct FragmentInput {
@@ -109,7 +110,8 @@ float4 main(FragmentInput input) : SV_Target0 {
     float2 uv = input.clip_position.xy / water_screen.xy;
 
     // 1. Waves.
-    float2 slope = WaveSlope(position.xz) * waves.y * (0.5 + 0.5 * wind.z);
+    // Waves are fixed in the world: positions here are relative to the camera.
+    float2 slope = WaveSlope(position.xz + noise_shift.xz) * waves.y * (0.5 + 0.5 * wind.z);
     float3 normal = normalize(float3(-slope.x, 1.0, -slope.y));
 
     // 2. Under the water. Depth 0 is the sky: treat it as very deep water.

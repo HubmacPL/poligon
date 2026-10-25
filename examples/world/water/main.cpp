@@ -40,15 +40,15 @@ int main(int argc, char** argv) {
 
     renderer.BeginFrame(camera, sun, environment);
     // The bottom: a slope from the shore (in front of the camera) down to 3 m deep.
-    renderer.DrawMesh(plane, glm::translate(identity, {0.0f, -1.5f, 0.0f}) * glm::rotate(identity, 0.15f, {1.0f, 0.0f, 0.0f}) *
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {0.0f, -1.5f, 0.0f}) * glm::rotate(identity, 0.15f, {1.0f, 0.0f, 0.0f}) *
                                  glm::scale(identity, {60.0f, 1.0f, 30.0f}),
                       sand);
-    renderer.DrawMesh(cube, glm::translate(identity, {-3.0f, 1.0f, -6.0f}) * glm::scale(identity, {0.3f, 5.0f, 0.3f}),
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {-3.0f, 1.0f, -6.0f}) * glm::scale(identity, {0.3f, 5.0f, 0.3f}),
                       poligon::Color{0.8f, 0.1f, 0.1f, 1.0f});
-    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 2.0f, -16.0f}) * glm::scale(identity, {40.0f, 6.0f, 1.0f}),
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 2.0f, -16.0f}) * glm::scale(identity, {40.0f, 6.0f, 1.0f}),
                       poligon::Color{0.9f, 0.9f, 0.85f, 1.0f});
     // The water surface: a flat mesh at height 0.
-    renderer.DrawWater(plane, glm::scale(identity, {60.0f, 1.0f, 30.0f}), water);
+    renderer.DrawWater(plane, glm::dvec3(0.0), glm::scale(identity, {60.0f, 1.0f, 30.0f}), water);
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(argv[1])) {

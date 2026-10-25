@@ -130,6 +130,15 @@ glm::vec3 ToGlm(JPH::Vec3Arg v) {
     return {v.GetX(), v.GetY(), v.GetZ()};
 }
 
+// World positions: Jolt's RVec3 is double (JPH_DOUBLE_PRECISION, see ports/joltphysics).
+JPH::RVec3 ToJolt(const glm::dvec3& v) {
+    return JPH::RVec3(v.x, v.y, v.z);
+}
+
+glm::dvec3 ToGlm(JPH::RVec3Arg v) {
+    return {v.GetX(), v.GetY(), v.GetZ()};
+}
+
 glm::quat ToGlm(JPH::QuatArg q) {
     return glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ());
 }
@@ -144,6 +153,10 @@ void HashBytes(std::uint64_t& hash, const void* data, size_t size) {
 
 void HashVector(std::uint64_t& hash, const glm::vec3& v) {
     HashBytes(hash, &v.x, 3 * sizeof(float));
+}
+
+void HashVector(std::uint64_t& hash, const glm::dvec3& v) {
+    HashBytes(hash, &v.x, 3 * sizeof(double));
 }
 
 struct Character {
@@ -313,7 +326,7 @@ BodyHandle PhysicsWorld::AddMesh(const glm::vec3* vertices, int vertex_count, co
     return impl_->AddBody(shape, settings, "AddMesh");
 }
 
-BodyHandle PhysicsWorld::AddHeightField(const float* heights, int size, float spacing, const glm::vec3& origin, float friction) {
+BodyHandle PhysicsWorld::AddHeightField(const float* heights, int size, float spacing, const glm::dvec3& origin, float friction) {
     if (heights == nullptr || size < 4 || spacing <= 0.0f) {
         FatalError("PhysicsWorld::AddHeightField: needs at least 4 x 4 heights and a spacing above zero");
     }
@@ -355,14 +368,14 @@ bool PhysicsWorld::IsDynamic(BodyHandle body) const {
     return impl_->system->GetBodyInterface().GetMotionType(impl_->GetBody(body, "IsDynamic")) == JPH::EMotionType::Dynamic;
 }
 
-void PhysicsWorld::GetBounds(BodyHandle body, glm::vec3& bounds_min, glm::vec3& bounds_max) const {
+void PhysicsWorld::GetBounds(BodyHandle body, glm::dvec3& bounds_min, glm::dvec3& bounds_max) const {
     const JPH::AABox box =
         impl_->system->GetBodyInterface().GetTransformedShape(impl_->GetBody(body, "GetBounds")).GetWorldSpaceBounds();
     bounds_min = ToGlm(box.mMin);
     bounds_max = ToGlm(box.mMax);
 }
 
-glm::vec3 PhysicsWorld::GetPosition(BodyHandle body) const {
+glm::dvec3 PhysicsWorld::GetPosition(BodyHandle body) const {
     return ToGlm(impl_->system->GetBodyInterface().GetPosition(impl_->GetBody(body, "GetPosition")));
 }
 
@@ -378,21 +391,19 @@ glm::vec3 PhysicsWorld::GetAngularVelocity(BodyHandle body) const {
     return ToGlm(impl_->system->GetBodyInterface().GetAngularVelocity(impl_->GetBody(body, "GetAngularVelocity")));
 }
 
-glm::mat4 PhysicsWorld::GetTransform(BodyHandle body) const {
+Transform PhysicsWorld::GetTransform(BodyHandle body) const {
     const JPH::BodyID id = impl_->GetBody(body, "GetTransform");
-    JPH::Vec3 position;
+    JPH::RVec3 position;
     JPH::Quat rotation;
     impl_->system->GetBodyInterface().GetPositionAndRotation(id, position, rotation);
-    glm::mat4 transform = glm::mat4_cast(ToGlm(rotation));
-    transform[3] = glm::vec4(ToGlm(position), 1.0f);
-    return transform;
+    return Transform(ToGlm(position), ToGlm(rotation));
 }
 
 bool PhysicsWorld::IsAsleep(BodyHandle body) const {
     return !impl_->system->GetBodyInterface().IsActive(impl_->GetBody(body, "IsAsleep"));
 }
 
-void PhysicsWorld::SetPosition(BodyHandle body, const glm::vec3& position, const glm::quat& rotation) {
+void PhysicsWorld::SetPosition(BodyHandle body, const glm::dvec3& position, const glm::quat& rotation) {
     impl_->system->GetBodyInterface().SetPositionAndRotation(impl_->GetBody(body, "SetPosition"), ToJolt(position),
                                                             ToJolt(glm::normalize(rotation)), JPH::EActivation::Activate);
 }
@@ -445,7 +456,7 @@ void PhysicsWorld::SetCharacterInput(CharacterHandle character, const glm::vec3&
     entry.jump = jump;
 }
 
-glm::vec3 PhysicsWorld::GetCharacterPosition(CharacterHandle character) const {
+glm::dvec3 PhysicsWorld::GetCharacterPosition(CharacterHandle character) const {
     return ToGlm(impl_->GetCharacter(character, "GetCharacterPosition").character->GetPosition());
 }
 
@@ -458,7 +469,7 @@ bool PhysicsWorld::IsCharacterOnGround(CharacterHandle character) const {
            JPH::CharacterVirtual::EGroundState::OnGround;
 }
 
-void PhysicsWorld::SetCharacterPosition(CharacterHandle character, const glm::vec3& position) {
+void PhysicsWorld::SetCharacterPosition(CharacterHandle character, const glm::dvec3& position) {
     impl_->GetCharacter(character, "SetCharacterPosition").character->SetPosition(ToJolt(position));
 }
 
@@ -508,7 +519,7 @@ void PhysicsWorld::Step(float delta_seconds) {
     }
 }
 
-RayHit PhysicsWorld::CastRay(const glm::vec3& origin, const glm::vec3& direction, float max_distance) const {
+RayHit PhysicsWorld::CastRay(const glm::dvec3& origin, const glm::vec3& direction, float max_distance) const {
     RayHit hit;
     const float length = glm::length(direction);
     if (length <= 0.0f || max_distance <= 0.0f) {
@@ -522,7 +533,7 @@ RayHit PhysicsWorld::CastRay(const glm::vec3& origin, const glm::vec3& direction
     }
     hit.hit = true;
     hit.distance = result.mFraction * max_distance;
-    hit.position = origin + unit * hit.distance;
+    hit.position = origin + glm::dvec3(unit) * static_cast<double>(hit.distance);
     {
         const JPH::BodyLockRead lock(impl_->system->GetBodyLockInterface(), result.mBodyID);
         if (lock.Succeeded()) {
@@ -545,7 +556,7 @@ std::uint64_t PhysicsWorld::HashState() const {
         if (id.IsInvalid()) {
             continue;
         }
-        JPH::Vec3 position;
+        JPH::RVec3 position;
         JPH::Quat rotation;
         bodies.GetPositionAndRotation(id, position, rotation);
         HashVector(hash, ToGlm(position));

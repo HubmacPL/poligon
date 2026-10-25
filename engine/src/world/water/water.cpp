@@ -7,7 +7,7 @@
 
 namespace poligon {
 
-std::vector<WaterSurface> CreateLakeSurfaces(Renderer& renderer, const TerrainMaps& maps, const glm::vec3& terrain_origin,
+std::vector<WaterSurface> CreateLakeSurfaces(Renderer& renderer, const TerrainMaps& maps, const glm::dvec3& terrain_origin,
                                              int square_points) {
     if (square_points < 1) {
         FatalError("CreateLakeSurfaces: square_points must be at least 1");
@@ -58,8 +58,8 @@ std::vector<WaterSurface> CreateLakeSurfaces(Renderer& renderer, const TerrainMa
         WaterSurface surface;
         surface.mesh = renderer.CreateMesh(vertices.data(), static_cast<int>(vertices.size()), indices.data(),
                                            static_cast<int>(indices.size()));
-        surface.level = lake.level + terrain_origin.y;
-        surface.transform = glm::translate(glm::mat4(1.0f), glm::vec3(terrain_origin.x, surface.level, terrain_origin.z));
+        surface.level = static_cast<double>(lake.level) + terrain_origin.y;
+        surface.origin = glm::dvec3(terrain_origin.x, surface.level, terrain_origin.z);
         surfaces.push_back(surface);
     }
     return surfaces;

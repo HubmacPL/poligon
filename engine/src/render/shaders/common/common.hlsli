@@ -96,8 +96,10 @@ bool KeptByFade(float fade, float2 pixel) {
 // Wind (Environment::wind_*, Material::wind_*). `wind`: xy = the direction it blows towards
 // (world x and z), z = strength, w = time in seconds. `response`: x = how much the plant
 // bends, y = how much its leaves flutter. `foot` is the plant's base (the model's origin),
-// `local` the vertex in the model's own coordinates. Returns the moved world position.
-float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, float2 response) {
+// `local` the vertex in the model's own coordinates. Positions are relative to the camera;
+// `noise_shift` added to them gives world-fixed ones for the gusts (see NoiseShift in
+// renderer_internal.h). Returns the moved position.
+float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, float2 response, float3 noise_shift) {
     if (wind.z <= 0.0 || (response.x <= 0.0 && response.y <= 0.0)) {
         return world_position;  // no wind, or a material that does not move (rock, bark of a stump)
     }
@@ -105,8 +107,9 @@ float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, 
     float height = max(world_position.y - foot.y, 0.0);
     // Gusts travel over the land as two waves; every plant starts them at a slightly
     // different moment, so that a forest does not move as one.
-    float phase = frac(sin(dot(foot.xz, float2(12.9898, 78.233))) * 43758.5453) * 6.2832;
-    float along = dot(foot.xz, direction);
+    float2 fixed_foot = foot.xz + noise_shift.xz;
+    float phase = frac(sin(dot(fixed_foot, float2(12.9898, 78.233))) * 43758.5453) * 6.2832;
+    float along = dot(fixed_foot, direction);
     float gust = (0.5 + 0.5 * sin(along * 0.08 - wind.w * 1.2 + phase)) *
                  (0.7 + 0.3 * sin(along * 0.31 - wind.w * 2.7 + phase * 2.0));
     // Bending: the whole plant leans downwind, the more the higher up a point is.

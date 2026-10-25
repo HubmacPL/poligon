@@ -139,14 +139,14 @@ int main(int argc, char** argv) {
     poligon::Image impostor_frame;
 
     renderer.BeginFrame(camera, light, environment);
-    renderer.DrawMesh(parts[0].mesh, parts[0].transform, parts[0].material);
-    renderer.DrawMesh(parts[1].mesh, parts[1].transform, parts[1].material);
+    renderer.DrawMesh(parts[0].mesh, glm::dvec3(0.0), parts[0].transform, parts[0].material);
+    renderer.DrawMesh(parts[1].mesh, glm::dvec3(0.0), parts[1].transform, parts[1].material);
     renderer.EndFrame();
     renderer.CaptureFrame(model_frame);
 
     const poligon::ImpostorHandle handle = renderer.CreateImpostor(loaded);
     renderer.BeginFrame(camera, light, environment);
-    renderer.DrawImpostorInstances(handle, &identity, 1);
+    renderer.DrawImpostorInstances(handle, glm::dvec3(0.0), &identity, 1);
     renderer.EndFrame();
     renderer.CaptureFrame(impostor_frame);
     const int model_width = RedWidth(model_frame);
@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
     glm::mat4 half_faded = identity;
     half_faded[3][3] = 0.5f;
     renderer.BeginFrame(camera, light, environment);
-    renderer.DrawImpostorInstances(handle, &half_faded, 1);
+    renderer.DrawImpostorInstances(handle, glm::dvec3(0.0), &half_faded, 1);
     renderer.EndFrame();
     renderer.CaptureFrame(impostor_frame);
     const int faded_width = RedWidth(impostor_frame);

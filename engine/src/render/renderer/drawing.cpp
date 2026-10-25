@@ -33,6 +33,7 @@ ObjectUniforms Renderer::Impl::MakeObjectUniforms(const DrawCommand& command) {
                                   static_cast<float>(command.first_joint), static_cast<float>(command.previous_first_joint));
     uniforms.wind_response = glm::vec4(command.material.wind_bend, command.material.wind_flutter, command.fade, 0.0f);
     uniforms.previous_model = command.previous_transform;
+    uniforms.noise_shift = glm::vec4(command.noise_shift, 0.0f);
     uniforms.normal_matrix = glm::mat4(glm::transpose(glm::inverse(glm::mat3(command.transform))));
     return uniforms;
 }
@@ -134,6 +135,7 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
         object_uniforms.uv_scale =
             glm::vec4(material.uv_scale.x, material.uv_scale.y, static_cast<float>(batch.list_first[list]), 0.0f);
         object_uniforms.wind_response = glm::vec4(material.wind_bend, material.wind_flutter, 0.0f, 0.0f);
+        object_uniforms.noise_shift = glm::vec4(batch.noise_shift, 0.0f);
         SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
 
         if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
@@ -196,8 +198,10 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
     object_uniforms.uv_scale = glm::vec4(1.0f, 1.0f, static_cast<float>(batch.list_first[list]), 0.0f);
     SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
     TerrainVertexUniforms vertex_uniforms;
-    vertex_uniforms.map = glm::vec4(terrain.origin.x, terrain.origin.z, terrain.spacing, mesh_pass == kShadowPass ? 0.0f : 1.0f);
-    vertex_uniforms.map_heights = glm::vec4(terrain.origin.y, terrain.height_range, static_cast<float>(terrain.width - 1),
+    // The height map's first point relative to the camera, which is at 0.
+    const glm::vec3 map_origin(terrain.origin - origin);
+    vertex_uniforms.map = glm::vec4(map_origin.x, map_origin.z, terrain.spacing, mesh_pass == kShadowPass ? 0.0f : 1.0f);
+    vertex_uniforms.map_heights = glm::vec4(map_origin.y, terrain.height_range, static_cast<float>(terrain.width - 1),
                                             static_cast<float>(terrain.depth - 1));
     SDL_PushGPUVertexUniformData(commands, 2, &vertex_uniforms, sizeof(vertex_uniforms));
 
@@ -213,8 +217,16 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
                                             textured ? static_cast<float>(look.layer_count) : 1.0f, textured ? 1.0f : 0.0f);
         material_uniforms.steep_color = glm::vec4(look.steep_color.r, look.steep_color.g, look.steep_color.b, look.roughness);
         for (int layer = 0; layer < kMaxTerrainLayers; ++layer) {
-            material_uniforms.tile_scales[layer / 4][layer % 4] = 1.0f / glm::max(look.tile_sizes[layer], 0.01f);
+            const double scale = 1.0 / glm::max(static_cast<double>(look.tile_sizes[layer]), 0.01);
+            material_uniforms.tile_scales[layer / 4][layer % 4] = static_cast<float>(scale);
+            // Where the repeat stands at the camera, worked out in double: the shader adds it
+            // to camera-relative positions, so textures stay fixed to the world.
+            const glm::dvec2 at_camera = glm::dvec2(origin.x, origin.z) * scale;
+            material_uniforms.tile_phases[layer] =
+                glm::vec4(glm::vec2(glm::fract(at_camera)), glm::vec2(glm::fract(at_camera / 7.0)));
         }
+        material_uniforms.noise_shift = glm::vec4(glm::vec2(glm::dvec2(origin.x, origin.z) - glm::dvec2(terrain.origin.x, terrain.origin.z)),
+                                                  0.0f, 0.0f);
         // Height map point -> weight image coordinates: the corner pixels' centers lie on
         // the map's first and last points.
         const glm::vec2 weight_size = look.weights[0].id != 0 ? texture_sizes[look.weights[0].id - 1] : glm::vec2(1.0f);
@@ -277,7 +289,7 @@ void Renderer::Impl::DrawImpostorBatch(SDL_GPUCommandBuffer* commands, SDL_GPURe
     const ImpostorData& impostor = impostors[batch.impostor_id - 1];
     ImpostorUniforms vertex_uniforms;
     vertex_uniforms.center_radius = glm::vec4(impostor.center, impostor.radius);
-    vertex_uniforms.camera_frames = glm::vec4(camera.position, static_cast<float>(impostor.frames_per_side));
+    vertex_uniforms.camera_frames = glm::vec4(0.0f, 0.0f, 0.0f, static_cast<float>(impostor.frames_per_side));  // camera at 0
     vertex_uniforms.batch = glm::vec4(static_cast<float>(batch.list_first[list]), 0.0f, 0.0f, 0.0f);
     SDL_PushGPUVertexUniformData(commands, 1, &vertex_uniforms, sizeof(vertex_uniforms));
     ImpostorMaterial material;

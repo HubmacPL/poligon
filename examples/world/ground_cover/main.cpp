@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
 
     poligon::Camera camera;
     camera.position = {0.0f, terrain.GetHeight(0.0f, 0.0f) + 1.7f, 0.0f};
-    camera.target = camera.position + glm::vec3(0.0f, -0.15f, -1.0f);
+    camera.target = camera.position + glm::dvec3(0.0, -0.15, -1.0);
     poligon::DirectionalLight sun;
     sun.direction = {-0.5f, -1.0f, -0.4f};
     sun.color = {2.6f, 2.45f, 2.2f, 1.0f};

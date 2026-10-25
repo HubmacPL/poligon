@@ -9,7 +9,7 @@ namespace poligon {
 // It holds plain numbers and reads no devices: the caller passes in how much to move and
 // turn, usually from input actions. It is a viewing aid and not part of the game state.
 struct FreeCamera {
-    glm::vec3 position{0.0f, 2.0f, 5.0f};
+    glm::dvec3 position{0.0, 2.0, 5.0};  // world position (double, see poligon/core/math.h)
     // Turn around the vertical axis: 0 looks along -Z, 90 along -X.
     float yaw_degrees = 0.0f;
     // Up and down: 0 is level, positive looks up. Kept within -89..89.

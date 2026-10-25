@@ -86,12 +86,15 @@ void DestroyRenderModel(Renderer& renderer, RenderModel& model) {
     model = RenderModel{};
 }
 
-void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform, std::uint64_t object_id) {
+void DrawModel(Renderer& renderer, const RenderModel& model, const Transform& transform, std::uint64_t object_id) {
     DrawModel(renderer, model, transform, model.rest_joint_matrices, object_id);
 }
 
-void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& transform,
+void DrawModel(Renderer& renderer, const RenderModel& model, const Transform& transform,
                const std::vector<glm::mat4>& joint_matrices, std::uint64_t object_id) {
+    // The model's own placement (rotation and scale) with its nodes inside it, as a float
+    // matrix relative to the model's world position.
+    const glm::mat4 placement = transform.GetLocalMatrix();
     for (const ModelInstance& instance : model.instances) {
         const size_t mesh_index = static_cast<size_t>(instance.mesh_index);
         const Material& material = model.materials[static_cast<size_t>(model.mesh_material_index[mesh_index])];
@@ -103,7 +106,7 @@ void DrawModel(Renderer& renderer, const RenderModel& model, const glm::mat4& tr
             renderer.DrawSkinnedMesh(model.meshes[mesh_index], transform, material, joint_matrices.data(),
                                      static_cast<int>(joint_matrices.size()), object_id);
         } else {
-            renderer.DrawMesh(model.meshes[mesh_index], transform * instance.transform, material, object_id);
+            renderer.DrawMesh(model.meshes[mesh_index], transform.position, placement * instance.transform, material, object_id);
         }
     }
 }

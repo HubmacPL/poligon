@@ -44,9 +44,9 @@ int main(int argc, char** argv) {
 
     renderer.BeginFrame(camera, dusk);
     const glm::mat4 identity(1.0f);
-    renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
-    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.6f, 0.0f}) * glm::scale(identity, {0.4f, 0.6f, 0.4f}), glass);
-    renderer.DrawMesh(cube, glm::translate(identity, {1.2f, 0.05f, 0.8f}) * glm::scale(identity, {0.6f, 0.1f, 0.6f}), embers);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.6f, 0.0f}) * glm::scale(identity, {0.4f, 0.6f, 0.4f}), glass);
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {1.2f, 0.05f, 0.8f}) * glm::scale(identity, {0.6f, 0.1f, 0.6f}), embers);
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(argv[1])) {

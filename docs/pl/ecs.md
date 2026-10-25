@@ -31,6 +31,7 @@ Tworzenie i usuwanie obiektów oraz dodawanie i usuwanie komponentów wewnątrz 
 - W zrzucie są wszystkie żywe obiekty gry (identyfikator, generacja, nazwa, komponenty) i singletony. Nie ma definicji: komponentów, systemów, modułów ani niczego z wnętrza flecs.
 - **Generacja** to licznik ponownych użyć numeru obiektu po usunięciu poprzednika.
 - Liczby są dokładne: `float` ma 9 cyfr znaczących, `double` 17. Dwa zrzuty są identyczne bajt w bajt dokładnie wtedy, gdy stany są identyczne.
+- Pozycje w świecie w komponentach są `glm::dvec3` (`Position` gry-zabawki), cała reszta zostaje float (patrz „Pozycje w świecie i rysowanie względem kamery” w [rendering.md](rendering.md)). `RegisterEngineTypes` rejestruje `vec2`, `vec3`, `dvec2`, `dvec3`, `vec4`, `quat` i `Color`. `toy_world_test` stawia scenę gry-zabawki w początku układu i przesuniętą o (20000, 50, -16000) i wymaga, żeby każda skrzynka po 300 tickach była tam, gdzie nieprzesunięta plus przesunięcie, z dokładnością 1e-6 m (zmierzone: 1e-11 m).
 - Komponent bez zarejestrowanych pól pojawia się jako `{"unreflected_bytes": N}` i trafia na listę `unreflected_components`. Testy gry wymagają, żeby ta lista była pusta.
 - Obsługiwane typy pól: bool, liczby całkowite, float, double, `flecs::entity_t` (przez `.member(flecs::Entity, "nazwa")`), wyliczenia, zagnieżdżone struktury, tablice o stałym rozmiarze. Inne typy (napisy, wektory) kończą proces błędem `FATAL` z nazwą komponentu; wtedy trzeba rozszerzyć `state_dump.cpp`.
 

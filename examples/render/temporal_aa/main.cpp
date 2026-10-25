@@ -45,14 +45,14 @@ int main(int argc, char** argv) {
     // A game simply renders every frame; TAA collects them on its own.
     for (int frame = 0; frame < 16; ++frame) {
         renderer.BeginFrame(camera, sun, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {100.0f, 1.0f, 100.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {100.0f, 1.0f, 100.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
         for (int i = 0; i < 40; ++i) {
             // Thin posts receding into the distance: a few pixels wide, then less than one.
             const float z = -static_cast<float>(i) * 1.5f;
             for (const float x : {-2.0f, 2.0f}) {
-                renderer.DrawMesh(cube, glm::translate(identity, {x, 0.6f, z}) * glm::scale(identity, {0.05f, 1.2f, 0.05f}), wood);
+                renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {x, 0.6f, z}) * glm::scale(identity, {0.05f, 1.2f, 0.05f}), wood);
             }
-            renderer.DrawMesh(cube, glm::translate(identity, {-2.0f, 1.1f, z}) * glm::scale(identity, {0.03f, 0.03f, 1.5f}), wood);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {-2.0f, 1.1f, z}) * glm::scale(identity, {0.03f, 0.03f, 1.5f}), wood);
         }
         renderer.EndFrame();
     }

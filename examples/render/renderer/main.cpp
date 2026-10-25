@@ -28,12 +28,12 @@ int main(int argc, char** argv) {
     renderer.BeginFrame(camera, light);
     const glm::mat4 identity(1.0f);
     // Plain color: pass a Color. (Textures: see examples/render/texture.)
-    renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
     // A cube standing on the plane, turned by 30 degrees around the vertical axis.
     // Read right to left: rotate first, then move up.
     const glm::mat4 cube_transform = glm::translate(identity, {0.0f, 0.5f, 0.0f}) *
                                      glm::rotate(identity, glm::radians(30.0f), {0.0f, 1.0f, 0.0f});
-    renderer.DrawMesh(cube, cube_transform, poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
+    renderer.DrawMesh(cube, glm::dvec3(0.0), cube_transform, poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(argv[1])) {

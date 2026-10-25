@@ -72,10 +72,10 @@ int main(int argc, char** argv) {
         above.target = {0.0f, 0.0f, 0.0f};
         above.up = {0.0f, 0.0f, -1.0f};
         renderer.BeginFrame(above, light, environment);
-        renderer.DrawMesh(plane, glm::translate(identity, {-25.0f, -4.0f, 0.0f}) * glm::scale(identity, {50.0f, 1.0f, 100.0f}), white);
-        renderer.DrawMesh(plane, glm::translate(identity, {-25.0f, -0.5f, -25.0f}) * glm::scale(identity, {50.0f, 1.0f, 50.0f}), white);
-        renderer.DrawMesh(plane, glm::translate(identity, {25.0f, 0.3f, 0.0f}) * glm::scale(identity, {50.0f, 1.0f, 100.0f}), white);
-        renderer.DrawWater(plane, glm::scale(identity, {100.0f, 1.0f, 100.0f}), water);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {-25.0f, -4.0f, 0.0f}) * glm::scale(identity, {50.0f, 1.0f, 100.0f}), white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {-25.0f, -0.5f, -25.0f}) * glm::scale(identity, {50.0f, 1.0f, 50.0f}), white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {25.0f, 0.3f, 0.0f}) * glm::scale(identity, {50.0f, 1.0f, 100.0f}), white);
+        renderer.DrawWater(plane, glm::dvec3(0.0), glm::scale(identity, {100.0f, 1.0f, 100.0f}), water);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const std::uint8_t* shallow = PixelAt(frame, kSize / 4, kSize / 4);
@@ -100,9 +100,9 @@ int main(int argc, char** argv) {
         for (const int steps : {32, 0}) {
             environment.water_reflection_steps = steps;
             renderer.BeginFrame(low, light, environment);
-            renderer.DrawMesh(plane, glm::translate(identity, {0.0f, -2.0f, 0.0f}) * glm::scale(identity, {200.0f, 1.0f, 200.0f}), white);
-            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 4.0f, -10.0f}) * glm::scale(identity, {60.0f, 8.0f, 1.0f}), red);
-            renderer.DrawWater(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), water);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::translate(identity, {0.0f, -2.0f, 0.0f}) * glm::scale(identity, {200.0f, 1.0f, 200.0f}), white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 4.0f, -10.0f}) * glm::scale(identity, {60.0f, 8.0f, 1.0f}), red);
+            renderer.DrawWater(plane, glm::dvec3(0.0), glm::scale(identity, {200.0f, 1.0f, 200.0f}), water);
             renderer.EndFrame();
             renderer.CaptureFrame(steps > 0 ? mirrored : sky_only);
         }

@@ -36,7 +36,7 @@ void Renderer::Impl::ReleaseDecals() {
     ReleaseDynamicBuffer(device, decals.buffer);
 }
 
-void Renderer::DrawDecal(const glm::mat4& transform, const DecalMaterial& material) {
+void Renderer::DrawDecal(const Transform& transform, const DecalMaterial& material) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawDecal: call BeginFrame first");
     }
@@ -45,7 +45,7 @@ void Renderer::DrawDecal(const glm::mat4& transform, const DecalMaterial& materi
             FatalError("Renderer::DrawDecal: invalid or destroyed texture handle");
         }
     }
-    impl_->decals.commands.push_back({transform, material});
+    impl_->decals.commands.push_back({transform.ToMatrixRelativeTo(impl_->origin), material});
 }
 
 } // namespace poligon

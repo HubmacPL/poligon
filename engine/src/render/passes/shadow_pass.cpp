@@ -12,7 +12,8 @@ Renderer::Impl::Cascades Renderer::Impl::ComputeCascades() const {
     Cascades cascades;
     const float aspect_ratio = static_cast<float>(config.width) / static_cast<float>(config.height);
     const float tan_half_fov = std::tan(glm::radians(camera.vertical_fov_degrees) * 0.5f);
-    const glm::vec3 forward = glm::normalize(camera.target - camera.position);
+    // Relative to the camera, which is at 0 (see poligon/core/math.h).
+    const glm::vec3 forward = glm::normalize(glm::vec3(camera.target - camera.position));
     const glm::vec3 right = glm::normalize(glm::cross(forward, camera.up));
     const glm::vec3 up = glm::cross(right, forward);
 
@@ -35,7 +36,7 @@ Renderer::Impl::Cascades Renderer::Impl::ComputeCascades() const {
         for (const float distance : {range_start, range_end}) {
             const float half_height = distance * tan_half_fov;
             const float half_width = half_height * aspect_ratio;
-            const glm::vec3 center = camera.position + forward * distance;
+            const glm::vec3 center = forward * distance;
             for (const float x : {-1.0f, 1.0f}) {
                 for (const float y : {-1.0f, 1.0f}) {
                     corners[corner_index++] = center + right * (x * half_width) + up * (y * half_height);
@@ -57,10 +58,15 @@ Renderer::Impl::Cascades Renderer::Impl::ComputeCascades() const {
         cascades.tile_scale[i] = tile_scale;
         const float texel_size = radius * 2.0f / (static_cast<float>(config.shadow_map_size) * tile_scale);
         cascades.texel_size[i] = texel_size;
-        glm::vec3 center_in_light = glm::vec3(light_rotation * glm::vec4(sphere_center, 1.0f));
-        center_in_light.x = std::floor(center_in_light.x / texel_size) * texel_size;
-        center_in_light.y = std::floor(center_in_light.y / texel_size) * texel_size;
-        sphere_center = glm::vec3(light_rotation_inverse * glm::vec4(center_in_light, 1.0f));
+        // The grid of whole texels is fixed in the world, so the snapping is done on world
+        // positions in double, and the result made relative to the camera again.
+        const glm::dmat3 light_turn{glm::mat3(light_rotation)};
+        const glm::dvec3 camera_in_light = light_turn * origin;
+        glm::dvec3 center_in_light = light_turn * glm::dvec3(sphere_center) + camera_in_light;
+        const double texel = static_cast<double>(texel_size);
+        center_in_light.x = std::floor(center_in_light.x / texel) * texel;
+        center_in_light.y = std::floor(center_in_light.y / texel) * texel;
+        sphere_center = glm::vec3(light_rotation_inverse * glm::vec4(glm::vec3(center_in_light - camera_in_light), 1.0f));
 
         const glm::vec3 eye = sphere_center - light_direction * (radius + kShadowCasterDistance);
         const glm::mat4 light_view = glm::lookAt(eye, sphere_center, light_up);

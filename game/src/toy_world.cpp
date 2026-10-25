@@ -29,7 +29,7 @@ float ClampToUnit(float value) {
 }
 
 void RegisterComponents(flecs::world& world) {
-    world.component<Position>().member<glm::vec3>("value");
+    world.component<Position>().member<glm::dvec3>("value");
     world.component<Rotation>().member<glm::quat>("value");
     world.component<Velocity>().member<glm::vec3>("value");
     world.component<Box>().member<glm::vec3>("size").member<poligon::Color>("color");
@@ -162,11 +162,11 @@ void CreateSystems(flecs::world& world) {
         });
 }
 
-// A box that stands still, resting on the ground at (x, z).
-void CreateStaticBox(flecs::world& world, const char* name, float x, float z, glm::vec3 size, float turn_degrees,
-                     poligon::Color color) {
+// A box that stands still, resting on the ground at (x, z) from the scene's origin.
+void CreateStaticBox(flecs::world& world, const glm::dvec3& origin, const char* name, float x, float z, glm::vec3 size,
+                     float turn_degrees, poligon::Color color) {
     poligon::BodySettings settings;
-    settings.position = {x, size.y * 0.5f, z};
+    settings.position = origin + glm::dvec3(x, size.y * 0.5f, z);
     settings.rotation = TurnedAroundY(turn_degrees);
     const poligon::BodyHandle body = PhysicsOf(world).AddBox(size * 0.5f, settings);
     world.entity(name)
@@ -176,7 +176,7 @@ void CreateStaticBox(flecs::world& world, const char* name, float x, float z, gl
         .set<Body>({body.id});
 }
 
-void CreateEntities(flecs::world& world) {
+void CreateEntities(flecs::world& world, const glm::dvec3& origin) {
     poligon::PhysicsWorld& physics = PhysicsOf(world);
     world.set<ToyStats>({0});
     world.set<PlayerInput>({0.0f, 0.0f, false, 0.0f});
@@ -185,13 +185,16 @@ void CreateEntities(flecs::world& world) {
     // The ground is a slab one meter thick with its top at height 0.
     const float ground_size = 30.0f;
     poligon::BodySettings ground_settings;
-    ground_settings.position = {0.0f, -0.5f, 0.0f};
+    ground_settings.position = origin + glm::dvec3(0.0, -0.5, 0.0);
     const poligon::BodyHandle ground = physics.AddBox({ground_size * 0.5f, 0.5f, ground_size * 0.5f}, ground_settings);
-    world.entity("ground").set<Ground>({ground_size, {0.25f, 0.45f, 0.20f, 1.0f}}).set<Body>({ground.id});
+    world.entity("ground")
+        .set<Position>({origin})
+        .set<Ground>({ground_size, {0.25f, 0.45f, 0.20f, 1.0f}})
+        .set<Body>({ground.id});
 
     // The box the player steers starts high up and falls.
     poligon::BodySettings player_settings;
-    player_settings.position = {0.0f, 10.5f, 0.0f};
+    player_settings.position = origin + glm::dvec3(0.0, 10.5, 0.0);
     player_settings.dynamic = true;
     player_settings.mass = 20.0f;
     player_settings.bounciness = 0.5f;
@@ -205,23 +208,23 @@ void CreateEntities(flecs::world& world) {
         .add<Falling>()
         .add<Player>();
 
-    CreateStaticBox(world, "pillar_a", -3.0f, -2.0f, {1.0f, 2.0f, 1.0f}, 20.0f, {0.75f, 0.60f, 0.30f, 1.0f});
-    CreateStaticBox(world, "crate", 3.0f, -1.0f, {1.5f, 1.0f, 1.5f}, -30.0f, {0.30f, 0.40f, 0.75f, 1.0f});
-    CreateStaticBox(world, "stone", -1.5f, 3.0f, {0.8f, 0.8f, 0.8f}, 45.0f, {0.85f, 0.85f, 0.85f, 1.0f});
-    CreateStaticBox(world, "pillar_b", 2.0f, 3.5f, {0.6f, 3.0f, 0.6f}, 0.0f, {0.55f, 0.30f, 0.60f, 1.0f});
+    CreateStaticBox(world, origin, "pillar_a", -3.0f, -2.0f, {1.0f, 2.0f, 1.0f}, 20.0f, {0.75f, 0.60f, 0.30f, 1.0f});
+    CreateStaticBox(world, origin, "crate", 3.0f, -1.0f, {1.5f, 1.0f, 1.5f}, -30.0f, {0.30f, 0.40f, 0.75f, 1.0f});
+    CreateStaticBox(world, origin, "stone", -1.5f, 3.0f, {0.8f, 0.8f, 0.8f}, 45.0f, {0.85f, 0.85f, 0.85f, 1.0f});
+    CreateStaticBox(world, origin, "pillar_b", 2.0f, 3.5f, {0.6f, 3.0f, 0.6f}, 0.0f, {0.55f, 0.30f, 0.60f, 1.0f});
 
-    world.entity("spawner").set<Position>({{-4.0f, 0.8f, 4.0f}}).set<Spawner>({2463534242u, 20, 20, 0});
+    world.entity("spawner").set<Position>({origin + glm::dvec3(-4.0, 0.8, 4.0)}).set<Spawner>({2463534242u, 20, 20, 0});
 }
 
 } // namespace
 
-void SetUpToyWorld(flecs::world& world, poligon::PhysicsWorld& physics) {
+void SetUpToyWorld(flecs::world& world, poligon::PhysicsWorld& physics, const glm::dvec3& origin) {
     world.set_ctx(&physics);
     poligon::RegisterEngineTypes(world);
     RegisterComponents(world);
     // Systems first: they must all exist before any entity can be deleted (see docs/en/ecs.md).
     CreateSystems(world);
-    CreateEntities(world);
+    CreateEntities(world, origin);
 }
 
 ToyActions SetUpToyInput(poligon::Input& input) {

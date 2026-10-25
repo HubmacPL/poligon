@@ -25,20 +25,20 @@ public:
 
     // Moves the grid so that `center` (world x, z) is near its middle, keeping the values
     // of cells that stay inside.
-    void Recenter(const glm::vec2& center);
+    void Recenter(const glm::dvec2& center);
     // Presses plants within `radius` meters of `position` down by `amount` (more in the
     // middle, softly less to the edge), up to fully flat.
-    void Trample(const glm::vec2& position, float radius, float amount);
+    void Trample(const glm::dvec2& position, float radius, float amount);
     // Lets every cell stand up by `amount` (for example 0.002 per tick: a path fades over
     // about a minute and a half at 60 ticks per second once nobody walks it).
     void Recover(float amount);
 
     // 0..1 at a world position (0 outside the grid).
-    float GetValue(const glm::vec2& position) const;
+    float GetValue(const glm::dvec2& position) const;
     // The grid for the renderer: resolution x resolution bytes, row by row from the
     // corner with the smallest x and z, which lies at GetOrigin().
     const std::vector<std::uint8_t>& GetBytes() const;
-    glm::vec2 GetOrigin() const { return origin_; }
+    glm::dvec2 GetOrigin() const { return origin_; }
     float GetSize() const { return size_; }
     int GetResolution() const { return resolution_; }
     // Raised by every change, so the renderer uploads only when needed.
@@ -50,7 +50,7 @@ private:
     float size_;
     int resolution_;
     float cell_;
-    glm::vec2 origin_{0.0f};
+    glm::dvec2 origin_{0.0};
     std::vector<float> values_;
     mutable std::vector<std::uint8_t> bytes_;
     mutable std::uint32_t bytes_version_ = 0xFFFFFFFFu;

@@ -57,7 +57,7 @@ public:
           settings_(settings),
           settings_path_(settings_path),
           box_query_(world.query<const toy::Position, const toy::Rotation, const toy::Box>()),
-          ground_query_(world.query<const toy::Ground>()) {}
+          ground_query_(world.query<const toy::Ground, const toy::Position>()) {}
 
     void Start(poligon::GameLoop& /*loop*/) override {
         cube_mesh_ = renderer_.CreateCubeMesh();
@@ -103,25 +103,22 @@ public:
         renderer_.BeginFrame(camera, settings_.sun, environment);
         ShowDebugWindows(camera);
 
-        ground_query_.each([this](const toy::Ground& ground) {
+        ground_query_.each([this](const toy::Ground& ground, const toy::Position& position) {
             poligon::Material material;
             material.color = ground.color;
             material.texture = ground_texture_;
             // The checker image holds 2x2 squares; repeat it so that one square is one meter.
             material.uv_scale = {ground.size * 0.5f, ground.size * 0.5f};
-            renderer_.DrawMesh(plane_mesh_, glm::scale(glm::mat4(1.0f), {ground.size, 1.0f, ground.size}), material);
+            renderer_.DrawMesh(plane_mesh_, poligon::Transform(position.value, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), {ground.size, 1.0f, ground.size}),
+                               material);
         });
 
         box_query_.each([this](const toy::Position& position, const toy::Rotation& rotation, const toy::Box& box) {
-            // Order of operations, right to left: scale, rotate, then move. Position is the
-            // center of the box, like the cube mesh's own center.
-            const glm::mat4 identity(1.0f);
-            const glm::mat4 transform =
-                glm::translate(identity, position.value) * glm::mat4_cast(rotation.value) * glm::scale(identity, box.size);
+            // Position is the center of the box, like the cube mesh's own center.
             poligon::Material material;
             material.color = box.color;
             material.texture = box_texture_;
-            renderer_.DrawMesh(cube_mesh_, transform, material);
+            renderer_.DrawMesh(cube_mesh_, poligon::Transform(position.value, rotation.value, box.size), material);
         });
 
         renderer_.EndFrame();
@@ -168,7 +165,7 @@ private:
     toy::ToyActions actions_;
     poligon::StateHashLog& hash_log_;
     flecs::query<const toy::Position, const toy::Rotation, const toy::Box> box_query_;
-    flecs::query<const toy::Ground> ground_query_;
+    flecs::query<const toy::Ground, const toy::Position> ground_query_;
     poligon::MeshHandle cube_mesh_;
     poligon::MeshHandle plane_mesh_;
     poligon::TextureHandle ground_texture_;

@@ -17,7 +17,7 @@ void Renderer::Impl::RenderFogPass(FrameContext& frame) {
     const float height = frame.height;
     const glm::vec4& projection_info = frame.projection_info;
     const float cloud_shadow_size = frame.cloud_shadow_size;
-    const glm::vec2& cloud_shadow_corner = frame.cloud_shadow_corner;
+    const glm::dvec2& cloud_shadow_corner = frame.cloud_shadow_corner;
     SDL_GPUTexture*& scene_image = frame.scene_image;
 
     // --- Pass 5: volumetric fog at half resolution, then laid over the scene. ---
@@ -28,15 +28,17 @@ void Renderer::Impl::RenderFogPass(FrameContext& frame) {
             fog_uniforms.shadow_matrices[i] = cascades.shadow_matrix[i];
         }
         fog_uniforms.cascade_far = cascades.far_distance;
-        fog_uniforms.camera_position = glm::vec4(camera.position, 1.0f);
+        // Relative to the camera, which is at 0 (see poligon/core/math.h).
+        fog_uniforms.camera_position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
         // w: the frame's noise offset for the step pattern (see temporal_noise_offset).
         fog_uniforms.camera_forward =
-            glm::vec4(glm::normalize(camera.target - camera.position), impl.temporal_noise_offset);
+            glm::vec4(glm::normalize(glm::vec3(camera.target - camera.position)), impl.temporal_noise_offset);
         fog_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
         fog_uniforms.light_color = ToVec4(light.color);
         fog_uniforms.fog = glm::vec4(environment.fog_color.r, environment.fog_color.g, environment.fog_color.b,
                                      environment.fog_density);
-        fog_uniforms.fog_shape = glm::vec4(environment.fog_height_falloff, environment.fog_base_height,
+        fog_uniforms.fog_shape = glm::vec4(environment.fog_height_falloff,
+                                           static_cast<float>(static_cast<double>(environment.fog_base_height) - camera.position.y),
                                            environment.fog_sun_glow, environment.fog_shadow_brightness);
         fog_uniforms.options = glm::vec4(shadows_on ? 1.0f : 0.0f, glm::min(kFogWalkDistance, camera.far_plane), width,
                                          height);
@@ -45,7 +47,8 @@ void Renderer::Impl::RenderFogPass(FrameContext& frame) {
         fog_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.fog_steps, 4, 128)),
                                          static_cast<float>(kSkyRadianceLevels - 2),
                                          use_sky_map ? glm::clamp(environment.fog_sky_color, 0.0f, 1.0f) : 0.0f, 0.0f);
-        fog_uniforms.cloud_shadow_area = glm::vec4(cloud_shadow_corner, 1.0f / cloud_shadow_size,
+        const glm::vec2 corner(cloud_shadow_corner - glm::dvec2(camera.position.x, camera.position.z));
+        fog_uniforms.cloud_shadow_area = glm::vec4(corner, 1.0f / cloud_shadow_size,
                                                    clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
         SDL_GPUTextureSamplerBinding bindings[4]{};
         bindings[0].texture = impl.prepass_depth;

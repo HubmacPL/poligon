@@ -56,6 +56,10 @@ cbuffer TerrainMaterialUniforms : register(b1, space3) {
     float4 steep_color;     // rgb: color of steep slopes, a: roughness of the whole terrain
     float4 tile_scales[2];  // per layer: 1 / meters after which its texture repeats
     float4 weight_map;      // xy: height map point -> weight image coordinate scale, zw: offset
+    // Per layer: where its repeat stands at the camera (xy at its own size, zw seven times
+    // larger), so that camera-relative positions tile as world ones.
+    float4 tile_phases[8];
+    float4 terrain_shift;   // xy: camera-relative x, z -> the terrain's own (for the mottling)
 };
 
 struct FragmentInput {
@@ -116,9 +120,10 @@ float4 main(FragmentInput input) : SV_Target0 {
         if (i < layer_count && weights[i] > 0.004) {
             if (steep.w > 0.5) {
                 float scale = tile_scales[i / 4][i % 4];
-                float2 uv = place * scale;
+                float2 uv = place * scale + tile_phases[i].xy;
+                float2 far_uv = place * scale / 7.0 + tile_phases[i].zw;
                 float3 near_color = layer_colors.SampleGrad(layer_color_sampler, float3(uv, i), place_dx * scale, place_dy * scale).rgb;
-                float3 far_color = layer_colors.SampleGrad(layer_color_sampler, float3(uv / 7.0, i), place_dx * scale / 7.0,
+                float3 far_color = layer_colors.SampleGrad(layer_color_sampler, float3(far_uv, i), place_dx * scale / 7.0,
                                                            place_dy * scale / 7.0).rgb;
                 colors[i] = lerp(near_color, far_color, far_share);
             }
@@ -131,7 +136,7 @@ float4 main(FragmentInput input) : SV_Target0 {
         heights[0] = 1.0;
         highest = 1.0;
         if (steep.w > 0.5) {
-            colors[0] = layer_colors.SampleGrad(layer_color_sampler, float3(place * tile_scales[0].x, 0.0),
+            colors[0] = layer_colors.SampleGrad(layer_color_sampler, float3(place * tile_scales[0].x + tile_phases[0].xy, 0.0),
                                                 place_dx * tile_scales[0].x, place_dy * tile_scales[0].x).rgb;
         }
     }
@@ -148,7 +153,7 @@ float4 main(FragmentInput input) : SV_Target0 {
             if (steep.w > 0.5) {
                 float scale = tile_scales[j / 4][j % 4];
                 float3 layer_normal =
-                    layer_normals.SampleGrad(layer_normal_sampler, float3(place * scale, j), place_dx * scale, place_dy * scale).xyz;
+                    layer_normals.SampleGrad(layer_normal_sampler, float3(place * scale + tile_phases[j].xy, j), place_dx * scale, place_dy * scale).xyz;
                 float2 normal_xy = layer_normal.xy * 2.0 - 1.0;  // z rebuilt: two-channel maps hold none
                 detail += float3(normal_xy, sqrt(saturate(1.0 - dot(normal_xy, normal_xy)))) * share;
             }
@@ -160,7 +165,7 @@ float4 main(FragmentInput input) : SV_Target0 {
 
     // Steep slopes show bare earth, slightly mottled.
     float steep_share = saturate((steep.x - ground_normal.y) / max(steep.x - steep.y, 0.001));
-    float mottle = 0.8 + 0.4 * ValueNoise(place * 0.7);
+    float mottle = 0.8 + 0.4 * ValueNoise((place + terrain_shift.xy) * 0.7);
     base_color = lerp(base_color, steep_color.rgb * mottle, steep_share);
 
     // Fine relief from the normal maps. Texture u runs along world x, v along world z, and a

@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
     environment.draw_sky = true;
     environment.sky_light = true;
     renderer.BeginFrame(camera, sun, environment);
-    poligon::DrawModel(renderer, box->render, glm::mat4(1.0f));
+    poligon::DrawModel(renderer, box->render, poligon::Transform());
     renderer.EndFrame();
     const std::string output = (folder / "example_assets.png").string();
     if (!renderer.SaveFrameToPng(output.c_str())) {

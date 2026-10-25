@@ -22,6 +22,7 @@ cbuffer ObjectUniforms : register(b1, space1) {
     float4 wind_response;  // x: bend, y: flutter (see ApplyWind), z: fade between levels of detail (KeptByFade)
     float4x4 previous_model;  // the transform in the previous frame (motion vectors)
     float4x4 normal_matrix;   // inverse transpose of the model's 3 x 3 part: normals under any scale
+    float4 noise_shift;       // xyz: added to camera-relative positions for world-fixed wind gusts
 };
 
 struct VertexInput {
@@ -44,7 +45,7 @@ struct VertexOutput {
 VertexOutput main(VertexInput input) {
     VertexOutput output;
     float4 world_position = mul(model, float4(input.position, 1.0));
-    world_position.xyz = ApplyWind(world_position.xyz, float3(model._m03, model._m13, model._m23), input.position, wind, wind_response.xy);
+    world_position.xyz = ApplyWind(world_position.xyz, float3(model._m03, model._m13, model._m23), input.position, wind, wind_response.xy, noise_shift.xyz);
     output.clip_position = mul(view_projection, world_position);
     output.world_normal = mul((float3x3)normal_matrix, input.normal);
     output.color = object_color;
@@ -56,7 +57,7 @@ VertexOutput main(VertexInput input) {
     if (motion.x > 0.0) {
         float4 previous_world = mul(previous_model, float4(input.position, 1.0));
         previous_world.xyz = ApplyWind(previous_world.xyz, float3(previous_model._m03, previous_model._m13, previous_model._m23),
-                                       input.position, previous_wind, wind_response.xy);
+                                       input.position, previous_wind, wind_response.xy, noise_shift.xyz);
         output.motion_clip = mul(motion_view_projection, world_position);
         output.previous_clip = mul(previous_view_projection, previous_world);
     }

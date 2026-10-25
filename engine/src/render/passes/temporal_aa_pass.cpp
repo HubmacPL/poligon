@@ -24,7 +24,7 @@ void Renderer::Impl::RenderTemporalAaPass(FrameContext& frame) {
         TaaUniforms taa_uniforms;
         taa_uniforms.inverse_view_projection = glm::inverse(view_projection);
         taa_uniforms.current_view_projection = unshifted_view_projection;
-        taa_uniforms.previous_view_projection = impl.previous_view_projection;
+        taa_uniforms.previous_view_projection = frame.previous_view_projection;
         taa_uniforms.parameters = glm::vec4(glm::clamp(impl.post.temporal_aa_blend, 0.01f, 1.0f),
                                             impl.has_taa_history ? 1.0f : 0.0f, output_width, output_height);
         taa_uniforms.input = glm::vec4(width, height, jitter_pixels.x, jitter_pixels.y);

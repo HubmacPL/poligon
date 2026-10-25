@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
             const float z = -static_cast<float>(i) * 6.0f;
             const float turn = static_cast<float>((i * 7 + (side > 0.0f ? 3 : 0)) % 12) * 0.5f;
             const float size = 0.85f + 0.05f * static_cast<float>((i * 3) % 6);
-            vegetation.AddInstance(tree_species, glm::translate(identity, {side, 0.0f, z}) *
+            vegetation.AddInstance(tree_species, glm::dvec3(0.0), glm::translate(identity, {side, 0.0f, z}) *
                                                      glm::rotate(identity, turn, {0.0f, 1.0f, 0.0f}) *
                                                      glm::scale(identity, glm::vec3(size)));
         }
@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     environment.fog_density = 0.004f;
 
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::scale(identity, {800.0f, 1.0f, 800.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {800.0f, 1.0f, 800.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
     vegetation.Draw(renderer, camera);
     renderer.EndFrame();
 

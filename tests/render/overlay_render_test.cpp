@@ -130,8 +130,8 @@ int main(int argc, char** argv) {
         const glm::vec2 box = renderer.MeasureText(renderer.GetBuiltinFont(), "HUD 123", 12.0f);
         for (int pass = 0; pass < 2; ++pass) {
             renderer.BeginFrame(camera, light);
-            renderer.DrawMesh(plane, glm::scale(glm::mat4(1.0f), {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
-            renderer.DrawMesh(cube, glm::translate(glm::mat4(1.0f), {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(glm::mat4(1.0f), {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(glm::mat4(1.0f), {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
             if (pass == 1) {
                 renderer.DrawText(renderer.GetBuiltinFont(), "HUD 123", position, 12.0f, {1.0f, 1.0f, 0.0f, 1.0f});
             }

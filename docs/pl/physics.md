@@ -8,6 +8,8 @@ Nagłówek: `poligon/physics/physics.h`. Przykład: `examples/physics/physics`. 
 
 - Pracę wykonuje biblioteka Jolt Physics (MIT). Nic z niej nie wystaje poza `physics.cpp`; cały interfejs to `PhysicsWorld`.
 - Jednostki: metry, kilogramy, sekundy. +Y to góra. Grawitacja to `PhysicsConfig::gravity`.
+- Pozycje są `double` (`glm::dvec3`): pozycje brył i postaci, początki i trafienia promieni, początki pól wysokości, granice. Jolt jest budowany z `JPH_DOUBLE_PRECISION` z naszego portu nakładkowego `ports/joltphysics` (port vcpkg tego samego Jolta 5.6.0 z `DOUBLE_PRECISION=ON`; kod Jolta bez zmian). Prędkości, rozmiary i obroty zostają `float`. `GetTransform` zwraca `poligon::Transform` (patrz „Pozycje w świecie i rysowanie względem kamery” w [rendering.md](rendering.md)).
+- Daleko od początku układu działa tak samo jak blisko: `physics_test` stawia ląd, leżącą skrzynię i idącą postać 16 km dalej (22,6 km od początku układu) i wymaga, żeby skrzynia stała w miejscu z dokładnością 0,1 mm przez 600 ticków, a marsz kończył się tam, gdzie blisko początku, z dokładnością 1 mm (zmierzone: 0 m i 2e-12 m). Jolt trzyma pozycje w double, a zderzenia liczy we float względem pobliskiego punktu, więc precyzja nie spada z odległością.
 - Renderer nic nie wie o fizyce. Gra pyta świat, gdzie jest bryła (`GetTransform`), i rysuje tam siatkę.
 - `Step(delta_seconds)` przesuwa świat o jeden tick. Wołać raz na tick z długością ticku, nigdy ze zmierzonym czasem.
 
@@ -38,7 +40,8 @@ Nagłówek: `poligon/physics/physics.h`. Przykład: `examples/physics/physics`. 
 - `PhysicsWorld`, który dostaje te same wywołania w tej samej kolejności z tą samą długością kroku, daje wyniki identyczne co do bitu, na tej samej maszynie i tym samym programie. Jolt obiecuje to pod tymi warunkami, a my to sprawdzamy: `physics_test` wykonuje skrypt dwa razy i porównuje `HashState()` w każdym ticku, a testy powtórek gry-zabawki porównują cały zrzut stanu.
 - Co to utrzymuje: stały tick; jeden wątek (`JobSystemSingleThreaded`); bryły dodawane i usuwane w kolejności zależnej wyłącznie od stanu gry. W systemie ECS bryłę tworzy się od razu, a nie z odroczonego wywołania, którego kolejność mogłaby się zmieniać.
 - `HashState()` to skrót pozycji, obrotu i prędkości każdej bryły i postaci.
-- Bez obietnicy: te same wyniki z budowy Debug i Release, z innego kompilatora albo na innej rodzinie procesorów. Jolt ma do tego opcję (około 8% wolniej), której budowa z vcpkg nie włącza.
+- Bez obietnicy: te same wyniki z budowy Debug i Release, z innego kompilatora albo na innej rodzinie procesorów. Jolt ma do tego opcję (około 8% wolniej), której nasza budowa nie włącza.
+- Pozycje w double zmieniły rachunki Jolta: nagranie zrobione przed tą zmianą (2026-10-25) odtwarza się po niej do nieco innych pozycji.
 
 ## W grze z flecs
 

@@ -54,9 +54,15 @@ class ParticleEmitter {
 public:
     explicit ParticleEmitter(const ParticleEmitterSettings& settings = ParticleEmitterSettings{}, std::uint64_t seed = 1);
 
-    // Where the box is (its middle). Moving it moves where new particles start, not live ones.
-    void SetPosition(const glm::vec3& position);
-    const glm::vec3& GetPosition() const;
+    // Where the box is (its middle), in the world. Moving it moves where new particles start,
+    // not live ones.
+    void SetPosition(const glm::dvec3& position);
+    const glm::dvec3& GetPosition() const;
+    // Particles are kept in float relative to this point (see poligon/core/math.h): draw them
+    // with Renderer::DrawParticles(texture, GetOrigin(), ...). It follows the box: when the box
+    // has gone more than 1 km from it, the origin moves to the box and every particle is
+    // moved by the same step, so floats stay small wherever the emitter travels.
+    const glm::dvec3& GetOrigin() const;
     // Settings can change at any time (stronger rain); live particles keep how they started.
     void SetSettings(const ParticleEmitterSettings& settings);
     const ParticleEmitterSettings& GetSettings() const;
@@ -68,7 +74,7 @@ public:
     // Starts `count` particles at once (a puff of breath, a burst of leaves).
     void Burst(int count);
 
-    // The live particles, ready for Renderer::DrawParticles.
+    // The live particles relative to GetOrigin(), ready for Renderer::DrawParticles.
     const std::vector<Particle>& GetParticles() const;
     int GetParticleCount() const;
 
@@ -90,7 +96,8 @@ private:
     void Start();
 
     ParticleEmitterSettings settings_;
-    glm::vec3 position_{0.0f};
+    glm::dvec3 position_{0.0};
+    glm::dvec3 origin_{0.0};
     bool emitting_ = true;
     std::uint64_t random_state_ = 0;
     float carried_ = 0.0f;

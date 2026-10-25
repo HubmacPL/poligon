@@ -4,7 +4,7 @@
 
 namespace poligon {
 
-TerrainHandle Renderer::CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::vec3& origin) {
+TerrainHandle Renderer::CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::dvec3& origin) {
     if (heights == nullptr || width < 2 || depth < 2 || width > 16384 || depth > 16384 || spacing <= 0.0f) {
         FatalError("Renderer::CreateTerrain: needs between 2 and 16384 points each way and a spacing above zero");
     }

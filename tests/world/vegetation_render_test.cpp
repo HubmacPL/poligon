@@ -72,10 +72,10 @@ int main(int argc, char** argv) {
     const int plant = vegetation.AddSpecies(species);
     // Along +x at 5, 15, 30 and 80 m, and a group of three far away in a cell of its own.
     for (const float x : {5.0f, 15.0f, 30.0f, 80.0f}) {
-        vegetation.AddInstance(plant, glm::translate(identity, {x, 1.0f, 0.0f}));
+        vegetation.AddInstance(plant, glm::dvec3(0.0), glm::translate(identity, {x, 1.0f, 0.0f}));
     }
     for (const float z : {500.0f, 502.0f, 504.0f}) {
-        vegetation.AddInstance(plant, glm::translate(identity, {500.0f, 1.0f, z}));
+        vegetation.AddInstance(plant, glm::dvec3(0.0), glm::translate(identity, {500.0f, 1.0f, z}));
     }
     Expect(vegetation.GetInstanceCount() == 7, "seven plants were placed");
 
@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
     fading.fade_width = 0.5f;
     fading.shadow_distance = 0.0f;
     poligon::Vegetation fading_vegetation(32.0f);
-    fading_vegetation.AddInstance(fading_vegetation.AddSpecies(fading), glm::translate(identity, {15.0f, 1.0f, 0.0f}));
+    fading_vegetation.AddInstance(fading_vegetation.AddSpecies(fading), glm::dvec3(0.0), glm::translate(identity, {15.0f, 1.0f, 0.0f}));
     renderer.BeginFrame(camera, light);
     fading_vegetation.Draw(renderer, camera);
     renderer.EndFrame();
@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
             renderer.SetTrampleMap(pass == 0 ? nullptr : &trample);
             renderer.BeginFrame(side, flat, plain);
             const glm::mat4 transform = standing * stalk;
-            renderer.DrawMeshInstances(cube, green, &transform, 1);
+            renderer.DrawMeshInstances(cube, green, glm::dvec3(0.0), &transform, 1);
             renderer.EndFrame();
             renderer.CaptureFrame(pass == 0 ? upright : flattened);
         }

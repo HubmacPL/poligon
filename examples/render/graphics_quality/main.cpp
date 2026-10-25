@@ -57,9 +57,9 @@ int main(int argc, char** argv) {
         renderer.SetPostSettings(post);
 
         renderer.BeginFrame(camera, sun, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {60.0f, 1.0f, 60.0f}), poligon::Color{0.4f, 0.45f, 0.3f, 1.0f});
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {60.0f, 1.0f, 60.0f}), poligon::Color{0.4f, 0.45f, 0.3f, 1.0f});
         for (int i = 0; i < 5; ++i) {
-            renderer.DrawMesh(cube, glm::translate(identity, {static_cast<float>(i - 2) * 1.6f, 0.5f, static_cast<float>(-i)}),
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {static_cast<float>(i - 2) * 1.6f, 0.5f, static_cast<float>(-i)}),
                               poligon::Color{0.7f, 0.5f, 0.3f, 1.0f});
         }
         renderer.EndFrame();

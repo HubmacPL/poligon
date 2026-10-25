@@ -151,19 +151,19 @@ PlantKind MakePlantKind(const LoadedModel& loaded, const PlantSettings& settings
     return kind;
 }
 
-void AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::vec3& foot,
+void AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::dvec3& foot,
                       float turn, float scale) {
     BodySettings body;
     body.rotation = glm::angleAxis(turn, glm::vec3(0.0f, 1.0f, 0.0f));
     if (kind.settings.collider == PlantCollider::Trunk) {
         const float half_height = std::min(variant.height * scale * 0.5f, 4.0f);
-        body.position = foot + glm::vec3(0.0f, half_height - 0.5f, 0.0f);
+        body.position = foot + glm::dvec3(0.0f, half_height - 0.5f, 0.0f);
         physics.AddCylinder(half_height, kind.settings.trunk_radius * scale, body);
     } else if (kind.settings.collider == PlantCollider::Block) {
         // Somewhat smaller than the box around the model, whose corners are mostly air.
         const glm::vec3 half_size{variant.half_width.x * scale * 0.8f, variant.height * scale * 0.45f,
                                   variant.half_width.y * scale * 0.8f};
-        body.position = foot + glm::vec3(0.0f, variant.height * scale * 0.5f, 0.0f);
+        body.position = foot + glm::dvec3(0.0f, variant.height * scale * 0.5f, 0.0f);
         physics.AddBox(half_size, body);
     }
 }

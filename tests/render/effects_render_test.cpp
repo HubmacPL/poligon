@@ -70,7 +70,7 @@ poligon::Camera MakeTopDownCamera(float height) {
 
 // The pixel a world position is drawn at, computed the way the renderer does (square picture).
 glm::ivec2 ToPixel(const poligon::Camera& camera, glm::vec3 position, int size = kSize) {
-    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    const glm::mat4 view = glm::lookAt(glm::vec3(camera.position), glm::vec3(camera.target), camera.up);
     const glm::mat4 projection =
         glm::perspective(glm::radians(camera.vertical_fov_degrees), 1.0f, camera.near_plane, camera.far_plane);
     const glm::vec4 clip = projection * view * glm::vec4(position, 1.0f);
@@ -160,8 +160,8 @@ int main(int argc, char** argv) {
                 poligon::Environment environment;
                 environment.ambient_occlusion = pass == 1;
                 renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
-                renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-                renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), white);
+                renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+                renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), white);
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
                 if (pass == 0) {
@@ -180,8 +180,8 @@ int main(int argc, char** argv) {
                     post.debug_view = poligon::DebugView::AmbientOcclusion;
                     renderer.SetPostSettings(post);
                     renderer.BeginFrame(camera, MakeFlatLight(0.3f), environment);
-                    renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-                    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), white);
+                    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+                    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), white);
                     renderer.EndFrame();
                     renderer.CaptureFrame(frame);
                     Expect(RedAt(frame, near_cube.x, near_cube.y) <= 225, "the ambient occlusion view is dark in the corner");
@@ -199,8 +199,8 @@ int main(int argc, char** argv) {
                 poligon::Environment environment;
                 environment.ambient_occlusion = true;
                 renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
-                renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-                renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}),
+                renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+                renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}),
                                   [&] { poligon::Material red = no_ao; red.color = {1.0f, 0.0f, 0.0f, 1.0f}; return red; }());
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
                     sheet.double_sided = true;
                     sheet.back_faces_keep_normal = keep == 1;
                     renderer.BeginFrame(below, sun, environment);
-                    renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), sheet);
+                    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), sheet);
                     renderer.EndFrame();
                     renderer.CaptureFrame(frame);
                     const int red = RedAt(frame, kSize / 2, kSize / 2);
@@ -255,7 +255,7 @@ int main(int argc, char** argv) {
                     poligon::Material card = white;
                     card.normal_up = up == 1 ? 1.0f : 0.0f;
                     renderer.BeginFrame(front, sun, environment);
-                    renderer.DrawMesh(plane, wall, card);
+                    renderer.DrawMesh(plane, glm::dvec3(0.0), wall, card);
                     renderer.EndFrame();
                     renderer.CaptureFrame(frame);
                     const int red = RedAt(frame, kSize / 2, kSize / 2);
@@ -277,7 +277,7 @@ int main(int argc, char** argv) {
             sun.color = {0.5f, 0.5f, 0.5f, 1.0f};
             sun.ambient = {0.5f, 0.5f, 0.5f, 1.0f};
             renderer.BeginFrame(camera, sun, environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const glm::ivec2 near_floor = ToPixel(camera, {0.0f, 0.0f, 3.0f});
@@ -315,7 +315,7 @@ int main(int argc, char** argv) {
             const int row = kSize / 2;
 
             renderer.BeginFrame(camera, sun, environment);
-            renderer.DrawMesh(cube, slab, white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), slab, white);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             Expect(RedIs(frame, 17, row, 239, 5), "fog in sunlight has the expected brightness");
@@ -323,7 +323,7 @@ int main(int argc, char** argv) {
 
             environment.shadows = false;
             renderer.BeginFrame(camera, sun, environment);
-            renderer.DrawMesh(cube, slab, white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), slab, white);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             Expect(RedIs(frame, kSize / 2, row, 239, 5), "without shadows the fog is evenly lit");
@@ -364,8 +364,8 @@ int main(int argc, char** argv) {
             post.debug_view = view;
             renderer.SetPostSettings(post);
             renderer.BeginFrame(camera, MakeFlatLight(0.5f), environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-            renderer.DrawMesh(cylinder, identity, white);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+            renderer.DrawMesh(cylinder, glm::dvec3(0.0), identity, white);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
         };
@@ -391,8 +391,8 @@ int main(int argc, char** argv) {
         post.debug_view = poligon::DebugView::AmbientOcclusion;
         renderer.SetPostSettings(post);
         renderer.BeginFrame(camera, MakeFlatLight(0.5f), environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-        renderer.DrawMesh(cube, wall, white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), wall, white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const float ao_wall = MeanLinearRed(frame, one_cm);
@@ -422,7 +422,7 @@ int main(int argc, char** argv) {
         poligon::Environment environment;
         environment.shadows = false;
         renderer.BeginFrame(camera, sun, environment);
-        renderer.DrawMesh(cube, prism, white);
+        renderer.DrawMesh(cube, glm::dvec3(0.0), prism, white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const float lit = MeanLinearRed(frame, ToPixel(camera, face_center));
@@ -468,8 +468,8 @@ int main(int argc, char** argv) {
                 camera.vertical_fov_degrees = 2.0f * glm::degrees(std::atan(1.5f / height));
                 camera.far_plane = 100.0f;
                 renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
-                level = skinned == 1 ? renderer.DrawSkinnedMesh(group, identity, material, &joint, 1)
-                                     : renderer.DrawMesh(group, identity, material);
+                level = skinned == 1 ? renderer.DrawSkinnedMesh(group, glm::dvec3(0.0), identity, material, &joint, 1)
+                                     : renderer.DrawMesh(group, glm::dvec3(0.0), identity, material);
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
             };
@@ -525,7 +525,7 @@ int main(int argc, char** argv) {
             poligon::ApplyGraphicsQuality(poligon::GetGraphicsPreset(preset == 0 ? poligon::GraphicsPreset::Low : poligon::GraphicsPreset::Ultra),
                                           scaled, post);
             renderer.BeginFrame(MakeTopDownCamera(8.0f), MakeFlatLight(1.0f), scaled);
-            levels[preset] = renderer.DrawMesh(group, identity, material);
+            levels[preset] = renderer.DrawMesh(group, glm::dvec3(0.0), identity, material);
             renderer.EndFrame();
         }
         std::printf("  at 8 m: level %d in low, %d in ultra\n", levels[0], levels[1]);
@@ -552,9 +552,9 @@ int main(int argc, char** argv) {
         sun.color = {0.6f, 0.6f, 0.6f, 1.0f};
         sun.ambient = {0.2f, 0.2f, 0.2f, 1.0f};
         far_renderer.BeginFrame(camera, sun, environment);
-        far_renderer.DrawMesh(far_plane, glm::scale(identity, {80.0f, 1.0f, 80.0f}), white);
+        far_renderer.DrawMesh(far_plane, glm::dvec3(0.0), glm::scale(identity, {80.0f, 1.0f, 80.0f}), white);
         far_renderer.DrawMesh(far_cube,
-                              glm::translate(identity, {0.0f, 3.0f, -20.0f}) * glm::scale(identity, {4.0f, 0.2f, 4.0f}),
+                              glm::dvec3(0.0), glm::translate(identity, {0.0f, 3.0f, -20.0f}) * glm::scale(identity, {4.0f, 0.2f, 4.0f}),
                               white);
         far_renderer.EndFrame();
         far_renderer.CaptureFrame(frame);
@@ -626,7 +626,7 @@ int main(int argc, char** argv) {
         for (int pass = 0; pass < 2; ++pass) {
             environment.clouds = pass == 1;
             renderer.BeginFrame(down, sun, environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), floor);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {200.0f, 1.0f, 200.0f}), floor);
             renderer.EndFrame();
             renderer.CaptureFrame(pass == 0 ? sunny : shaded);
         }
@@ -650,7 +650,7 @@ int main(int argc, char** argv) {
         environment.aerial_density = 0.01f;
         environment.sky_light = false;  // flat white light: the floor itself is white
         renderer.BeginFrame(level, MakeFlatLight(1.0f), environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {12000.0f, 1.0f, 12000.0f}), white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {12000.0f, 1.0f, 12000.0f}), white);
         renderer.EndFrame();
         renderer.CaptureFrame(hazy);
         // Just below the horizon the floor is hundreds of meters away, at the bottom a few.
@@ -685,7 +685,7 @@ int main(int argc, char** argv) {
         poligon::DirectionalLight dark_sun;
         dark_sun.color = {0.0f, 0.0f, 0.0f, 1.0f};
         renderer.BeginFrame(down, dark_sun, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), floor);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {200.0f, 1.0f, 200.0f}), floor);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         renderer.SetSkyOcclusion(nullptr);
@@ -770,7 +770,7 @@ int main(int argc, char** argv) {
         };
         poligon::Camera above = MakeTopDownCamera(3.0f);
         renderer.BeginFrame(above, sun, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const glm::ivec3 floor_color = middle(frame);
@@ -782,7 +782,7 @@ int main(int argc, char** argv) {
         // A ceiling: the plane turned upside down, facing the ground.
         const glm::mat4 ceiling = glm::rotate(identity, glm::radians(180.0f), {1.0f, 0.0f, 0.0f}) * glm::scale(identity, {40.0f, 1.0f, 40.0f});
         renderer.BeginFrame(below, sun, environment);
-        renderer.DrawMesh(plane, ceiling, white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), ceiling, white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const glm::ivec3 ceiling_color = middle(frame);
@@ -791,7 +791,7 @@ int main(int argc, char** argv) {
         metal.metallic = 1.0f;
         metal.roughness = 0.1f;
         renderer.BeginFrame(above, sun, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), metal);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), metal);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const glm::ivec3 mirror_color = middle(frame);
@@ -820,7 +820,7 @@ int main(int argc, char** argv) {
         for (int sky_color = 0; sky_color < 2; ++sky_color) {
             environment.fog_sky_color = static_cast<float>(sky_color);
             renderer.BeginFrame(level, sun, environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {2000.0f, 1.0f, 2000.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {2000.0f, 1.0f, 2000.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const std::uint8_t* pixel = &frame.pixels[static_cast<size_t>((kSize / 2 + 8) * kSize + kSize / 2) * 4];  // floor about 60 m away
@@ -860,8 +860,8 @@ int main(int argc, char** argv) {
             environment.sun_angular_size = soft == 1 ? 3.0f : 0.0f;
             for (int i = 0; i < 2; ++i) {
                 renderer.BeginFrame(down, sun, environment);
-                renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), floor_material);
-                renderer.DrawMesh(plane, plate, plate_material);
+                renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), floor_material);
+                renderer.DrawMesh(plane, glm::dvec3(0.0), plate, plate_material);
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
                 if (i == 0) {
@@ -906,13 +906,13 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 3; ++i) {
             environment.wind_time = static_cast<float>(i) * 1.0f;
             renderer.BeginFrame(camera, sun, environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
             const float x = static_cast<float>(i) * 0.5f;
-            renderer.DrawMesh(cube, glm::translate(identity, {x - 3.0f, 0.5f, -2.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}), 7);
-            renderer.DrawMesh(cube, glm::translate(identity, {x - 3.0f, 0.5f, 2.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {x - 3.0f, 0.5f, -2.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}), 7);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {x - 3.0f, 0.5f, 2.0f}), MakeMatte({1.0f, 1.0f, 1.0f, 1.0f}));
             // A tall thin plant, which bends in the wind (its top moves between frames).
             const glm::mat4 plant = glm::translate(identity, {3.0f, 2.0f, 0.0f}) * glm::scale(identity, {1.0f, 4.0f, 1.0f});
-            renderer.DrawMeshInstances(cube, grass, &plant, 1);
+            renderer.DrawMeshInstances(cube, grass, glm::dvec3(0.0), &plant, 1);
             renderer.EndFrame();
         }
         renderer.CaptureFrame(frame);
@@ -951,7 +951,7 @@ int main(int argc, char** argv) {
             };
             poligon::Material glowing = MakeMatte({0.5f, 0.5f, 0.5f, 1.0f});
             renderer.BeginFrame(camera, dark);
-            renderer.DrawMesh(plane, floor, glowing);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor, glowing);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const glm::ivec3 unlit = middle();
@@ -959,14 +959,14 @@ int main(int argc, char** argv) {
             glowing.emissive = {1.0f, 1.0f, 1.0f, 1.0f};
             glowing.emissive_strength = 0.5f;
             renderer.BeginFrame(camera, dark);
-            renderer.DrawMesh(plane, floor, glowing);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor, glowing);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const glm::ivec3 glow = middle();
     
             glowing.emissive_texture = renderer.CreateTexture(poligon::MakeSolidImage(2, 2, 255, 0, 0));
             renderer.BeginFrame(camera, dark);
-            renderer.DrawMesh(plane, floor, glowing);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), floor, glowing);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const glm::ivec3 red_glow = middle();
@@ -987,7 +987,7 @@ int main(int argc, char** argv) {
         lamp.emissive = {1.0f, 1.0f, 1.0f, 1.0f};
         lamp.emissive_strength = 30.0f;
         bloom_renderer.BeginFrame(MakeTopDownCamera(10.0f), dark);
-        bloom_renderer.DrawMesh(small, identity, lamp);
+        bloom_renderer.DrawMesh(small, glm::dvec3(0.0), identity, lamp);
         bloom_renderer.EndFrame();
         bloom_renderer.CaptureFrame(frame);
         Expect(RedAt(frame, kSize / 2, kSize / 2) == 255 && RedAt(frame, kSize / 2 + 20, kSize / 2) >= 20,
@@ -1004,7 +1004,7 @@ int main(int argc, char** argv) {
         const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
         const poligon::Camera camera = MakeTopDownCamera(10.0f);
         renderer.BeginFrame(camera, MakeFlatLight(30.0f));
-        renderer.DrawMesh(plane, identity, white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), identity, white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         const int center = kSize / 2;
@@ -1047,7 +1047,7 @@ int main(int argc, char** argv) {
                 const glm::mat4 floor = glm::scale(identity, {40.0f, 1.0f, 40.0f});
 
                 renderer.BeginFrame(camera, MakeFlatLight(brightness));
-                renderer.DrawMesh(plane, floor, white);
+                renderer.DrawMesh(plane, glm::dvec3(0.0), floor, white);
                 renderer.EndFrame();
                 renderer.CaptureFrame(frame);
                 Expect(RedIs(frame, kSize / 2, kSize / 2, 137, 3), "automatic exposure brings the picture to the target brightness");
@@ -1057,7 +1057,7 @@ int main(int argc, char** argv) {
                 environment.frame_seconds = 0.5f / static_cast<float>(frames);
                 for (int i = 0; i < frames; ++i) {
                     renderer.BeginFrame(camera, MakeFlatLight(brightness * change), environment);
-                    renderer.DrawMesh(plane, floor, white);
+                    renderer.DrawMesh(plane, glm::dvec3(0.0), floor, white);
                     renderer.EndFrame();
                 }
                 renderer.CaptureFrame(frame);
@@ -1103,7 +1103,7 @@ int main(int argc, char** argv) {
         poligon::Environment still;
         still.shadows = false;
         renderer.BeginFrame(camera, MakeFlatLight(1.0f), still);
-        renderer.DrawMesh(pole, identity, bending);
+        renderer.DrawMesh(pole, glm::dvec3(0.0), identity, bending);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(is_white(top) && !is_white(upwind), "without wind the pole stands straight");
@@ -1116,7 +1116,7 @@ int main(int argc, char** argv) {
         for (const float time : {0.0f, 0.9f, 1.8f, 2.7f}) {
             windy.wind_time = time;
             renderer.BeginFrame(camera, MakeFlatLight(1.0f), windy);
-            renderer.DrawMesh(pole, identity, bending);
+            renderer.DrawMesh(pole, glm::dvec3(0.0), identity, bending);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             moved = moved || !is_white(top);
@@ -1127,7 +1127,7 @@ int main(int argc, char** argv) {
 
         // Without a wind response the same pole does not move.
         renderer.BeginFrame(camera, MakeFlatLight(1.0f), windy);
-        renderer.DrawMesh(pole, identity, white);
+        renderer.DrawMesh(pole, glm::dvec3(0.0), identity, white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(is_white(top), "a material without a wind response ignores the wind");
@@ -1151,8 +1151,8 @@ int main(int argc, char** argv) {
         environment.fog_density = 0.01f;
         const auto draw = [&] {
             renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
-            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
-            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), MakeMatte({1.0f, 0.0f, 0.0f, 1.0f}));
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), MakeMatte({1.0f, 0.0f, 0.0f, 1.0f}));
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
         };
@@ -1183,8 +1183,8 @@ int main(int argc, char** argv) {
             const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
             const poligon::MeshHandle cube = renderer.CreateCubeMesh();
             renderer.BeginFrame(camera, poligon::DirectionalLight{});
-            renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
-            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
+            renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
+            renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
             renderer.EndFrame();
             renderer.CaptureFrame(image);
         };

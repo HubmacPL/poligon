@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
         for (const poligon::PlantPlacement& placement :
              poligon::PlacePlants(maps, rules[r], centers[r], radii[r], static_cast<int>(kind.variants.size()))) {
             vegetation.AddInstance(kind.variants[static_cast<size_t>(placement.variant)].species_id,
-                                   glm::translate(glm::mat4(1.0f), {placement.position.x, placement.height, placement.position.y}) *
+                                   glm::dvec3(0.0), glm::translate(glm::mat4(1.0f), {placement.position.x, placement.height, placement.position.y}) *
                                        glm::rotate(glm::mat4(1.0f), placement.turn, {0.0f, 1.0f, 0.0f}) *
                                        glm::scale(glm::mat4(1.0f), glm::vec3(placement.scale)));
         }
@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
     renderer.BeginFrame(camera, sun, environment);
     terrain.Draw(camera);
     for (const poligon::WaterSurface& surface : water) {
-        renderer.DrawWater(surface.mesh, surface.transform, poligon::WaterMaterial{});
+        renderer.DrawWater(surface.mesh, surface.origin, glm::mat4(1.0f), poligon::WaterMaterial{});
     }
     vegetation.Draw(renderer, camera);
     renderer.EndFrame();

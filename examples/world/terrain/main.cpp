@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     physics.AddHeightField(map.heights.data(), map.width, map.spacing, terrain_config.origin);
 
     // Asking the land: how high is it, how steep, and does physics agree?
-    const float height = terrain.GetHeight(0.0f, 0.0f);
+    const double height = terrain.GetHeight(0.0, 0.0);
     const poligon::RayHit hit = physics.CastRay({0.0f, 500.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 1000.0f);
     std::printf("land at the origin: %.2f m high, slope %.1f degrees; a ray from above meets it at %.2f m\n",
                 static_cast<double>(height), static_cast<double>(terrain.GetSlopeDegrees(0.0f, 0.0f)),

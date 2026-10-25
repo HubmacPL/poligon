@@ -66,8 +66,8 @@ int main(int argc, char** argv) {
     sun.direction = {-0.5f, -1.0f, -0.4f};
     renderer.BeginFrame(camera, sun);
     const glm::mat4 identity(1.0f);
-    renderer.DrawMesh(plane, glm::scale(identity, {20.0f, 1.0f, 20.0f}), poligon::Color{0.55f, 0.48f, 0.36f, 1.0f});
-    renderer.DrawMesh(cube, glm::translate(identity, {0.3f, 0.35f, -0.4f}) * glm::scale(identity, {0.6f, 0.7f, 0.6f}),
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {20.0f, 1.0f, 20.0f}), poligon::Color{0.55f, 0.48f, 0.36f, 1.0f});
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.3f, 0.35f, -0.4f}) * glm::scale(identity, {0.6f, 0.7f, 0.6f}),
                       poligon::Color{0.5f, 0.5f, 0.48f, 1.0f});
 
     // A trail of prints walking towards -z, turning slightly; each box 12 x 30 x 16 cm, its
@@ -75,12 +75,13 @@ int main(int argc, char** argv) {
     for (int step = 0; step < 8; ++step) {
         const float z = 1.6f - static_cast<float>(step) * 0.45f;
         const float x = -0.5f + (step % 2 == 0 ? -0.12f : 0.12f) + 0.05f * static_cast<float>(step);
-        const glm::mat4 print = glm::translate(identity, {x, 0.0f, z}) * glm::rotate(identity, 0.1f * static_cast<float>(step), {0.0f, 1.0f, 0.0f}) *
-                                glm::scale(identity, {0.12f, 0.3f, 0.16f});
+        // A decal is placed by a Transform: world position (double), rotation, size of the box.
+        const poligon::Transform print(glm::dvec3(x, 0.0, z), glm::angleAxis(0.1f * static_cast<float>(step), glm::vec3(0.0f, 1.0f, 0.0f)),
+                                       {0.12f, 0.3f, 0.16f});
         renderer.DrawDecal(print, hoof);
     }
     // The blood splash, partly against the boulder: the boulder's sides stay clean.
-    renderer.DrawDecal(glm::translate(identity, {0.1f, 0.0f, 0.1f}) * glm::scale(identity, {0.9f, 0.5f, 0.9f}), blood);
+    renderer.DrawDecal(poligon::Transform({0.1, 0.0, 0.1}, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), {0.9f, 0.5f, 0.9f}), blood);
     renderer.EndFrame();
 
     if (!renderer.SaveFrameToPng(argv[1])) {

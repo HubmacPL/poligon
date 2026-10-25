@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     grass.color = {0.35f, 0.45f, 0.22f, 1.0f};
     grass.roughness = 1.0f;
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::scale(identity, {40000.0f, 1.0f, 40000.0f}), grass);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40000.0f, 1.0f, 40000.0f}), grass);
     renderer.EndFrame();
     if (!renderer.SaveFrameToPng(argv[1])) {
         std::fprintf(stderr, "cannot write %s\n", argv[1]);

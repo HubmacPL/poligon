@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
                 material.emissive = {0.0f, 0.0f, 0.0f, 1.0f};
             }
             renderer.BeginFrame(camera, light, environment);
-            poligon::DrawModel(renderer, unlit_model, glm::mat4(1.0f));
+            poligon::DrawModel(renderer, unlit_model, poligon::Transform());
             renderer.EndFrame();
             poligon::Image frame;
             renderer.CaptureFrame(frame);
@@ -295,7 +295,7 @@ int main(int argc, char** argv) {
             // In darkness only the emission shows: (0, 0.5, 1) times the same texture.
             light.ambient = {0.0f, 0.0f, 0.0f, 1.0f};
             renderer.BeginFrame(camera, light, environment);
-            poligon::DrawModel(renderer, model->render, glm::mat4(1.0f));
+            poligon::DrawModel(renderer, model->render, poligon::Transform());
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             const std::uint8_t* glow = &frame.pixels[static_cast<size_t>(32 * 64 + 32) * 4];
@@ -377,7 +377,7 @@ int main(int argc, char** argv) {
             poligon::Camera far_camera;
             far_camera.position = {0.0f, 1.0f, 50.0f};
             renderer.BeginFrame(far_camera, poligon::DirectionalLight{});
-            const int level = renderer.DrawSkinnedMesh(group, glm::mat4(1.0f), arm->render.materials[0], rest.data(),
+            const int level = renderer.DrawSkinnedMesh(group, glm::dvec3(0.0), glm::mat4(1.0f), arm->render.materials[0], rest.data(),
                                                        static_cast<int>(rest.size()));
             renderer.EndFrame();
             Expect(level == 1, "50 m away the skinned model is drawn with its simpler level");
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
                            "object rocks/boulder 10 20 30 1.5\nplant pine\n";
         Expect(poligon::ParseLevel(text, level, error, {"plant"}), "a level parses");
         Expect(level.terrain.seed == 7 && level.terrain.size == 2048.0f && !level.start_at_lake &&
-                   level.start_position == glm::vec2(100.0f, 200.0f) && level.start_turn_degrees == 45.0f,
+                   level.start_position == glm::dvec2(100.0, 200.0) && level.start_turn_degrees == 45.0f,
                "terrain settings and the start are read");
         Expect(level.objects.size() == 1 && level.objects[0].asset == "rocks/boulder" && level.objects[0].scale == 1.5f,
                "objects are read");

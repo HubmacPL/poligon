@@ -31,6 +31,7 @@ Creating and deleting entities and adding and removing components inside a syste
 - The dump holds all living game entities (id, generation, name, components) and singletons. It holds no definitions: components, systems, modules or anything internal to flecs.
 - **Generation** counts how many times an entity index has been reused after its predecessor was deleted.
 - Numbers are exact: `float` has 9 significant digits, `double` 17. Two dumps are byte-identical exactly when the states are identical.
+- World positions in components are `glm::dvec3` (the toy's `Position`), everything else stays float (see "World positions and camera-relative drawing" in [rendering.md](rendering.md)). `RegisterEngineTypes` registers `vec2`, `vec3`, `dvec2`, `dvec3`, `vec4`, `quat` and `Color`. `toy_world_test` sets the toy's scene up at the origin and moved by (20000, 50, -16000) and requires every box after 300 ticks to be where the unmoved one is plus the shift, to 1e-6 m (measured: 1e-11 m).
 - A component without registered members appears as `{"unreflected_bytes": N}` and is listed under `unreflected_components`. The game's tests require that list to be empty.
 - Supported member types: bool, integers, float, double, `flecs::entity_t` (through `.member(flecs::Entity, "name")`), enums, nested structs, fixed-size arrays. Other types (strings, vectors) end the process with a `FATAL` error naming the component; `state_dump.cpp` must then be extended.
 

@@ -17,6 +17,13 @@ bool ParseNumber(const std::string& text, float& value) {
     return !text.empty() && *end == '\0' && std::isfinite(value);
 }
 
+// World positions are double (see poligon/core/math.h).
+bool ParseNumber(const std::string& text, double& value) {
+    char* end = nullptr;
+    value = std::strtod(text.c_str(), &end);
+    return !text.empty() && *end == '\0' && std::isfinite(value);
+}
+
 } // namespace
 
 bool ParseLevel(const std::string& text, Level& level, std::string& error, const std::vector<std::string>& other_line_prefixes) {
@@ -60,8 +67,8 @@ bool ParseLevel(const std::string& text, Level& level, std::string& error, const
             }
             parsed.render_settings = values[0];
         } else if (key == "player_start") {
-            float x = 0.0f;
-            float z = 0.0f;
+            double x = 0.0;
+            double z = 0.0;
             float turn = 0.0f;
             if (values.size() == 1 && values[0] == "lake") {
                 parsed.start_at_lake = true;
@@ -125,8 +132,8 @@ bool SaveLevel(const char* path, const Level& level) {
         file << "player_start lake\n";
     } else {
         char text[128];
-        std::snprintf(text, sizeof(text), "player_start %.9g %.9g %.9g\n", static_cast<double>(level.start_position.x),
-                      static_cast<double>(level.start_position.y), static_cast<double>(level.start_turn_degrees));
+        std::snprintf(text, sizeof(text), "player_start %.17g %.17g %.9g\n", level.start_position.x, level.start_position.y,
+                      static_cast<double>(level.start_turn_degrees));
         file << text;
     }
     if (!level.objects.empty()) {

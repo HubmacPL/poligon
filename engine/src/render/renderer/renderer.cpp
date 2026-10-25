@@ -255,6 +255,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     }
     impl_->in_frame = true;
     impl_->camera = camera;
+    impl_->origin = camera.position;
     impl_->light = light;
     impl_->environment = environment;
     impl_->draw_commands.clear();
@@ -319,7 +320,8 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
             impl_->UploadR8(impl_->trample_texture, map.values, map.resolution);
             impl_->trample_version = map.version;
         }
-        impl_->trample_info = glm::vec4(map.corner.x, map.corner.y, 1.0f / map.size, 1.0f);
+        const glm::vec2 corner(map.corner - glm::dvec2(camera.position.x, camera.position.z));
+        impl_->trample_info = glm::vec4(corner.x, corner.y, 1.0f / map.size, 1.0f);
     }
     // The previous frame's draws with object ids and their poses, for motion vectors.
     impl_->previous_drawn_objects.swap(impl_->drawn_objects);
@@ -352,7 +354,10 @@ void Renderer::Impl::MatchPreviousDraw(std::uint64_t object_id, DrawCommand& com
     const auto found = previous_drawn_objects.find(key);
     if (found != previous_drawn_objects.end()) {
         const DrawnObject& previous = found->second;
+        // Stored relative to the previous frame's camera; the shader's previous camera takes
+        // positions relative to this one.
         command.previous_transform = previous.transform;
+        command.previous_transform[3] += glm::vec4(glm::vec3(previous_camera_position - origin), 0.0f);
         if (command.skinned && previous.joint_count == joint_count &&
             previous.first_joint + static_cast<std::uint32_t>(joint_count) <= previous_joint_palette.size()) {
             // The previous pose joins this frame's joint matrices.
@@ -364,7 +369,23 @@ void Renderer::Impl::MatchPreviousDraw(std::uint64_t object_id, DrawCommand& com
     drawn_objects[key] = DrawnObject{command.transform, command.first_joint, joint_count};
 }
 
-void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material, std::uint64_t object_id) {
+void Renderer::DrawMesh(MeshHandle mesh, const Transform& transform, const Material& material, std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawMesh: call BeginFrame first");
+    }
+    DrawMeshRelative(mesh, transform.ToMatrixRelativeTo(impl_->origin), material, object_id, NoiseShift(impl_->origin, transform.position));
+}
+
+void Renderer::DrawMesh(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
+                        std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawMesh: call BeginFrame first");
+    }
+    DrawMeshRelative(mesh, RelativeTo(origin, local, impl_->origin), material, object_id, NoiseShift(impl_->origin, origin));
+}
+
+void Renderer::DrawMeshRelative(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material, std::uint64_t object_id,
+                                const glm::vec3& noise_shift) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawMesh: call BeginFrame first");
     }
@@ -387,12 +408,13 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
     command.material = material;
     command.bounds_min = mesh.bounds_min;
     command.bounds_max = mesh.bounds_max;
+    command.noise_shift = noise_shift;
     impl_->MatchPreviousDraw(object_id, command, 0);
     impl_->draw_commands.push_back(command);
 }
 
-void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& material, const glm::mat4* transforms, int count,
-                                 const InstanceOptions& options) {
+void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& material, const glm::dvec3& origin, const glm::mat4* transforms,
+                                 int count, const InstanceOptions& options) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawMeshInstances: call BeginFrame first");
     }
@@ -420,11 +442,22 @@ void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& materia
     batch.first_source = impl_->instance_sources.size();
     batch.count = static_cast<std::uint32_t>(count);
     batch.options = options;
-    impl_->instance_sources.insert(impl_->instance_sources.end(), transforms, transforms + count);
+    batch.noise_shift = NoiseShift(impl_->origin, origin);
+    impl_->AddInstanceSources(origin, transforms, count);
     impl_->instance_batches.push_back(batch);
 }
 
-void Renderer::DrawImpostorInstances(ImpostorHandle impostor, const glm::mat4* transforms, int count,
+void Renderer::Impl::AddInstanceSources(const glm::dvec3& source_origin, const glm::mat4* transforms, int count) {
+    // One double subtraction for the call; each matrix only gets the float offset added.
+    const glm::vec4 offset(glm::vec3(source_origin - origin), 0.0f);
+    const size_t first = instance_sources.size();
+    instance_sources.insert(instance_sources.end(), transforms, transforms + count);
+    for (size_t i = first; i < instance_sources.size(); ++i) {
+        instance_sources[i][3] += offset;
+    }
+}
+
+void Renderer::DrawImpostorInstances(ImpostorHandle impostor, const glm::dvec3& origin, const glm::mat4* transforms, int count,
                                      const InstanceOptions& options) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawImpostorInstances: call BeginFrame first");
@@ -445,7 +478,7 @@ void Renderer::DrawImpostorInstances(ImpostorHandle impostor, const glm::mat4* t
     batch.count = static_cast<std::uint32_t>(count);
     batch.options = options;
     batch.options.shadow_cascades = 0;
-    impl_->instance_sources.insert(impl_->instance_sources.end(), transforms, transforms + count);
+    impl_->AddInstanceSources(origin, transforms, count);
     impl_->instance_batches.push_back(batch);
 }
 
@@ -493,14 +526,35 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
         transform[0].x = patches[i].size;
         transform[1].y = glm::max(patches[i].max_height - patches[i].min_height, 0.01f);
         transform[2].z = patches[i].size;
-        transform[3] = glm::vec4(patches[i].x, patches[i].min_height, patches[i].z, 1.0f);
+        transform[3] = glm::vec4(static_cast<float>(patches[i].x - impl_->origin.x),
+                                 static_cast<float>(static_cast<double>(patches[i].min_height) - impl_->origin.y),
+                                 static_cast<float>(patches[i].z - impl_->origin.z), 1.0f);
         impl_->instance_sources.push_back(transform);
     }
     impl_->instance_batches.push_back(batch);
 }
 
-void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material,
+void Renderer::DrawSkinnedMesh(MeshHandle mesh, const Transform& transform, const Material& material, const glm::mat4* joint_matrices,
+                               int joint_count, std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
+    }
+    DrawSkinnedMeshRelative(mesh, transform.ToMatrixRelativeTo(impl_->origin), material, joint_matrices, joint_count, object_id,
+                            NoiseShift(impl_->origin, transform.position));
+}
+
+void Renderer::DrawSkinnedMesh(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
                                const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
+    }
+    DrawSkinnedMeshRelative(mesh, RelativeTo(origin, local, impl_->origin), material, joint_matrices, joint_count, object_id,
+                            NoiseShift(impl_->origin, origin));
+}
+
+void Renderer::DrawSkinnedMeshRelative(MeshHandle mesh_handle, const glm::mat4& transform, const Material& material,
+                                       const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id,
+                                       const glm::vec3& noise_shift) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
     }
@@ -540,6 +594,7 @@ void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transfor
             command.bounds_max = glm::max(command.bounds_max, moved);
         }
     }
+    command.noise_shift = noise_shift;
     impl_->MatchPreviousDraw(object_id, command, joint_count);
     impl_->draw_commands.push_back(command);
 }
@@ -561,7 +616,7 @@ void Renderer::SetTrampleMap(const GroundMapSource* map) {
     impl_->trample_version = 0xFFFFFFFFu;
 }
 
-void Renderer::DrawWater(MeshHandle mesh, const glm::mat4& transform, const WaterMaterial& material) {
+void Renderer::DrawWater(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, const WaterMaterial& material) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawWater: call BeginFrame first");
     }
@@ -571,8 +626,9 @@ void Renderer::DrawWater(MeshHandle mesh, const glm::mat4& transform, const Wate
     }
     WaterCommand command;
     command.mesh_id = mesh.id;
-    command.transform = transform;
+    command.transform = RelativeTo(origin, local, impl_->origin);
     command.material = material;
+    command.noise_shift = NoiseShift(impl_->origin, origin);
     impl_->water_commands.push_back(command);
 }
 
@@ -613,63 +669,92 @@ int ChooseMeshLod(const MeshLodGroup& group, float distance, float& fade) {
 
 } // namespace
 
-int Renderer::DrawMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material, std::uint64_t object_id) {
+int Renderer::DrawMesh(const MeshLodGroup& group, const Transform& transform, const Material& material, std::uint64_t object_id) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawMesh: call BeginFrame first");
     }
-    CheckLodGroup(group, "Renderer::DrawMesh");
-    float fade = 0.0f;
-    // Detail above 1 keeps the levels farther: the same as seeing the object nearer.
-    const float distance = glm::distance(impl_->camera.position, glm::vec3(transform[3])) / glm::max(impl_->environment.mesh_detail, 0.01f);
-    const int level = ChooseMeshLod(group, distance, fade);
-    if (level < 0) {
-        return -1;
-    }
-    DrawMesh(group.levels[static_cast<size_t>(level)].mesh, transform, material, object_id);
-    ++impl_->mesh_lod_draws[level];
-    if (fade > 0.0f) {
-        // This level keeps the pixels the next one leaves (KeptByFade).
-        impl_->draw_commands.back().fade = -fade;
-        if (static_cast<size_t>(level) + 1 < group.levels.size()) {
-            DrawMesh(group.levels[static_cast<size_t>(level) + 1].mesh, transform, material, object_id);
-            impl_->draw_commands.back().fade = fade;
-            ++impl_->mesh_lod_draws[level + 1];
-        }
-    }
-    return level;
+    return DrawLodRelative(group, transform.ToMatrixRelativeTo(impl_->origin), material, object_id,
+                           NoiseShift(impl_->origin, transform.position), nullptr, 0);
 }
 
-int Renderer::DrawSkinnedMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material,
+int Renderer::DrawMesh(const MeshLodGroup& group, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
+                       std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawMesh: call BeginFrame first");
+    }
+    return DrawLodRelative(group, RelativeTo(origin, local, impl_->origin), material, object_id, NoiseShift(impl_->origin, origin),
+                           nullptr, 0);
+}
+
+int Renderer::DrawSkinnedMesh(const MeshLodGroup& group, const Transform& transform, const Material& material,
                               const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
     }
-    CheckLodGroup(group, "Renderer::DrawSkinnedMesh");
+    if (joint_matrices == nullptr) {
+        FatalError("Renderer::DrawSkinnedMesh: needs between 1 and 256 joint matrices");
+    }
+    return DrawLodRelative(group, transform.ToMatrixRelativeTo(impl_->origin), material, object_id,
+                           NoiseShift(impl_->origin, transform.position), joint_matrices, joint_count);
+}
+
+int Renderer::DrawSkinnedMesh(const MeshLodGroup& group, const glm::dvec3& origin, const glm::mat4& local, const Material& material,
+                              const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
+    }
+    if (joint_matrices == nullptr) {
+        FatalError("Renderer::DrawSkinnedMesh: needs between 1 and 256 joint matrices");
+    }
+    return DrawLodRelative(group, RelativeTo(origin, local, impl_->origin), material, object_id, NoiseShift(impl_->origin, origin),
+                           joint_matrices, joint_count);
+}
+
+// A MeshLodGroup drawn with a camera-relative matrix: rigid when joint_matrices is null.
+int Renderer::DrawLodRelative(const MeshLodGroup& group, const glm::mat4& transform, const Material& material, std::uint64_t object_id,
+                              const glm::vec3& noise_shift, const glm::mat4* joint_matrices, int joint_count) {
+    const bool skinned = joint_matrices != nullptr;
+    const char* function = skinned ? "Renderer::DrawSkinnedMesh" : "Renderer::DrawMesh";
+    CheckLodGroup(group, function);
     float fade = 0.0f;
-    // Detail above 1 keeps the levels farther: the same as seeing the object nearer.
-    const float distance = glm::distance(impl_->camera.position, glm::vec3(transform[3])) / glm::max(impl_->environment.mesh_detail, 0.01f);
+    // The camera is at the origin of `transform`'s space. Detail above 1 keeps the levels
+    // farther: the same as seeing the object nearer.
+    const float distance = glm::length(glm::vec3(transform[3])) / glm::max(impl_->environment.mesh_detail, 0.01f);
     const int level = ChooseMeshLod(group, distance, fade);
     if (level < 0) {
         return -1;
     }
-    DrawSkinnedMesh(group.levels[static_cast<size_t>(level)].mesh, transform, material, joint_matrices, joint_count, object_id);
-    ++impl_->mesh_lod_draws[level];
+    const auto draw = [&](int index) {
+        const MeshHandle mesh = group.levels[static_cast<size_t>(index)].mesh;
+        if (skinned) {
+            DrawSkinnedMeshRelative(mesh, transform, material, joint_matrices, joint_count, object_id, noise_shift);
+        } else {
+            DrawMeshRelative(mesh, transform, material, object_id, noise_shift);
+        }
+        ++impl_->mesh_lod_draws[index];
+    };
+    draw(level);
     if (fade > 0.0f) {
+        // This level keeps the pixels the next one leaves (KeptByFade).
         impl_->draw_commands.back().fade = -fade;
         if (static_cast<size_t>(level) + 1 < group.levels.size()) {
-            DrawSkinnedMesh(group.levels[static_cast<size_t>(level) + 1].mesh, transform, material, joint_matrices, joint_count,
-                            object_id);
+            draw(level + 1);
             impl_->draw_commands.back().fade = fade;
-            ++impl_->mesh_lod_draws[level + 1];
         }
     }
     return level;
 }
 
-void Renderer::DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color) {
+void Renderer::DrawMesh(MeshHandle mesh, const Transform& transform, Color color) {
     Material material;
     material.color = color;
     DrawMesh(mesh, transform, material);
+}
+
+void Renderer::DrawMesh(MeshHandle mesh, const glm::dvec3& origin, const glm::mat4& local, Color color) {
+    Material material;
+    material.color = color;
+    DrawMesh(mesh, origin, local, material);
 }
 
 void Renderer::EndFrame() {
@@ -691,7 +776,8 @@ void Renderer::EndFrame() {
     SDL_GPUCommandBuffer* commands = frame.commands;
 
     const float aspect_ratio = static_cast<float>(impl.config.width) / static_cast<float>(impl.config.height);
-    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    // Everything is drawn relative to the camera's position (impl.origin): the view looks from 0.
+    const glm::mat4 view = glm::lookAt(glm::vec3(0.0f), glm::vec3(camera.target - camera.position), camera.up);
     // Near and far swapped: depth 1 at the near plane, 0 at the far one (reversed depth, see
     // CreateTargets). Everything that reads depth (common.hlsli, ao, fog) follows this.
     const glm::mat4 unshifted_projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect_ratio,
@@ -725,6 +811,10 @@ void Renderer::EndFrame() {
     }
     frame.projection = projection;
     frame.view_projection = projection * view;
+    frame.previous_view_projection =
+        impl.previous_view_projection * glm::translate(glm::mat4(1.0f), glm::vec3(camera.position - impl.previous_camera_position));
+    frame.camera_world = glm::vec3(camera.position);
+    frame.world_view_projection = frame.view_projection * glm::translate(glm::mat4(1.0f), -frame.camera_world);
     const glm::mat4& view_projection = frame.view_projection;
     frame.light_direction = glm::normalize(light.direction);
     const bool sun_is_on = light.color.r > 0.0f || light.color.g > 0.0f || light.color.b > 0.0f;
@@ -741,7 +831,7 @@ void Renderer::EndFrame() {
     frame.fog_on = environment.volumetric_fog && environment.fog_density > 0.0f;
     frame.clouds_on = environment.clouds && environment.draw_sky && impl.cloud_shape != nullptr;
     frame.cloud_shadow_corner =
-        glm::floor((glm::vec2(camera.position.x, camera.position.z) - frame.cloud_shadow_size * 0.5f) / 64.0f) * 64.0f;
+        glm::floor((glm::dvec2(camera.position.x, camera.position.z) - static_cast<double>(frame.cloud_shadow_size) * 0.5) / 64.0) * 64.0;
     frame.scene_after_depth = impl.msaa_samples == 1;
     frame.water_on = !impl.water_commands.empty();
     frame.bloom_on = impl.post.bloom && impl.post.bloom_strength > 0.0f;

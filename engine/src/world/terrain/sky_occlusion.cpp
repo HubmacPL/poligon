@@ -15,17 +15,17 @@ GroundMap SkyOcclusionMap::GetGroundMap() const {
     }
     map.values = values.data();
     map.resolution = resolution;
-    map.corner = origin - glm::vec2(spacing * 0.5f);
+    map.corner = origin - glm::dvec2(static_cast<double>(spacing) * 0.5);
     map.size = static_cast<float>(resolution) * spacing;
     map.version = version;
     return map;
 }
 
-float SkyOcclusionMap::Get(glm::vec2 position) const {
+float SkyOcclusionMap::Get(glm::dvec2 position) const {
     if (resolution < 2 || values.empty()) {
         return 1.0f;
     }
-    const glm::vec2 local = (position - origin) / spacing;
+    const glm::vec2 local((position - origin) / static_cast<double>(spacing));
     if (local.x < 0.0f || local.y < 0.0f || local.x > static_cast<float>(resolution - 1) || local.y > static_cast<float>(resolution - 1)) {
         return 1.0f;
     }
@@ -39,14 +39,14 @@ float SkyOcclusionMap::Get(glm::vec2 position) const {
     return glm::mix(glm::mix(at(x, z), at(x + 1, z), fx), glm::mix(at(x, z + 1), at(x + 1, z + 1), fx), fz);
 }
 
-SkyOcclusionMap MakeTerrainSkyOcclusion(const Terrain& terrain, glm::vec2 center, float size, float spacing, float reach) {
+SkyOcclusionMap MakeTerrainSkyOcclusion(const Terrain& terrain, glm::dvec2 center, float size, float spacing, float reach) {
     if (size <= 0.0f || spacing <= 0.0f || reach <= 0.0f) {
         FatalError("MakeTerrainSkyOcclusion: size, spacing and reach must be above zero");
     }
     SkyOcclusionMap map;
     map.spacing = spacing;
     map.resolution = static_cast<int>(std::ceil(size / spacing)) + 1;
-    map.origin = center - glm::vec2(size * 0.5f);
+    map.origin = center - glm::dvec2(static_cast<double>(size) * 0.5);
     map.values.resize(static_cast<size_t>(map.resolution) * static_cast<size_t>(map.resolution));
     // Steps outwards along each direction: closer together near the point, wider far out.
     std::vector<float> distances;
@@ -57,16 +57,16 @@ SkyOcclusionMap MakeTerrainSkyOcclusion(const Terrain& terrain, glm::vec2 center
                                      {-1.0f, 0.0f}, {-0.7071f, -0.7071f}, {0.0f, -1.0f}, {0.7071f, -0.7071f}};
     for (int z = 0; z < map.resolution; ++z) {
         for (int x = 0; x < map.resolution; ++x) {
-            const glm::vec2 place = map.origin + glm::vec2(static_cast<float>(x), static_cast<float>(z)) * spacing;
-            const float height = terrain.GetHeight(place.x, place.y) + 1.0f;  // seen from a meter above the ground
+            const glm::dvec2 place = map.origin + glm::dvec2(static_cast<double>(x), static_cast<double>(z)) * static_cast<double>(spacing);
+            const double height = terrain.GetHeight(place.x, place.y) + 1.0;  // seen from a meter above the ground
             // The open sky above a horizon at elevation angle a, for even sky light: 1 - sin(a)
             // per direction, averaged.
             float open = 0.0f;
             for (const glm::vec2& direction : directions) {
                 float steepest = 0.0f;
                 for (const float distance : distances) {
-                    const glm::vec2 point = place + direction * distance;
-                    steepest = std::max(steepest, (terrain.GetHeight(point.x, point.y) - height) / distance);
+                    const glm::dvec2 point = place + glm::dvec2(direction * distance);
+                    steepest = std::max(steepest, static_cast<float>(terrain.GetHeight(point.x, point.y) - height) / distance);
                 }
                 open += 1.0f - steepest / std::sqrt(1.0f + steepest * steepest);
             }
@@ -78,11 +78,11 @@ SkyOcclusionMap MakeTerrainSkyOcclusion(const Terrain& terrain, glm::vec2 center
     return map;
 }
 
-void AddCanopy(SkyOcclusionMap& map, glm::vec2 position, float radius, float strength) {
+void AddCanopy(SkyOcclusionMap& map, glm::dvec2 position, float radius, float strength) {
     if (radius <= 0.0f || strength <= 0.0f || map.resolution < 2) {
         return;
     }
-    const glm::vec2 local = (position - map.origin) / map.spacing;
+    const glm::vec2 local((position - map.origin) / static_cast<double>(map.spacing));
     const float reach = radius / map.spacing;
     const int first_x = std::max(static_cast<int>(std::floor(local.x - reach)), 0);
     const int last_x = std::min(static_cast<int>(std::ceil(local.x + reach)), map.resolution - 1);

@@ -17,8 +17,8 @@ void DrawScene(poligon::Renderer& renderer, poligon::MeshHandle plane, poligon::
     environment.ambient_occlusion = true;
     renderer.BeginFrame(camera, poligon::DirectionalLight{}, environment);
     const glm::mat4 identity(1.0f);
-    renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
-    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
     renderer.EndFrame();
 }
 

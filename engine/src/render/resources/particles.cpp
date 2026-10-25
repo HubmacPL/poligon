@@ -27,7 +27,8 @@ void Renderer::Impl::ReleaseParticles() {
     ReleaseDynamicBuffer(device, particles.buffer);
 }
 
-void Renderer::DrawParticles(TextureHandle texture, const Particle* particles, int count, const ParticleOptions& options) {
+void Renderer::DrawParticles(TextureHandle texture, const glm::dvec3& origin, const Particle* particles, int count,
+                             const ParticleOptions& options) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawParticles: call BeginFrame first");
     }
@@ -47,11 +48,12 @@ void Renderer::DrawParticles(TextureHandle texture, const Particle* particles, i
     call.first = static_cast<Uint32>(state.cards.size());
     call.count = static_cast<Uint32>(count);
     state.calls.push_back(call);
-    // Alpha blending needs the far cards first; the order of equal distances stays as given.
-    const glm::vec3 eye = impl_->camera.position;
+    // Positions relative to the emitter's origin become relative to the camera (the camera
+    // is at 0). Alpha blending needs the far cards first; the order of equal distances stays.
+    const glm::vec3 shift(origin - impl_->origin);
     state.order.clear();
     for (int i = 0; i < count; ++i) {
-        const glm::vec3 offset = particles[i].position - eye;
+        const glm::vec3 offset = particles[i].position + shift;
         state.order.push_back({-glm::dot(offset, offset), static_cast<Uint32>(i)});
     }
     std::stable_sort(state.order.begin(), state.order.end(),
@@ -59,7 +61,7 @@ void Renderer::DrawParticles(TextureHandle texture, const Particle* particles, i
     for (const auto& [key, index] : state.order) {
         const Particle& particle = particles[index];
         ParticleCard card;
-        card.position_size = glm::vec4(particle.position, particle.size);
+        card.position_size = glm::vec4(particle.position + shift, particle.size);
         card.velocity_rotation = glm::vec4(particle.velocity, particle.rotation);
         card.color = ToVec4(particle.color);
         card.frame = glm::vec4(particle.frame, 0.0f, 0.0f, 0.0f);

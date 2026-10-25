@@ -56,6 +56,9 @@ cbuffer ObjectUniforms : register(b1, space1) {
     float4 object_color;
     float4 uv_scale;  // xy: multiplier for texture coordinates, z: index of this call's first instance matrix
     float4 wind_response;  // x: bend, y: flutter (see ApplyWind)
+    float4x4 previous_model;  // unused
+    float4x4 normal_matrix;   // unused: the cofactor matrix is worked out per instance
+    float4 noise_shift;       // xyz: added to camera-relative positions for world-fixed wind gusts
 };
 
 struct VertexInput {
@@ -86,7 +89,7 @@ VertexOutput main(VertexInput input) {
     VertexOutput output;
     float3 still_position = column0 * input.position.x + column1 * input.position.y + column2 * input.position.z + column3.xyz;
     still_position = ApplyTrample(still_position, column3.xyz, wind_response.x);
-    float3 world_position = ApplyWind(still_position, column3.xyz, input.position, wind, wind_response.xy);
+    float3 world_position = ApplyWind(still_position, column3.xyz, input.position, wind, wind_response.xy, noise_shift.xyz);
     output.clip_position = mul(view_projection, float4(world_position, 1.0));
     // The cofactor matrix (columns: cross products of the other two columns) is the inverse
     // transpose times the determinant, so after normalizing it gives normals square to the
@@ -100,7 +103,7 @@ VertexOutput main(VertexInput input) {
     output.motion_clip = 0.0;
     output.previous_clip = 0.0;
     if (motion.x > 0.0) {
-        float3 previous_position = ApplyWind(still_position, column3.xyz, input.position, previous_wind, wind_response.xy);
+        float3 previous_position = ApplyWind(still_position, column3.xyz, input.position, previous_wind, wind_response.xy, noise_shift.xyz);
         output.motion_clip = mul(motion_view_projection, float4(world_position, 1.0));
         output.previous_clip = mul(previous_view_projection, float4(previous_position, 1.0));
     }

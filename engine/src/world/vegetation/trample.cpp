@@ -13,14 +13,15 @@ TrampleMap::TrampleMap(float size, int resolution) : size_(size), resolution_(re
     }
     cell_ = size / static_cast<float>(resolution);
     values_.assign(static_cast<size_t>(resolution) * static_cast<size_t>(resolution), 0.0f);
-    origin_ = glm::vec2(-size * 0.5f);
+    origin_ = glm::dvec2(-static_cast<double>(size) * 0.5);
 }
 
-void TrampleMap::Recenter(const glm::vec2& center) {
+void TrampleMap::Recenter(const glm::dvec2& center) {
     // The new corner, in whole cells, so values keep their place on the land.
-    const glm::vec2 wanted = center - glm::vec2(size_ * 0.5f);
-    const int shift_x = static_cast<int>(std::floor((wanted.x - origin_.x) / cell_ + 0.5f));
-    const int shift_z = static_cast<int>(std::floor((wanted.y - origin_.y) / cell_ + 0.5f));
+    const glm::dvec2 wanted = center - glm::dvec2(static_cast<double>(size_) * 0.5);
+    const double cell = static_cast<double>(cell_);
+    const int shift_x = static_cast<int>(std::floor((wanted.x - origin_.x) / cell + 0.5));
+    const int shift_z = static_cast<int>(std::floor((wanted.y - origin_.y) / cell + 0.5));
     if (shift_x == 0 && shift_z == 0) {
         return;
     }
@@ -39,15 +40,15 @@ void TrampleMap::Recenter(const glm::vec2& center) {
         }
     }
     values_ = std::move(moved);
-    origin_ += glm::vec2(static_cast<float>(shift_x), static_cast<float>(shift_z)) * cell_;
+    origin_ += glm::dvec2(static_cast<double>(shift_x), static_cast<double>(shift_z)) * cell;
     ++version_;
 }
 
-void TrampleMap::Trample(const glm::vec2& position, float radius, float amount) {
+void TrampleMap::Trample(const glm::dvec2& position, float radius, float amount) {
     if (radius <= 0.0f || amount <= 0.0f) {
         return;
     }
-    const glm::vec2 local = (position - origin_) / cell_;
+    const glm::vec2 local((position - origin_) / static_cast<double>(cell_));
     const float reach = radius / cell_;
     const int first_x = std::max(static_cast<int>(std::floor(local.x - reach)), 0);
     const int last_x = std::min(static_cast<int>(std::ceil(local.x + reach)), resolution_ - 1);
@@ -87,8 +88,8 @@ void TrampleMap::Recover(float amount) {
     }
 }
 
-float TrampleMap::GetValue(const glm::vec2& position) const {
-    const glm::vec2 local = (position - origin_) / cell_;
+float TrampleMap::GetValue(const glm::dvec2& position) const {
+    const glm::vec2 local((position - origin_) / static_cast<double>(cell_));
     const int x = static_cast<int>(std::floor(local.x));
     const int z = static_cast<int>(std::floor(local.y));
     if (x < 0 || z < 0 || x >= resolution_ || z >= resolution_) {

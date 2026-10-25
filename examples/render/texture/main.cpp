@@ -56,12 +56,12 @@ int main(int argc, char** argv) {
     ground_material.texture = checker;
     ground_material.color = {0.5f, 0.5f, 0.5f, 1.0f};
     ground_material.uv_scale = {5.0f, 5.0f};
-    renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), ground_material);
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {10.0f, 1.0f, 10.0f}), ground_material);
 
     // The cube: every face shows the whole texture once.
     poligon::Material cube_material;
     cube_material.texture = checker;
-    renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), cube_material);
+    renderer.DrawMesh(cube, glm::dvec3(0.0), glm::translate(identity, {0.0f, 0.5f, 0.0f}), cube_material);
 
     renderer.EndFrame();
 

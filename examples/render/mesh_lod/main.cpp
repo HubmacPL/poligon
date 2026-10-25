@@ -40,13 +40,13 @@ int main(int argc, char** argv) {
     camera.far_plane = 200.0f;
     renderer.BeginFrame(camera, poligon::DirectionalLight{});
     const glm::mat4 identity(1.0f);
-    renderer.DrawMesh(plane, glm::scale(identity, {200.0f, 1.0f, 200.0f}), poligon::Color{0.35f, 0.45f, 0.25f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {200.0f, 1.0f, 200.0f}), poligon::Color{0.35f, 0.45f, 0.25f, 1.0f});
     poligon::Material fur;
     fur.color = {0.55f, 0.35f, 0.2f, 1.0f};
     for (const float distance : {6.0f, 25.0f, 70.0f}) {
         // DrawMesh with a group picks the level by the distance to the transform's origin and
         // returns it (-1: too far, nothing drawn).
-        const int level = renderer.DrawMesh(group, glm::translate(identity, {distance * 0.15f, 0.5f, -distance}), fur);
+        const int level = renderer.DrawMesh(group, glm::dvec3(0.0), glm::translate(identity, {distance * 0.15f, 0.5f, -distance}), fur);
         std::printf("at %.0f m: level %d\n", distance, level);
     }
     renderer.EndFrame();

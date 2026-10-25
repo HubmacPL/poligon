@@ -41,7 +41,7 @@ void Renderer::Impl::RenderParticlePass(FrameContext& frame) {
             glm::mat4 view_projection;
             glm::vec4 camera;
             glm::vec4 atlas;
-        } vertex_uniforms{frame.unshifted_view_projection, glm::vec4(camera.position, static_cast<float>(call.first)),
+        } vertex_uniforms{frame.unshifted_view_projection, glm::vec4(0.0f, 0.0f, 0.0f, static_cast<float>(call.first)),  // camera at 0
                           glm::vec4(static_cast<float>(glm::max(call.options.atlas_columns, 1)),
                                     static_cast<float>(glm::max(call.options.atlas_rows, 1)), glm::max(call.options.stretch, 0.0f), 0.0f)};
         SDL_PushGPUVertexUniformData(commands, 0, &vertex_uniforms, sizeof(vertex_uniforms));

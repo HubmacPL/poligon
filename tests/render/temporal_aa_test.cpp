@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
     const auto render = [&](poligon::Renderer& renderer, poligon::MeshHandle plane, const poligon::Camera& view,
                             poligon::Image& frame) {
         renderer.BeginFrame(view, light, environment);
-        renderer.DrawMesh(plane, square, white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), square, white);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
     };
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
         renderer.SetPostSettings(post);
         poligon::Image graded;
         renderer.BeginFrame(camera, light, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), orange);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), orange);
         renderer.EndFrame();
         renderer.CaptureFrame(graded);
         const std::uint8_t* center = &graded.pixels[static_cast<size_t>((kSize / 2) * kSize + kSize / 2) * 4];
@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
         post.vignette = 0.5f;
         renderer.SetPostSettings(post);
         renderer.BeginFrame(camera, light, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
         renderer.EndFrame();
         renderer.CaptureFrame(graded);
         Expect(RedAt(graded, 1, 1) + 20 < RedAt(graded, kSize / 2, kSize / 2), "a vignette darkens the corners");
@@ -211,7 +211,7 @@ int main(int argc, char** argv) {
         gray.color = {0.4f, 0.4f, 0.4f, 1.0f};
         gray.roughness = 1.0f;
         renderer.BeginFrame(camera, light, environment);
-        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), gray);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), gray);
         renderer.EndFrame();
         renderer.CaptureFrame(graded);
         const std::uint8_t* warm = &graded.pixels[static_cast<size_t>((kSize / 2) * kSize + kSize / 2) * 4];

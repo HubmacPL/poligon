@@ -88,8 +88,11 @@ public:
 
     // Returns the species' number, for AddInstance. Meshes and textures stay owned by the caller.
     int AddSpecies(const VegetationSpecies& species);
-    // Puts one plant into the world. `transform` places its foot.
-    void AddInstance(int species, const glm::mat4& transform);
+    // Puts one plant into the world. `transform` places its foot; or `origin` (double) with
+    // `local` (float, relative to it) for placements a Transform cannot say. Plants are kept
+    // relative to the corner of their cell, so float stays precise anywhere in a large world.
+    void AddInstance(int species, const Transform& transform);
+    void AddInstance(int species, const glm::dvec3& origin, const glm::mat4& local);
     // Removes all plants; species stay.
     void ClearInstances();
     int GetInstanceCount() const;

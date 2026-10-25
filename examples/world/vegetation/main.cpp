@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
             const float x = (static_cast<float>(column) - 15.0f) * 6.0f + static_cast<float>((row * 7 + column * 13) % 5);
             const float z = -static_cast<float>(row) * 6.0f - static_cast<float>((row * 11 + column * 3) % 4);
             const float size = 0.8f + 0.1f * static_cast<float>((row + column * 5) % 5);
-            vegetation.AddInstance(tree_species, glm::translate(identity, {x, 0.0f, z}) * glm::scale(identity, glm::vec3(size)));
+            vegetation.AddInstance(tree_species, glm::dvec3(0.0), glm::translate(identity, {x, 0.0f, z}) * glm::scale(identity, glm::vec3(size)));
         }
     }
 
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
     environment.fog_density = 0.004f;
 
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::scale(identity, {600.0f, 1.0f, 600.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {600.0f, 1.0f, 600.0f}), poligon::Color{0.35f, 0.42f, 0.25f, 1.0f});
     // Every frame: sort the plants into levels by distance and hand them to the renderer.
     vegetation.Draw(renderer, camera);
     renderer.EndFrame();

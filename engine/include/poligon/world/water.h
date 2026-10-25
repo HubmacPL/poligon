@@ -16,20 +16,20 @@ namespace poligon {
 //
 //     std::vector<WaterSurface> lakes = CreateLakeSurfaces(renderer, maps, terrain_origin);
 //     // every frame, between BeginFrame and EndFrame:
-//     for (const WaterSurface& lake : lakes) renderer.DrawWater(lake.mesh, lake.transform, material);
+//     for (const WaterSurface& lake : lakes) renderer.DrawWater(lake.mesh, lake.origin, glm::mat4(1.0f), material);
 
 struct WaterSurface {
     MeshHandle mesh;
-    // Places the mesh in the world: at the lake's level, with the land's origin applied.
-    glm::mat4 transform{1.0f};
+    // Where the mesh lies in the world: the land's origin, at the lake's level.
+    glm::dvec3 origin{0.0};
     // World height of the water surface.
-    float level = 0.0f;
+    double level = 0.0;
 };
 
 // One surface per lake of `maps`. `terrain_origin` is TerrainConfig::origin of the terrain
 // drawn from the same maps: the world position of the map's first point. `square_points`:
 // how many map points along each side of a square (8 = 16 m with 2 m maps).
-std::vector<WaterSurface> CreateLakeSurfaces(Renderer& renderer, const TerrainMaps& maps, const glm::vec3& terrain_origin,
+std::vector<WaterSurface> CreateLakeSurfaces(Renderer& renderer, const TerrainMaps& maps, const glm::dvec3& terrain_origin,
                                              int square_points = 8);
 
 } // namespace poligon

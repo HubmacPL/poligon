@@ -61,7 +61,8 @@ float ValueNoise(float x, float y) {
 }
 
 struct Cell {
-    // Transforms per layer.
+    glm::dvec3 corner{0.0};  // the cell's corner in the world (y = 0)
+    // Transforms per layer, relative to the corner.
     std::vector<std::vector<glm::mat4>> layers;
     int instance_count = 0;
 };
@@ -74,7 +75,7 @@ struct GroundCover::Impl {
     float cell_size = 16.0f;
     float density_scale = 1.0f;
     const TerrainMaps* maps = nullptr;
-    glm::vec2 world_to_map{0.0f};
+    glm::dvec2 world_to_map{0.0};
     std::vector<GroundCoverLayer> layers;
     std::vector<int> species_ids;
     Vegetation vegetation{32.0f};
@@ -84,19 +85,23 @@ struct GroundCover::Impl {
     std::pair<int, int> camera_cell{0, 0};
 
     // The share of plants a layer's clumps keep at a place: 1 inside a clump, 0 between.
-    static float PatchShare(const GroundCoverLayer& layer, float x, float z) {
+    static float PatchShare(const GroundCoverLayer& layer, double x, double z) {
         if (layer.patch_threshold <= 0.0f) {
             return 1.0f;
         }
-        const float noise = ValueNoise(x / layer.patch_size + static_cast<float>(layer.seed) * 3.7f,
-                                       z / layer.patch_size - static_cast<float>(layer.seed) * 1.3f);
+        const double size = static_cast<double>(layer.patch_size);
+        const float noise = ValueNoise(static_cast<float>(x / size + static_cast<double>(layer.seed) * 3.7),
+                                       static_cast<float>(z / size - static_cast<double>(layer.seed) * 1.3));
         return glm::clamp((noise - layer.patch_threshold) / glm::max(layer.patch_softness, 0.001f) + 1.0f, 0.0f, 1.0f);
     }
 
     Cell Build(int column, int row) const {
         Cell cell;
         cell.layers.resize(layers.size());
-        const glm::vec2 corner(static_cast<float>(column) * cell_size, static_cast<float>(row) * cell_size);
+        // Plants are placed relative to the cell's corner (world positions in double).
+        const double size = static_cast<double>(cell_size);
+        const glm::dvec2 corner(static_cast<double>(column) * size, static_cast<double>(row) * size);
+        cell.corner = glm::dvec3(corner.x, 0.0, corner.y);
         for (size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
             const GroundCoverLayer& layer = layers[layer_index];
             Random random(Hash(column, row, static_cast<int>(layer_index) * 977 + layer.seed));
@@ -108,8 +113,10 @@ struct GroundCover::Impl {
             }
             std::vector<glm::mat4>& placed = cell.layers[layer_index];
             for (int i = 0; i < count; ++i) {
-                const float x = corner.x + random.Between(0.0f, cell_size);
-                const float z = corner.y + random.Between(0.0f, cell_size);
+                const float local_x = random.Between(0.0f, cell_size);
+                const float local_z = random.Between(0.0f, cell_size);
+                const double x = corner.x + static_cast<double>(local_x);
+                const double z = corner.y + static_cast<double>(local_z);
                 const float turn = random.Between(0.0f, 6.2831853f);
                 const float scale = random.Between(layer.scale_min, layer.scale_max);
                 const float patch_roll = random.Next();
@@ -123,14 +130,14 @@ struct GroundCover::Impl {
                 if (terrain->GetSlopeDegrees(x, z) > layer.max_slope_degrees) {
                     continue;
                 }
-                if (maps != nullptr && map_roll >= layer.conditions.Weight(*maps, glm::vec2(x, z) + world_to_map)) {
+                if (maps != nullptr && map_roll >= layer.conditions.Weight(*maps, glm::vec2(glm::dvec2(x, z) + world_to_map))) {
                     continue;
                 }
-                const float height = terrain->GetHeight(x, z);
+                const float height = static_cast<float>(terrain->GetHeight(x, z));
                 if (height < layer.min_height || height > layer.max_height) {
                     continue;
                 }
-                glm::mat4 transform = glm::translate(glm::mat4(1.0f), {x, height - layer.sink_meters, z});
+                glm::mat4 transform = glm::translate(glm::mat4(1.0f), {local_x, height - layer.sink_meters, local_z});
                 if (layer.align_to_ground) {
                     const glm::vec3 normal = terrain->GetNormal(x, z);
                     const glm::vec3 up(0.0f, 1.0f, 0.0f);
@@ -155,7 +162,7 @@ struct GroundCover::Impl {
         for (const auto& [key, cell] : cells) {
             for (size_t layer_index = 0; layer_index < cell.layers.size(); ++layer_index) {
                 for (const glm::mat4& transform : cell.layers[layer_index]) {
-                    vegetation.AddInstance(species_ids[layer_index], transform);
+                    vegetation.AddInstance(species_ids[layer_index], cell.corner, transform);
                 }
             }
             stats.instances_alive += cell.instance_count;
@@ -187,11 +194,12 @@ int GroundCover::AddLayer(const GroundCoverLayer& layer) {
     return static_cast<int>(impl_->layers.size()) - 1;
 }
 
-void GroundCover::Update(const glm::vec3& camera_position) {
+void GroundCover::Update(const glm::dvec3& camera_position) {
     Impl& impl = *impl_;
     impl.stats.cells_built = 0;
-    const std::pair<int, int> camera_cell{static_cast<int>(std::floor(camera_position.x / impl.cell_size)),
-                                          static_cast<int>(std::floor(camera_position.z / impl.cell_size))};
+    const double cell_size = static_cast<double>(impl.cell_size);
+    const std::pair<int, int> camera_cell{static_cast<int>(std::floor(camera_position.x / cell_size)),
+                                          static_cast<int>(std::floor(camera_position.z / cell_size))};
     if (impl.has_camera && camera_cell == impl.camera_cell) {
         return;
     }
@@ -199,14 +207,14 @@ void GroundCover::Update(const glm::vec3& camera_position) {
     impl.camera_cell = camera_cell;
 
     // The cells whose nearest point lies within the radius of the camera.
-    const glm::vec2 eye(camera_position.x, camera_position.z);
+    const glm::dvec2 eye(camera_position.x, camera_position.z);
     const int reach = static_cast<int>(std::ceil(impl.radius / impl.cell_size));
     bool changed = false;
     std::map<std::pair<int, int>, Cell> kept;
     for (int row = camera_cell.second - reach; row <= camera_cell.second + reach; ++row) {
         for (int column = camera_cell.first - reach; column <= camera_cell.first + reach; ++column) {
-            const glm::vec2 low(static_cast<float>(column) * impl.cell_size, static_cast<float>(row) * impl.cell_size);
-            const glm::vec2 nearest = glm::clamp(eye, low, low + impl.cell_size);
+            const glm::dvec2 low(static_cast<double>(column) * cell_size, static_cast<double>(row) * cell_size);
+            const glm::dvec2 nearest = glm::clamp(eye, low, low + cell_size);
             if (glm::distance(eye, nearest) > impl.radius) {
                 continue;
             }
@@ -249,7 +257,7 @@ void GroundCover::SetDensityScale(float scale) {
     impl_->has_camera = false;  // the next Update builds every cell again
 }
 
-void GroundCover::SetMaps(const TerrainMaps* maps, const glm::vec2& world_to_map) {
+void GroundCover::SetMaps(const TerrainMaps* maps, const glm::dvec2& world_to_map) {
     impl_->maps = maps;
     impl_->world_to_map = world_to_map;
     impl_->cells.clear();
@@ -260,7 +268,7 @@ float GroundCover::GetRadius() const {
     return impl_->radius;
 }
 
-float GroundCover::GetDensity(int layer_index, float x, float z) const {
+float GroundCover::GetDensity(int layer_index, double x, double z) const {
     if (layer_index < 0 || static_cast<size_t>(layer_index) >= impl_->layers.size()) {
         return 0.0f;
     }
@@ -268,24 +276,25 @@ float GroundCover::GetDensity(int layer_index, float x, float z) const {
     if (impl_->terrain->GetSlopeDegrees(x, z) > layer.max_slope_degrees) {
         return 0.0f;
     }
-    const float height = impl_->terrain->GetHeight(x, z);
+    const float height = static_cast<float>(impl_->terrain->GetHeight(x, z));
     if (height < layer.min_height || height > layer.max_height) {
         return 0.0f;
     }
     float share = Impl::PatchShare(layer, x, z);
     if (impl_->maps != nullptr) {
-        share *= layer.conditions.Weight(*impl_->maps, glm::vec2(x, z) + impl_->world_to_map);
+        share *= layer.conditions.Weight(*impl_->maps, glm::vec2(glm::dvec2(x, z) + impl_->world_to_map));
     }
     return layer.density * share;
 }
 
-void GroundCover::CollectInstances(int layer, std::vector<glm::mat4>& out) const {
+void GroundCover::CollectInstances(int layer, std::vector<glm::mat4>& out, const glm::dvec3& origin) const {
     if (layer < 0 || layer >= static_cast<int>(impl_->layers.size())) {
         FatalError("GroundCover::CollectInstances: no such layer");
     }
     for (const auto& [key, cell] : impl_->cells) {
-        const std::vector<glm::mat4>& placed = cell.layers[static_cast<size_t>(layer)];
-        out.insert(out.end(), placed.begin(), placed.end());
+        for (const glm::mat4& placed : cell.layers[static_cast<size_t>(layer)]) {
+            out.push_back(RelativeTo(cell.corner, placed, origin));
+        }
     }
 }
 

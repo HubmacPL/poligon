@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
         poligon::Material material;
         material.texture = quad_texture;
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
-        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
 
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
         material.texture = quad_texture;
         material.color = {0.5f, 1.0f, 1.0f, 1.0f};
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
-        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(PixelIs(frame, ToPixel(-1), ToPixel(-1), 188, 0, 0, 2), "material color tints the texture");
@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
         material.texture = quad_texture;
         material.uv_scale = {2.0f, 2.0f};
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
-        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         // Squares are small here, and a pixel that is not exactly in the middle of one already
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
     {
         // A plain color needs no texture.
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
-        renderer.DrawMesh(plane, four_by_four, poligon::Color{0.0f, 1.0f, 0.0f, 1.0f});
+        renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, poligon::Color{0.0f, 1.0f, 0.0f, 1.0f});
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(PixelIs(frame, ToPixel(0), ToPixel(0), 0, 255, 0, 1), "a material without a texture has its plain color");
@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
         material.texture = cutout_texture;
         material.alpha_cutoff = 0.5f;
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
-        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(PixelIs(frame, ToPixel(-1), ToPixel(0), 51, 51, 51, 1), "pixels below the alpha cutoff are not drawn");
@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
 
         material.alpha_cutoff = 0.0f;
         renderer.BeginFrame(MakeTopDownCamera(5.0f), flat_light);
-        renderer.DrawMesh(plane, four_by_four, material);
+        renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
         Expect(PixelIs(frame, ToPixel(-1), ToPixel(0), 255, 0, 0, 1), "without a cutoff alpha is ignored");
@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
             material.color = {0.0f, 0.0f, 1.0f, 1.0f};
             material.double_sided = pass == 1;
             renderer.BeginFrame(below, flat_light);
-            renderer.DrawMesh(plane, four_by_four, material);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             if (pass == 0) {
@@ -205,7 +205,7 @@ int main(int argc, char** argv) {
             poligon::Material material;
             material.texture = pass == 0 ? with_mipmaps : without_mipmaps;
             renderer.BeginFrame(MakeTopDownCamera(100.0f), flat_light);
-            renderer.DrawMesh(plane, four_by_four, material);
+            renderer.DrawMesh(plane, glm::dvec3(0.0), four_by_four, material);
             renderer.EndFrame();
             renderer.CaptureFrame(frame);
             // From 100 units the plane is about 9 pixels wide; look at the 3x3 pixels in its middle.

@@ -8,12 +8,10 @@ namespace poligon {
 void Renderer::Impl::RenderCloudShadowPass(FrameContext& frame) {
     Impl& impl = *this;
     SDL_GPUCommandBuffer* commands = frame.commands;
-    const glm::mat4& view_projection = frame.view_projection;
     const glm::vec3& light_direction = frame.light_direction;
     const bool clouds_on = frame.clouds_on;
     CloudUniforms& cloud_uniforms = frame.cloud_uniforms;
     const float cloud_shadow_size = frame.cloud_shadow_size;
-    const glm::vec2& cloud_shadow_corner = frame.cloud_shadow_corner;
 
     // --- Pass 1b: cloud shadows. For the land around the camera, the share of sunlight the
     // clouds let through; every lit surface (and the fog) reads it. ---
@@ -21,8 +19,9 @@ void Renderer::Impl::RenderCloudShadowPass(FrameContext& frame) {
         const glm::vec2 wind = glm::length(environment.wind_direction) > 0.0f ? glm::normalize(environment.wind_direction)
                                                                              : glm::vec2(1.0f, 0.0f);
         const glm::vec2 drift = -wind * environment.cloud_speed * environment.wind_time;
-        cloud_uniforms.inverse_view_projection = glm::inverse(view_projection);
-        cloud_uniforms.camera_position = glm::vec4(camera.position, impl.temporal_noise_offset * 0.6180339f);
+        // Clouds walk world-fixed noise kilometers wide: world float coordinates are enough.
+        cloud_uniforms.inverse_view_projection = glm::inverse(frame.world_view_projection);
+        cloud_uniforms.camera_position = glm::vec4(frame.camera_world, impl.temporal_noise_offset * 0.6180339f);
         cloud_uniforms.light_direction = glm::vec4(light_direction, 0.0f);
         cloud_uniforms.light_color = ToVec4(light.color);
         cloud_uniforms.sky_zenith = ToVec4(environment.sky_zenith) * environment.sky_light_intensity;
@@ -32,7 +31,7 @@ void Renderer::Impl::RenderCloudShadowPass(FrameContext& frame) {
         cloud_uniforms.shape = glm::vec4(environment.cloud_size, environment.cloud_size * 2.0f, drift.x, drift.y);
         cloud_uniforms.quality = glm::vec4(static_cast<float>(glm::clamp(environment.cloud_steps, 4, 256)),
                                            static_cast<float>(glm::clamp(environment.cloud_light_steps, 1, 16)), 40000.0f, 0.0f);
-        cloud_uniforms.shadow_area = glm::vec4(cloud_shadow_corner, cloud_shadow_size, 0.0f);
+        cloud_uniforms.shadow_area = glm::vec4(glm::vec2(frame.cloud_shadow_corner), cloud_shadow_size, 0.0f);
         cloud_uniforms.weather = glm::vec4(glm::clamp(environment.cloud_variation, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f);
         if (environment.cloud_shadows) {
             SDL_GPUTextureSamplerBinding bindings[3]{};
@@ -97,7 +96,7 @@ void Renderer::Impl::RenderCloudPass(FrameContext& frame) {
         CloudResolveUniforms resolve;
         resolve.inverse_view_projection = cloud_uniforms.inverse_view_projection;
         resolve.previous_view_projection = impl.previous_cloud_view_projection;
-        resolve.camera_position = glm::vec4(camera.position, 0.0f);
+        resolve.camera_position = glm::vec4(frame.camera_world, 0.0f);
         // A walked pixel takes a tenth of its new value: the step pattern averages out over
         // about ten walks (forty frames; clouds kilometers away barely move in that time).
         resolve.params = glm::vec4(static_cast<float>(phase), history_usable ? 0.0f : 1.0f, history_usable ? 1.0f : 0.0f, 0.1f);
@@ -111,7 +110,7 @@ void Renderer::Impl::RenderCloudPass(FrameContext& frame) {
         impl.cloud_history_index = write;
         impl.cloud_history_valid = true;
         impl.cloud_history_frame = impl.frame_index;
-        impl.previous_cloud_view_projection = frame.view_projection;
+        impl.previous_cloud_view_projection = frame.world_view_projection;
 
         SDL_GPUTextureSamplerBinding composite[2]{};
         composite[0].texture = impl.cloud_history[write];

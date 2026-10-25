@@ -72,7 +72,7 @@ PlantKind MakePlantKind(const LoadedModel& model, const PlantSettings& settings,
 
 // Adds the body that blocks movement for one placed plant whose foot is at `foot`, turned
 // `turn` radians around the vertical and scaled by `scale`. Nothing for PlantCollider::None.
-void AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::vec3& foot,
+void AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::dvec3& foot,
                       float turn, float scale);
 
 } // namespace poligon

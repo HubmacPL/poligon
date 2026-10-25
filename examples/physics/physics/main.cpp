@@ -55,11 +55,11 @@ int main(int argc, char** argv) {
     }
 
     const glm::vec3 ball_position = physics.GetPosition(ball);
-    const glm::vec3 walker = physics.GetCharacterPosition(character);
+    const glm::dvec3 walker = physics.GetCharacterPosition(character);
     std::printf("ball at %.2f %.2f %.2f\n", static_cast<double>(ball_position.x), static_cast<double>(ball_position.y),
                 static_cast<double>(ball_position.z));
     std::printf("character at %.2f %.2f %.2f, on ground: %s\n", static_cast<double>(walker.x), static_cast<double>(walker.y),
-                static_cast<double>(walker.z), physics.IsCharacterOnGround(character) ? "yes" : "no");
+                walker.z, physics.IsCharacterOnGround(character) ? "yes" : "no");
 
     // A ray: what is 50 m straight down from a point above the scene?
     const poligon::RayHit hit = physics.CastRay({0.0f, 10.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 50.0f);
@@ -89,16 +89,19 @@ int main(int argc, char** argv) {
     environment.sky_light = true;
 
     renderer.BeginFrame(camera, sun, environment);
-    renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), poligon::Color{0.4f, 0.5f, 0.3f, 1.0f});
+    renderer.DrawMesh(plane, glm::dvec3(0.0), glm::scale(identity, {40.0f, 1.0f, 40.0f}), poligon::Color{0.4f, 0.5f, 0.3f, 1.0f});
     for (const poligon::BodyHandle crate : crates) {
-        // GetTransform is position and rotation; the unit cube still has to be given its size.
-        renderer.DrawMesh(cube, physics.GetTransform(crate) * glm::scale(identity, glm::vec3(crate_size)),
-                          poligon::Color{0.7f, 0.5f, 0.3f, 1.0f});
+        // GetTransform is position (double) and rotation; the unit cube still has to be given its size.
+        poligon::Transform placed = physics.GetTransform(crate);
+        placed.scale = glm::vec3(crate_size);
+        renderer.DrawMesh(cube, placed, poligon::Color{0.7f, 0.5f, 0.3f, 1.0f});
     }
     // There is no sphere mesh yet; the ball is drawn as a small cube.
-    renderer.DrawMesh(cube, physics.GetTransform(ball) * glm::scale(identity, glm::vec3(0.65f)), poligon::Color{0.8f, 0.2f, 0.2f, 1.0f});
+    poligon::Transform ball_placed = physics.GetTransform(ball);
+    ball_placed.scale = glm::vec3(0.65f);
+    renderer.DrawMesh(cube, ball_placed, poligon::Color{0.8f, 0.2f, 0.2f, 1.0f});
     // The character as a tall box standing on its position.
-    renderer.DrawMesh(cube, glm::translate(identity, walker + glm::vec3(0.0f, 0.9f, 0.0f)) * glm::scale(identity, {0.6f, 1.8f, 0.6f}),
+    renderer.DrawMesh(cube, poligon::Transform(walker + glm::dvec3(0.0, 0.9, 0.0), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), {0.6f, 1.8f, 0.6f}),
                       poligon::Color{0.2f, 0.4f, 0.8f, 1.0f});
     renderer.EndFrame();
 

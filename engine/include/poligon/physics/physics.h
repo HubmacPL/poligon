@@ -11,7 +11,10 @@ namespace poligon {
 // rays for asking "what is in this direction". The work is done by the Jolt Physics
 // library; this header is all of it that shows.
 //
-// Units: meters, kilograms, seconds. +Y is up.
+// Units: meters, kilograms, seconds. +Y is up. Positions in the world are double (Jolt is
+// built with double precision: ports/joltphysics), so bodies tens of kilometers from the
+// origin rest as still as near it; everything else (velocities, sizes, rotations, vertices
+// relative to a body) is float.
 //
 // Determinism: a PhysicsWorld that receives the same calls in the same order, with the same
 // step length, gives bit-identical results on the same machine with the same program. Call
@@ -36,7 +39,7 @@ struct PhysicsConfig {
 // Where a new body is and how it behaves.
 struct BodySettings {
     // The center of the body's shape.
-    glm::vec3 position{0.0f};
+    glm::dvec3 position{0.0};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     // false: the body never moves (ground, trees, walls). true: it falls and is pushed around.
     bool dynamic = false;
@@ -52,7 +55,7 @@ struct BodySettings {
 
 struct CharacterSettings {
     // Where the character's feet are.
-    glm::vec3 position{0.0f};
+    glm::dvec3 position{0.0};
     // The character is a capsule (a cylinder with rounded ends) standing upright.
     float height = 1.8f;
     float radius = 0.3f;
@@ -67,7 +70,7 @@ struct RayHit {
     bool hit = false;
     // From the ray's origin to the point that was hit.
     float distance = 0.0f;
-    glm::vec3 position{0.0f};
+    glm::dvec3 position{0.0};
     // Direction the hit surface faces.
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
     BodyHandle body;
@@ -95,7 +98,7 @@ public:
     // Land from a square grid of heights: `size` x `size` values, row by row, `spacing`
     // meters apart (see poligon/world/height_map.h). `origin` is the world position of the first
     // point; its y is added to every height. Never moves. `size` must be at least 4.
-    BodyHandle AddHeightField(const float* heights, int size, float spacing, const glm::vec3& origin, float friction = 0.5f);
+    BodyHandle AddHeightField(const float* heights, int size, float spacing, const glm::dvec3& origin, float friction = 0.5f);
     // The handle must not be used afterwards; its number is not given out again.
     void RemoveBody(BodyHandle body);
     // Bodies currently in the world.
@@ -106,20 +109,20 @@ public:
     bool IsBody(BodyHandle body) const;
     bool IsDynamic(BodyHandle body) const;
     // The box, aligned with the world's axes, that encloses the body where it is now.
-    void GetBounds(BodyHandle body, glm::vec3& bounds_min, glm::vec3& bounds_max) const;
+    void GetBounds(BodyHandle body, glm::dvec3& bounds_min, glm::dvec3& bounds_max) const;
 
-    glm::vec3 GetPosition(BodyHandle body) const;
+    glm::dvec3 GetPosition(BodyHandle body) const;
     glm::quat GetRotation(BodyHandle body) const;
     glm::vec3 GetVelocity(BodyHandle body) const;
     // Radians per second around each axis.
     glm::vec3 GetAngularVelocity(BodyHandle body) const;
-    // Position and rotation as one matrix, ready for Renderer::DrawMesh.
-    glm::mat4 GetTransform(BodyHandle body) const;
+    // Position and rotation (scale 1), ready for Renderer::DrawMesh.
+    Transform GetTransform(BodyHandle body) const;
     // A body that has come to rest stops being simulated until something touches it.
     bool IsAsleep(BodyHandle body) const;
 
     // Moves a body at once, without regard to what is in the way.
-    void SetPosition(BodyHandle body, const glm::vec3& position, const glm::quat& rotation);
+    void SetPosition(BodyHandle body, const glm::dvec3& position, const glm::quat& rotation);
     void SetVelocity(BodyHandle body, const glm::vec3& velocity);
     // A sudden push through the body's center: impulse = mass times the change of velocity wanted.
     void AddImpulse(BodyHandle body, const glm::vec3& impulse);
@@ -133,10 +136,10 @@ public:
     // the ground (y is ignored), and jump if it stands on something.
     void SetCharacterInput(CharacterHandle character, const glm::vec3& walk_velocity, bool jump);
     // Where the character's feet are.
-    glm::vec3 GetCharacterPosition(CharacterHandle character) const;
+    glm::dvec3 GetCharacterPosition(CharacterHandle character) const;
     glm::vec3 GetCharacterVelocity(CharacterHandle character) const;
     bool IsCharacterOnGround(CharacterHandle character) const;
-    void SetCharacterPosition(CharacterHandle character, const glm::vec3& position);
+    void SetCharacterPosition(CharacterHandle character, const glm::dvec3& position);
 
     // --- Time ---
     // Moves the world forward by one tick. delta_seconds must be the same on every call.
@@ -144,7 +147,7 @@ public:
 
     // --- Questions ---
     // The first body along the ray. `direction` need not be normalized; characters are not hit.
-    RayHit CastRay(const glm::vec3& origin, const glm::vec3& direction, float max_distance) const;
+    RayHit CastRay(const glm::dvec3& origin, const glm::vec3& direction, float max_distance) const;
 
     // A hash of where everything is and how it moves. Two worlds with equal hashes are in
     // the same state (up to hash collisions); used to check that a run is repeatable.
