@@ -60,6 +60,7 @@ GameLoopResult GameLoop::Run(Game& game) {
 
         game.BeginFrame(*this);
 
+        const std::int64_t ticks_before = result.tick_count;
         for (int i = 0; i < due_ticks && !quit_requested_ && !tick_limit_reached(); ++i) {
             if (config_.input != nullptr) {
                 config_.input->AdvanceTick(result.tick_count);
@@ -75,6 +76,7 @@ GameLoopResult GameLoop::Run(Game& game) {
         FrameInfo frame{};
         frame.frame_index = result.frame_count;
         frame.tick_count = result.tick_count;
+        frame.delta_seconds = static_cast<double>(result.tick_count - ticks_before) * delta_seconds;
         frame.interpolation_alpha = config_.headless ? 0.0 : clock.GetInterpolationAlpha();
         game.Render(*this, frame);
         ++result.frame_count;

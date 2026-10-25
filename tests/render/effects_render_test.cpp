@@ -862,33 +862,56 @@ int main(int argc, char** argv) {
 
     // --- Automatic exposure ---
     // A floor that fills the picture. Whatever the light, the first frame comes out at the
-    // target brightness (0.25, stored as 137).
+    // target brightness (0.25, stored as 137). Then the light changes and the eye adapts over
+    // half a second of game time, in 30 frames of 1/60 s or in 15 of 1/30 s: both must end at
+    // the same picture, the one the time constant gives. Darker (light to a quarter) with a
+    // time constant of 1 s: the eye is at 1/4 + 3/4 * exp(-0.5) = 0.705 of the old brightness,
+    // the picture at 0.25 * 0.25 / 0.705 = 0.089. Brighter (light times 4) with 0.25 s: at
+    // 4 - 3 * exp(-2) = 3.59, the picture at 0.25 * 4 / 3.59 = 0.279.
     for (const float brightness : {8.0f, 0.02f}) {
-        poligon::RendererConfig config = MakeConfig(backend);
-        config.post.auto_exposure = true;
-        config.post.auto_exposure_target = 0.25f;
-        config.post.auto_exposure_min = 0.001f;
-        config.post.auto_exposure_max = 1000.0f;
-        config.post.auto_exposure_speed = 0.5f;
-        poligon::Renderer renderer(config);
-        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
-        const poligon::Camera camera = MakeTopDownCamera(5.0f);
-        const glm::mat4 floor = glm::scale(identity, {40.0f, 1.0f, 40.0f});
+        for (const float change : {0.25f, 4.0f}) {
+            float adapted[2] = {0.0f, 0.0f};
+            for (int run = 0; run < 2; ++run) {
+                poligon::RendererConfig config = MakeConfig(backend);
+                config.post.auto_exposure = true;
+                config.post.auto_exposure_target = 0.25f;
+                config.post.auto_exposure_min = 0.0001f;
+                config.post.auto_exposure_max = 1000.0f;
+                config.post.auto_exposure_darker_seconds = 1.0f;
+                config.post.auto_exposure_brighter_seconds = 0.25f;
+                poligon::Renderer renderer(config);
+                const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+                const poligon::Camera camera = MakeTopDownCamera(5.0f);
+                const glm::mat4 floor = glm::scale(identity, {40.0f, 1.0f, 40.0f});
 
-        renderer.BeginFrame(camera, MakeFlatLight(brightness));
-        renderer.DrawMesh(plane, floor, white);
-        renderer.EndFrame();
-        renderer.CaptureFrame(frame);
-        Expect(RedIs(frame, kSize / 2, kSize / 2, 137, 3), "automatic exposure brings the picture to the target brightness");
+                renderer.BeginFrame(camera, MakeFlatLight(brightness));
+                renderer.DrawMesh(plane, floor, white);
+                renderer.EndFrame();
+                renderer.CaptureFrame(frame);
+                Expect(RedIs(frame, kSize / 2, kSize / 2, 137, 3), "automatic exposure brings the picture to the target brightness");
 
-        // The light drops to a quarter. With speed 0.5 the eye is now adapted to the middle
-        // between the old and the new brightness (2.5 quarters), so the picture is too dark
-        // for the moment: 0.25 / 2.5 = 0.1, stored as 89.
-        renderer.BeginFrame(camera, MakeFlatLight(brightness * 0.25f));
-        renderer.DrawMesh(plane, floor, white);
-        renderer.EndFrame();
-        renderer.CaptureFrame(frame);
-        Expect(RedIs(frame, kSize / 2, kSize / 2, 89, 3), "automatic exposure follows a change of light gradually");
+                const int frames = run == 0 ? 30 : 15;
+                poligon::Environment environment;
+                environment.frame_seconds = 0.5f / static_cast<float>(frames);
+                for (int i = 0; i < frames; ++i) {
+                    renderer.BeginFrame(camera, MakeFlatLight(brightness * change), environment);
+                    renderer.DrawMesh(plane, floor, white);
+                    renderer.EndFrame();
+                }
+                renderer.CaptureFrame(frame);
+                adapted[run] = ToLinear(RedAt(frame, kSize / 2, kSize / 2));
+            }
+            const float eye = change < 1.0f ? change + (1.0f - change) * std::exp(-0.5f / 1.0f)
+                                            : change + (1.0f - change) * std::exp(-0.5f / 0.25f);
+            const float expected = 0.25f * change / eye;
+            if (std::abs(adapted[0] - expected) > 0.01f || std::abs(adapted[1] - expected) > 0.01f) {
+                std::printf("  light x%.2f: after 0.5 s in 30 frames %.4f, in 15 frames %.4f, expected %.4f\n", change, adapted[0],
+                            adapted[1], expected);
+            }
+            Expect(std::abs(adapted[0] - expected) <= 0.01f && std::abs(adapted[1] - expected) <= 0.01f,
+                   change < 1.0f ? "in the dark the eye adapts by its time constant, at any frame rate"
+                                 : "in brighter light the eye adapts by its faster time constant, at any frame rate");
+        }
     }
 
     // --- Wind ---

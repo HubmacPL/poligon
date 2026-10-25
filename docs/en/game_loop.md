@@ -24,6 +24,7 @@ Changes are verified in headless mode.
 - All simulation state changes happen in `Game::FixedUpdate`. `Render` changes no state.
 - Time in the simulation comes only from `TickInfo` (`delta_seconds`, `time_seconds`). Game code must not read the system clock.
 - `time_seconds` is computed as `tick_index / ticks_per_second`, not summed, so no rounding error builds up.
+- `FrameInfo::delta_seconds` (in `Render`) is the game time the frame's ticks covered: 1/60 s in headless mode, 0 to several ticks in real time. Effects that change over time in the renderer (automatic exposure, `Environment::frame_seconds`) take it from there, so replays match.
 - A programmer error (for example an invalid configuration) ends the process through `FatalError`: a `FATAL: ...` line with the call stack on stderr and exit code 3, without a dialog box. Details: [crashes.md](crashes.md).
 
 ## Command line

@@ -84,7 +84,7 @@ public:
         hash_log_.AfterTick(world_, tick.tick_index + 1);
     }
 
-    void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
+    void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& frame) override {
         // The camera circles the scene; CameraRig holds the angle.
         const float yaw = glm::radians(world_.get<toy::CameraRig>().yaw_degrees);
         const glm::mat4 identity(1.0f);
@@ -98,7 +98,9 @@ public:
         }
 
         renderer_.SetPostSettings(settings_.post);
-        renderer_.BeginFrame(camera, settings_.sun, settings_.environment);
+        poligon::Environment environment = settings_.environment;
+        environment.frame_seconds = static_cast<float>(frame.delta_seconds);  // automatic exposure adapts over game time
+        renderer_.BeginFrame(camera, settings_.sun, environment);
         ShowDebugWindows(camera);
 
         ground_query_.each([this](const toy::Ground& ground) {

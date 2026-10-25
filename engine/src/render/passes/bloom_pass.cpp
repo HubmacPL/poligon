@@ -2,6 +2,8 @@
 
 #include "../renderer/renderer_internal.h"
 
+#include <cmath>
+
 namespace poligon {
 
 void Renderer::Impl::RenderBloomPass(FrameContext& frame) {
@@ -38,9 +40,17 @@ void Renderer::Impl::RenderBloomPass(FrameContext& frame) {
     if (impl.post.auto_exposure) {
         const int previous = impl.luminance_index;
         const int current = 1 - previous;
+        // Share of the way to the new brightness covered in this frame's time, for a scene that
+        // got brighter (x) and one that got darker (y); z = 1: the first frame, all the way.
+        // exp(-a) * exp(-b) = exp(-(a + b)), so any split of the same time into frames gives
+        // the same result.
+        const float seconds = glm::max(impl.environment.frame_seconds, 0.0f);
+        const auto share = [seconds](float time_constant) {
+            return 1.0f - std::exp(-seconds / glm::max(time_constant, 0.001f));
+        };
         ParameterUniforms uniforms;
-        uniforms.parameters = glm::vec4(
-            impl.has_luminance_history ? glm::clamp(impl.post.auto_exposure_speed, 0.0f, 1.0f) : 1.0f, 0.0f, 0.0f, 0.0f);
+        uniforms.parameters = glm::vec4(share(impl.post.auto_exposure_brighter_seconds), share(impl.post.auto_exposure_darker_seconds),
+                                        impl.has_luminance_history ? 0.0f : 1.0f, 0.0f);
         SDL_GPUTextureSamplerBinding bindings[2]{};
         bindings[0].texture = impl.bloom_levels.back().texture;
         bindings[0].sampler = impl.linear_clamp_sampler;

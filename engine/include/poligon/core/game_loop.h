@@ -40,6 +40,7 @@ struct FrameInfo {
     std::int64_t frame_index;    // 0 for the first frame
     std::int64_t tick_count;     // ticks completed so far
     double interpolation_alpha;  // fraction of the next tick already elapsed, in [0, 1); 0 in headless mode
+    double delta_seconds;        // game time this frame's ticks covered (0 when none ran); for Environment::frame_seconds
 };
 
 struct GameLoopResult {

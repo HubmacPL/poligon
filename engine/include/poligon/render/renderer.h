@@ -42,13 +42,17 @@ struct PostSettings {
 
     // Automatic exposure: brightness is adjusted so that the average of the image comes out
     // at auto_exposure_target, the way an eye adapts. `exposure` still multiplies the result.
-    // The multiplier stays between auto_exposure_min and auto_exposure_max. Each frame moves
-    // auto_exposure_speed of the way to the new value (the first frame goes all the way).
+    // The multiplier stays between auto_exposure_min and auto_exposure_max. Adaptation runs
+    // in time, not in frames (Environment::frame_seconds): after one time constant the eye
+    // has covered 63% of the way to the new brightness, after three 95%. Like an eye, it
+    // adapts faster when the scene gets brighter (auto_exposure_brighter_seconds) than when
+    // it gets darker (auto_exposure_darker_seconds). The first frame goes all the way.
     bool auto_exposure = false;
     float auto_exposure_target = 0.25f;
     float auto_exposure_min = 0.05f;
     float auto_exposure_max = 8.0f;
-    float auto_exposure_speed = 0.05f;
+    float auto_exposure_brighter_seconds = 0.5f;
+    float auto_exposure_darker_seconds = 2.0f;
 
     DebugView debug_view = DebugView::None;
 
@@ -225,6 +229,11 @@ struct Environment {
     glm::vec2 wind_direction{1.0f, 0.0f};
     float wind_strength = 0.0f;
     float wind_time = 0.0f;
+
+    // Game time since the previous frame, in seconds: what automatic exposure adapts over.
+    // Give the time the frame's ticks covered (ticks / ticks per second), not the clock, so
+    // that replays match; 0 (no tick since the last frame) leaves the exposure where it is.
+    float frame_seconds = 1.0f / 60.0f;
 
     // Ambient occlusion: crevices and places close to other surfaces (the inside of a tree
     // crown, where a trunk meets the ground) receive less ambient light. Computed from what

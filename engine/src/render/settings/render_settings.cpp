@@ -76,7 +76,8 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("post.auto_exposure_target", post.auto_exposure_target, 0.02f, 1.0f);
     visitor.Float("post.auto_exposure_min", post.auto_exposure_min, 0.001f, 1.0f);
     visitor.Float("post.auto_exposure_max", post.auto_exposure_max, 1.0f, 64.0f);
-    visitor.Float("post.auto_exposure_speed", post.auto_exposure_speed, 0.005f, 1.0f);
+    visitor.Float("post.auto_exposure_brighter_seconds", post.auto_exposure_brighter_seconds, 0.02f, 20.0f);
+    visitor.Float("post.auto_exposure_darker_seconds", post.auto_exposure_darker_seconds, 0.02f, 20.0f);
     visitor.Bool("post.bloom", post.bloom);
     visitor.Float("post.bloom_strength", post.bloom_strength, 0.0f, 0.5f);
 

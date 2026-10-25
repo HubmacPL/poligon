@@ -376,7 +376,7 @@ public:
         return cpu_frames_ > 0 ? static_cast<float>(wait_milliseconds_sum_ / cpu_frames_) : 0.0f;
     }
 
-    void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& /*frame*/) override {
+    void Render(poligon::GameLoop& /*loop*/, const poligon::FrameInfo& frame_info) override {
         if (cpu_frames_ >= 0) {
             // The statistics describe the previous frame; the first call has none.
             const poligon::FrameStats stats = renderer_.GetFrameStats();
@@ -399,6 +399,7 @@ public:
         renderer_.SetPostSettings(post);
         // The wind runs on game time, so a replay moves the plants exactly as the recording did.
         environment.wind_time = time_seconds_;
+        environment.frame_seconds = static_cast<float>(frame_info.delta_seconds);
         renderer_.BeginFrame(camera, settings_.sun, environment);
         if (show_windows_) {
             poligon::ShowRenderSettingsWindow(renderer_, settings_, settings_path_.c_str());

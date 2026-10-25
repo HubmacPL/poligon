@@ -16,7 +16,7 @@ Texture2D<float> previous_texture : register(t1, space2);
 SamplerState previous_sampler : register(s1, space2);
 
 cbuffer LuminanceUniforms : register(b0, space3) {
-    float4 parameters;  // x: how far to move from the previous value to the new one, 0..1
+    float4 parameters;  // x, y: share of the way to the new value when it is brighter, darker; z: 1 = first frame
 };
 
 struct FragmentInput {
@@ -36,9 +36,9 @@ float main(FragmentInput input) : SV_Target0 {
         }
     }
     float average = exp(log_sum / (kGrid * kGrid));
-    if (parameters.x >= 1.0) {
+    if (parameters.z > 0.5) {
         return average;  // first frame: there is no previous value yet
     }
     float previous = previous_texture.Load(int3(0, 0, 0));
-    return lerp(previous, average, parameters.x);
+    return lerp(previous, average, average > previous ? parameters.x : parameters.y);
 }

@@ -24,6 +24,7 @@ Weryfikacja zmian odbywa się w trybie bez okna.
 - Cały stan symulacji zmienia się wyłącznie w `Game::FixedUpdate`. `Render` niczego w stanie nie zmienia.
 - Czas w symulacji bierze się tylko z `TickInfo` (`delta_seconds`, `time_seconds`). Nie wolno czytać zegara systemowego w kodzie gry.
 - `time_seconds` jest liczone jako `tick_index / ticks_per_second`, nie sumowane, więc nie narasta błąd zaokrągleń.
+- `FrameInfo::delta_seconds` (w `Render`) to czas gry, który objęły ticki klatki: 1/60 s w trybie bez okna, od 0 do kilku ticków w czasie rzeczywistym. Efekty renderera zmieniające się w czasie (automatyczna ekspozycja, `Environment::frame_seconds`) biorą go stąd, więc odtworzenia się zgadzają.
 - Błąd programisty (np. zła konfiguracja) kończy proces przez `FatalError`: linia `FATAL: ...` ze stosem wywołań na stderr i kod wyjścia 3, bez okna dialogowego. Szczegóły: [crashes.md](crashes.md).
 
 ## Wiersz poleceń
