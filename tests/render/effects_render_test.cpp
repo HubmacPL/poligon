@@ -399,6 +399,37 @@ int main(int argc, char** argv) {
         Expect(ao_wall >= 0.35f && ao_wall <= 0.65f, "the floor at a tall wall sees about half the sky");
     }
 
+    // --- Normals under a non-uniform scale: a cube turned 45 degrees about z and then
+    // stretched 3 times along y (as under a parent with that scale) is a slanted prism. The
+    // sun shines straight down. The face that was +x has the normal S^-1 R (1, 0, 0) =
+    // (1, 1/3, 0) normalized, so its brightness is n.y = 0.316 of the sun; turning the
+    // normal with the model matrix itself would give (1, 3, 0) normalized, 0.949. ---
+    {
+        poligon::Renderer renderer(MakeConfig(backend));
+        const poligon::MeshHandle cube = renderer.CreateCubeMesh();
+        const glm::mat4 prism = glm::translate(identity, {0.0f, 2.2f, 0.0f}) * glm::scale(identity, {1.0f, 3.0f, 1.0f}) *
+                                glm::rotate(identity, glm::radians(45.0f), {0.0f, 0.0f, 1.0f});
+        const glm::vec3 face_center = glm::vec3(prism * glm::vec4(0.5f, 0.0f, 0.0f, 1.0f));
+        const glm::vec3 expected_normal = glm::normalize(glm::transpose(glm::inverse(glm::mat3(prism))) * glm::vec3(1.0f, 0.0f, 0.0f));
+        poligon::Camera camera;
+        camera.position = face_center + expected_normal * 3.0f;
+        camera.target = face_center;
+        poligon::DirectionalLight sun;
+        sun.direction = {0.0f, -1.0f, 0.0f};
+        sun.color = {1.0f, 1.0f, 1.0f, 1.0f};
+        sun.ambient = {0.0f, 0.0f, 0.0f, 1.0f};
+        poligon::Environment environment;
+        environment.shadows = false;
+        renderer.BeginFrame(camera, sun, environment);
+        renderer.DrawMesh(cube, prism, white);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const float lit = MeanLinearRed(frame, ToPixel(camera, face_center));
+        std::printf("  slanted face of a stretched, turned cube: %.3f of the sun (expected %.3f)\n", lit, expected_normal.y);
+        // The rest is the highlight and the light it takes from the diffuse part (a few hundredths).
+        Expect(std::abs(lit - expected_normal.y) < 0.05f, "normals stay square to the surface under a non-uniform scale");
+    }
+
     // --- Far cascades at a smaller share of their image ---
     // A slab 3 m above the floor 20 m in front of the camera, with the sun straight
     // overhead, falls in the last cascade. With far_shadow_scale 0.5 that cascade uses a

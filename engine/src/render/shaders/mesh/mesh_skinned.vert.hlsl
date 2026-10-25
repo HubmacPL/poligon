@@ -29,6 +29,7 @@ cbuffer ObjectUniforms : register(b1, space1) {
     float4 uv_scale;  // xy: multiplier for texture coordinates, z: index of this mesh's first joint matrix, w: the same for its pose in the previous frame
     float4 wind_response;  // unused here
     float4x4 previous_model;  // the transform in the previous frame (motion vectors)
+    float4x4 normal_matrix;   // inverse transpose of the model's 3 x 3 part: normals under any scale
 };
 
 struct VertexInput {
@@ -75,7 +76,7 @@ VertexOutput main(VertexInput input) {
     VertexOutput output;
     float4 world_position = mul(model, float4(position, 1.0));
     output.clip_position = mul(view_projection, world_position);
-    output.world_normal = mul((float3x3)model, normal);
+    output.world_normal = mul((float3x3)normal_matrix, normal);
     output.color = object_color;
     output.uv = input.uv * uv_scale.xy;
     output.world_position = world_position.xyz;

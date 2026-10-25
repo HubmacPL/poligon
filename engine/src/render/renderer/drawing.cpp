@@ -33,6 +33,7 @@ ObjectUniforms Renderer::Impl::MakeObjectUniforms(const DrawCommand& command) {
                                   static_cast<float>(command.first_joint), static_cast<float>(command.previous_first_joint));
     uniforms.wind_response = glm::vec4(command.material.wind_bend, command.material.wind_flutter, 0.0f, 0.0f);
     uniforms.previous_model = command.previous_transform;
+    uniforms.normal_matrix = glm::mat4(glm::transpose(glm::inverse(glm::mat3(command.transform))));
     return uniforms;
 }
 

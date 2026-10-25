@@ -88,8 +88,11 @@ VertexOutput main(VertexInput input) {
     still_position = ApplyTrample(still_position, column3.xyz, wind_response.x);
     float3 world_position = ApplyWind(still_position, column3.xyz, input.position, wind, wind_response.xy);
     output.clip_position = mul(view_projection, float4(world_position, 1.0));
-    // Correct for rotation and for scaling that is the same along all axes.
-    output.world_normal = column0 * input.normal.x + column1 * input.normal.y + column2 * input.normal.z;
+    // The cofactor matrix (columns: cross products of the other two columns) is the inverse
+    // transpose times the determinant, so after normalizing it gives normals square to the
+    // surface under any scale, without storing a second matrix per instance.
+    output.world_normal = cross(column1, column2) * input.normal.x + cross(column2, column0) * input.normal.y +
+                          cross(column0, column1) * input.normal.z;
     output.color = object_color;
     output.uv = input.uv * uv_scale.xy;
     output.world_position = world_position;

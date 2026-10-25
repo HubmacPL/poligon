@@ -53,6 +53,9 @@ struct ObjectUniforms {
     glm::vec4 uv_scale;  // w: where the previous frame's joint matrices start (skinned meshes)
     glm::vec4 wind_response{0.0f};
     glm::mat4 previous_model{1.0f};  // the transform in the previous frame
+    // Turns normals into the world: the inverse transpose of the model's 3 x 3 part, so that
+    // normals stay square to the surface under any scale (columns 0 to 2; the rest unused).
+    glm::mat4 normal_matrix{1.0f};
 };
 
 struct FragmentFrameUniforms {
