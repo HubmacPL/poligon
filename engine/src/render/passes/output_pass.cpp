@@ -81,6 +81,9 @@ void Renderer::Impl::RenderOutputPass(FrameContext& frame) {
                                 sizeof(uniforms));
     }
 
+    // --- Pass 7b: 2D (HUD, text), over the tone-mapped picture. ---
+    impl.RenderOverlayPass(frame);
+
     // --- Pass 8: debug windows, drawn over the finished picture. ---
     if (impl.debug_ui_active) {
         ImGui::Render();

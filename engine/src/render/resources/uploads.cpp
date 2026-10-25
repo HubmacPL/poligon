@@ -86,53 +86,14 @@ void Renderer::Impl::UploadJointMatrices(SDL_GPUCommandBuffer* commands) {
 
 void Renderer::Impl::UploadMatrices(SDL_GPUCommandBuffer* commands, const std::vector<glm::mat4>& matrices, SDL_GPUBuffer*& buffer,
                     Uint32& capacity, SDL_GPUTransferBuffer*& transfer, Uint32& transfer_capacity) {
-    if (matrices.empty()) {
-        return;
-    }
-    const Uint32 count = static_cast<Uint32>(matrices.size());
-    if (count > capacity) {
-        if (buffer != nullptr) {
-            SDL_ReleaseGPUBuffer(device, buffer);
-        }
-        capacity = count < 1024 ? 1024 : count * 2;
-        SDL_GPUBufferCreateInfo buffer_info{};
-        buffer_info.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-        buffer_info.size = capacity * static_cast<Uint32>(sizeof(glm::mat4));
-        buffer = SDL_CreateGPUBuffer(device, &buffer_info);
-        if (buffer == nullptr) {
-            FatalSdlError("cannot create matrix buffer");
-        }
-    }
-    const Uint32 size = count * static_cast<Uint32>(sizeof(glm::mat4));
-    if (count > transfer_capacity) {
-        if (transfer != nullptr) {
-            SDL_ReleaseGPUTransferBuffer(device, transfer);
-        }
-        transfer_capacity = capacity;
-        SDL_GPUTransferBufferCreateInfo transfer_info{};
-        transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        transfer_info.size = transfer_capacity * static_cast<Uint32>(sizeof(glm::mat4));
-        transfer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
-        if (transfer == nullptr) {
-            FatalSdlError("cannot create upload transfer buffer");
-        }
-    }
-    // cycle = true: the previous frame's upload may still be in flight.
-    void* mapped = SDL_MapGPUTransferBuffer(device, transfer, true);
-    if (mapped == nullptr) {
-        FatalSdlError("cannot map upload transfer buffer");
-    }
-    std::memcpy(mapped, matrices.data(), size);
-    SDL_UnmapGPUTransferBuffer(device, transfer);
-    SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
-    SDL_GPUTransferBufferLocation source{};
-    source.transfer_buffer = transfer;
-    SDL_GPUBufferRegion destination{};
-    destination.buffer = buffer;
-    destination.size = size;
-    // cycle = true: the previous frame may still be reading the old contents.
-    SDL_UploadToGPUBuffer(copy_pass, &source, &destination, true);
-    SDL_EndGPUCopyPass(copy_pass);
+    // Capacities here count matrices; the shared upload counts bytes.
+    constexpr Uint32 kMatrixSize = static_cast<Uint32>(sizeof(glm::mat4));
+    DynamicBuffer target{buffer, transfer, capacity * kMatrixSize, transfer_capacity * kMatrixSize};
+    UploadDynamicBuffer(device, commands, matrices.data(), static_cast<Uint32>(matrices.size()) * kMatrixSize, target);
+    buffer = target.buffer;
+    transfer = target.transfer;
+    capacity = target.capacity / kMatrixSize;
+    transfer_capacity = target.transfer_capacity / kMatrixSize;
 }
 
 } // namespace poligon

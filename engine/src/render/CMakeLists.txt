@@ -8,6 +8,7 @@ add_library(poligon_render STATIC
   passes/depth_pass.cpp
   passes/fog_pass.cpp
   passes/output_pass.cpp
+  passes/overlay_pass.cpp
   passes/scene_pass.cpp
   passes/shadow_pass.cpp
   passes/sky_light_pass.cpp
@@ -19,9 +20,12 @@ add_library(poligon_render STATIC
   renderer/targets.cpp
   resources/cloud_noise.cpp
   resources/cloud_textures.cpp
+  resources/dynamic_buffer.cpp
+  resources/fonts.cpp
   resources/impostor_file.cpp
   resources/impostors.cpp
   resources/meshes.cpp
+  resources/overlay.cpp
   resources/terrain.cpp
   resources/textures.cpp
   resources/uploads.cpp
@@ -35,7 +39,8 @@ target_link_libraries(poligon_render PUBLIC imgui::imgui)
 target_include_directories(poligon_render PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 # Shaders are grouped by what they draw: mesh, terrain, vegetation (impostors), sky (sky and
-# clouds), water, post (full-screen passes); shaders/common holds what several include.
+# clouds), water, post (full-screen passes), overlay (2D over the picture), decals,
+# particles; shaders/common holds what several include.
 set(POLIGON_SHADER_SHARED
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/common.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/lighting.hlsli
@@ -111,6 +116,9 @@ poligon_embed_shader(shaders/sky/sky.frag.hlsl fragment kSkyFrag sky_frag)
 poligon_embed_shader(shaders/water/water.frag.hlsl fragment kWaterFrag water_frag)
 poligon_embed_shader(shaders/water/depth_copy.frag.hlsl fragment kDepthCopyFrag depth_copy_frag)
 # post
+poligon_embed_shader(shaders/overlay/overlay.vert.hlsl vertex kOverlayVert overlay_vert)
+poligon_embed_shader(shaders/overlay/overlay.frag.hlsl fragment kOverlayFrag overlay_frag)
+
 poligon_embed_shader(shaders/post/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)
 poligon_embed_shader(shaders/post/tonemap.frag.hlsl fragment kTonemapFrag tonemap_frag)
 poligon_embed_shader(shaders/post/ao.frag.hlsl fragment kAoFrag ao_frag)

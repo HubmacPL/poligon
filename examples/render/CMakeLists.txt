@@ -8,3 +8,4 @@ poligon_add_example(temporal_aa ${CMAKE_BINARY_DIR}/test_output/example_temporal
 poligon_add_example(graphics_quality ${CMAKE_BINARY_DIR}/test_output/example_graphics_quality.png medium)
 poligon_add_example(emissive ${CMAKE_BINARY_DIR}/test_output/example_emissive.png)
 poligon_add_example(mesh_lod ${CMAKE_BINARY_DIR}/test_output/example_mesh_lod.png)
+poligon_add_example(hud ${CMAKE_BINARY_DIR}/test_output/example_hud.png)

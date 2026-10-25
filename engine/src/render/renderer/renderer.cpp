@@ -66,10 +66,12 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     impl_->CreateTargets();
     impl_->CreateSamplers();
     impl_->CreatePipelines();
+    impl_->CreateOverlayPipeline();
 
     TextureOptions plain_color;
     plain_color.generate_mipmaps = false;
     impl_->white_texture = CreateTexture(MakeSolidImage(1, 1, 255, 255, 255), plain_color);
+    CreateBuiltinFont();
     TextureOptions plain_data;
     plain_data.generate_mipmaps = false;
     plain_data.is_color = false;
@@ -147,6 +149,7 @@ Renderer::~Renderer() {
                 SDL_ReleaseGPUTexture(impl_->device, texture);
             }
         }
+        impl_->ReleaseOverlay();
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
@@ -322,6 +325,8 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->joint_palette.clear();
     std::fill(std::begin(impl_->mesh_lod_draws), std::end(impl_->mesh_lod_draws), 0);
     impl_->instance_sources.clear();
+    impl_->overlay.quads.clear();
+    impl_->overlay.batches.clear();
     impl_->instance_batches.clear();
     if (impl_->debug_ui_active) {
         ImGui_ImplSDLGPU3_NewFrame();

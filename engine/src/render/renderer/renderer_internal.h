@@ -27,6 +27,7 @@
 #include "poligon/core/fatal_error.h"
 #include "poligon/core/texture_compression.h"
 #include "poligon/render/renderer.h"
+#include "../resources/overlay_state.h"
 
 namespace poligon {
 
@@ -765,6 +766,8 @@ struct Renderer::Impl {
 
     // Recorded between BeginFrame and EndFrame.
     bool in_frame = false;
+    // 2D over the picture: recorded quads, fonts (resources/overlay.cpp, passes/overlay_pass.cpp).
+    OverlayState overlay;
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
     int mesh_lod_draws[kMaxMeshLods] = {};
     bool has_finished_frame = false;
@@ -945,6 +948,13 @@ struct Renderer::Impl {
     void RenderTemporalAaPass(FrameContext& frame);
     void RenderBloomPass(FrameContext& frame);
     void RenderOutputPass(FrameContext& frame);
+    void RenderOverlayPass(FrameContext& frame);
+
+    // 2D drawing (resources/overlay.cpp).
+    void CreateOverlayPipeline();
+    void ReleaseOverlay();
+    void AddOverlayQuads(SDL_GPUTexture* texture, bool pixelated, const OverlayQuad* quads, size_t count);
+    const Font* FindFont(FontHandle handle) const;
 };
 
 } // namespace poligon

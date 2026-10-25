@@ -8,6 +8,7 @@
 #include "poligon/core/graphics_backend.h"
 #include "poligon/core/image.h"
 #include "poligon/core/math.h"
+#include "poligon/render/overlay.h"
 
 namespace poligon {
 
@@ -726,8 +727,34 @@ public:
     // and changes nothing, for a size below 16 or above 8192 pixels.
     bool Resize(int width, int height);
 
+    // --- 2D over the finished picture (HUD, crosshair, markers, subtitles) ---
+    // Positions and sizes in pixels of the output image, (0, 0) at its top-left corner, y down;
+    // colors as they should look on screen (sRGB), alpha for transparency. Calls between
+    // BeginFrame and EndFrame; drawn after tone mapping (so exposure and grading do not touch
+    // them) and before the debug windows, later calls over earlier ones. After Resize the
+    // picture simply has the new size in pixels. See poligon/render/overlay.h.
+    void DrawRect(const Rect& rect, Color color);
+    // A part of a texture (`uv`, 0..1, top-left (0, 0)) stretched over `rect`, times `color`.
+    void DrawSprite(TextureHandle texture, const Rect& rect, const Rect& uv, Color color = Color{1.0f, 1.0f, 1.0f, 1.0f});
+    // UTF-8 text with the top-left corner of its first line at `position`, `size` pixels a
+    // line; a line break character starts a new line. A character the font lacks is drawn as a hollow box.
+    void DrawText(FontHandle font, const char* utf8, glm::vec2 position, float size, Color color);
+    // Width (of the widest line) and height in pixels that DrawText would cover.
+    glm::vec2 MeasureText(FontHandle font, const char* utf8, float size) const;
+    // A font that needs no file: printable ASCII from stb_easy_font, 12 pixels a line, sharp at
+    // sizes 12, 24, 36... Always there; for HUD text, debugging and tests.
+    FontHandle GetBuiltinFont() const;
+    // A font from the contents of a TrueType file: its glyphs (printable ASCII and the Polish
+    // letters) are drawn into an atlas at `pixel_height` pixels a line; text at other sizes
+    // is scaled from it. The data need not outlive the call. Returns id 0 when the data is not
+    // a usable font. (Not "CreateFont": windows.h defines that name as a macro.)
+    FontHandle CreateTrueTypeFont(const std::uint8_t* data, size_t size, float pixel_height);
+    // Call outside BeginFrame/EndFrame. The built-in font cannot be destroyed.
+    void DestroyFont(FontHandle font);
+
 private:
     TextureHandle CreateTextureArray(const CompressedImage* images, int count, bool plain);
+    void CreateBuiltinFont();
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
