@@ -151,6 +151,7 @@ Nagłówki: `poligon/assets/model.h` (dane modelu, wysyłanie na kartę, rysowan
 ## Okno i pełny ekran
 
 - `Renderer::SetWindowMode(WindowMode::Windowed, szerokość, wysokość)` pokazuje grę w oknie tego rozmiaru; `WindowMode::Fullscreen` przełącza monitor dokładnie na tę rozdzielczość i pokazuje tylko grę (wyłączny pełny ekran, nie okno bez ramki). Zwraca false i niczego nie zmienia, gdy monitor nie ma takiego trybu. Wywołuje się ją między klatkami; następna klatka jest rysowana w nowym rozmiarze, bo każdy obraz zależny od rozmiaru powstaje od nowa (wygładzanie czasowe zaczyna od zera). Bez okna zmienia się tylko rozmiar obrazu i tak sprawdzają to testy.
+- Okno można zmieniać myszą i maksymalizować. `BeginFrame` porównuje rozmiar okna w pikselach z rozmiarem obrazu i gdy się różnią, wywołuje `Renderer::Resize(szerokość, wysokość)`, które tworzy od nowa każdy obraz zależny od rozmiaru; wygładzanie czasowe i chmury zaczynają historię od zera, proporcje kamery idą za nową szerokością i wysokością, a okna debugowe same biorą nowy rozmiar. Zminimalizowane okno zostawia ostatni rozmiar. `Resize` może też wywołać gra między klatkami (bez okna to jedyna droga). Test: część o zmianie rozmiaru w `tests/render/effects_render_test.cpp` (scena narysowana po `Resize` zgadza się, z dokładnością do 2 na 255, z narysowaną przez renderer utworzony od razu w tym rozmiarze); przykład: `examples/render/window_mode`.
 - W `forest_scene` F11 przełącza między oknem 1280 × 720 a pełnym ekranem 1920 × 1080. Przykład: `examples/render/window_mode`; test: część o oknie w `tests/render/effects_render_test.cpp`.
 
 ## Shadery
@@ -183,4 +184,3 @@ Nagłówki: `poligon/assets/model.h` (dane modelu, wysyłanie na kartę, rysowan
 - Normalne są poprawne dla obrotu i skalowania wzdłuż osi siatki; dowolne nierównomierne skalowanie z obrotem wymagałoby macierzy normalnych.
 - Tekstury robione z obrazów (`CreateTexture(const Image&)`) są nieskompresowane (4 bajty na piksel plus mipmapy); wypieczone assety mają kompresję blokową (od ćwierci do ósmej części tego, patrz [assets.md](assets.md)).
 - Kanał alfa tekstury służy tylko do wycinania (`alpha_cutoff`), nigdy do mieszania kolorów.
-- Okno ma stały rozmiar; zmiana rozmiaru nie jest obsługiwana.

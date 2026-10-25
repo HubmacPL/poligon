@@ -661,6 +661,12 @@ public:
     // exactly that size. Without a window (headless) only the picture's size changes.
     bool SetWindowMode(WindowMode mode, int width, int height);
     WindowMode GetWindowMode() const;
+    // Changes the size of the picture (not of the window): every image that depends on it is
+    // made again, and temporal anti-aliasing and the clouds start their history afresh. The
+    // window can be resized and maximized with the mouse; BeginFrame then calls this with the
+    // window's new size, so a game need not. Call outside BeginFrame/EndFrame. Returns false,
+    // and changes nothing, for a size below 16 or above 8192 pixels.
+    bool Resize(int width, int height);
 
 private:
     TextureHandle CreateTextureArray(const CompressedImage* images, int count, bool plain);

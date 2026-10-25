@@ -1,5 +1,5 @@
 // Example: switch between a 1280 x 720 window and fullscreen at 1920 x 1080, as a game's F11
-// key does. With a window the display really changes its resolution (exclusive fullscreen);
+// key does, and then resize the picture as when the window is dragged larger. With a window the display really changes its resolution (exclusive fullscreen);
 // this example runs without one, so only the picture's size changes, which is what the
 // renderer has to get right: every image that depends on the size is made again.
 // Usage: example_window_mode OUTPUT.png
@@ -55,5 +55,11 @@ int main(int argc, char** argv) {
     }
     renderer.SetWindowMode(poligon::WindowMode::Windowed, 1280, 720);
     std::printf("saved %s; back to a window of %d x %d\n", argv[1], renderer.GetWidth(), renderer.GetHeight());
+
+    // The player drags the window's corner or maximizes it: with a window, BeginFrame sees the
+    // new size and calls Resize by itself. Called directly here, as there is no window.
+    renderer.Resize(1600, 900);
+    DrawScene(renderer, plane, cube);
+    std::printf("resized: %d x %d\n", renderer.GetWidth(), renderer.GetHeight());
     return 0;
 }

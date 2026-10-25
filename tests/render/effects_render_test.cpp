@@ -1,6 +1,7 @@
 // Renders small scenes without a window and checks single pixels: ambient occlusion,
 // volumetric fog with light shafts, bloom and automatic exposure.
 // Usage: effects_render_test d3d12|vulkan
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -954,6 +955,54 @@ int main(int argc, char** argv) {
         Expect(renderer.SetWindowMode(poligon::WindowMode::Windowed, kSize, kSize), "and back");
         draw();
         Expect(frame.width == kSize && frame.height == kSize, "back at the first size");
+    }
+
+    // --- Resize (what BeginFrame does when the window is dragged larger or maximized): after
+    // it, a scene looks exactly as in a renderer made at the new size from the start. ---
+    {
+        poligon::Camera camera;
+        camera.position = {3.0f, 2.5f, 4.0f};
+        camera.target = {0.0f, 0.5f, 0.0f};
+        const auto draw = [&](poligon::Renderer& renderer, poligon::Image& image) {
+            const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+            const poligon::MeshHandle cube = renderer.CreateCubeMesh();
+            renderer.BeginFrame(camera, poligon::DirectionalLight{});
+            renderer.DrawMesh(plane, glm::scale(identity, {10.0f, 1.0f, 10.0f}), poligon::Color{0.4f, 0.4f, 0.4f, 1.0f});
+            renderer.DrawMesh(cube, glm::translate(identity, {0.0f, 0.5f, 0.0f}), poligon::Color{0.9f, 0.5f, 0.1f, 1.0f});
+            renderer.EndFrame();
+            renderer.CaptureFrame(image);
+        };
+        poligon::Image resized;
+        poligon::Image direct;
+        {
+            poligon::Renderer renderer(MakeConfig(backend));
+            draw(renderer, resized);
+            Expect(!renderer.Resize(8, 8), "Resize refuses a size below 16 pixels");
+            Expect(renderer.Resize(400, 160), "Resize accepts a wider picture");
+            draw(renderer, resized);
+        }
+        {
+            poligon::RendererConfig config = MakeConfig(backend);
+            config.width = 400;
+            config.height = 160;
+            poligon::Renderer renderer(config);
+            draw(renderer, direct);
+        }
+        Expect(resized.width == 400 && resized.height == 160, "after Resize the captured frame has the new size");
+        int differing = 0;
+        int largest = 0;
+        if (resized.pixels.size() == direct.pixels.size()) {
+            for (size_t i = 0; i < resized.pixels.size(); ++i) {
+                const int difference = std::abs(static_cast<int>(resized.pixels[i]) - static_cast<int>(direct.pixels[i]));
+                largest = std::max(largest, difference);
+                differing += difference > 2 ? 1 : 0;
+            }
+        }
+        if (largest > 2) {
+            std::printf("  resized against direct: %d channel values differ by more than 2, the largest by %d\n", differing, largest);
+        }
+        Expect(resized.pixels.size() == direct.pixels.size() && differing <= static_cast<int>(resized.pixels.size() / 1000),
+               "a resized renderer draws what one made at that size does (proportions included)");
     }
 
     std::printf("effects_render_test finished\n");

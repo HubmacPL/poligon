@@ -39,7 +39,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     }
 
     if (!config.headless) {
-        impl_->window = SDL_CreateWindow(config.window_title, config.width, config.height, 0);
+        impl_->window = SDL_CreateWindow(config.window_title, config.width, config.height, SDL_WINDOW_RESIZABLE);
         if (impl_->window == nullptr) {
             FatalSdlError("cannot create window");
         }
@@ -230,6 +230,17 @@ Renderer::~Renderer() {
 void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, const Environment& environment) {
     if (impl_->in_frame) {
         FatalError("Renderer::BeginFrame: the previous frame was not finished with EndFrame");
+    }
+    // The window may have been resized or maximized with the mouse since the last frame: the
+    // picture follows its size (a minimized window reports 0 and keeps the old one).
+    if (impl_->window != nullptr) {
+        int window_width = 0;
+        int window_height = 0;
+        SDL_GetWindowSizeInPixels(impl_->window, &window_width, &window_height);
+        if (window_width >= 16 && window_height >= 16 &&
+            (window_width != impl_->config.width || window_height != impl_->config.height)) {
+            Resize(window_width, window_height);
+        }
     }
     impl_->in_frame = true;
     impl_->camera = camera;
@@ -865,6 +876,16 @@ bool Renderer::SetWindowMode(WindowMode mode, int width, int height) {
         SDL_SyncWindow(impl_->window);
     }
     impl_->window_mode = mode;
+    return Resize(width, height);
+}
+
+bool Renderer::Resize(int width, int height) {
+    if (impl_->in_frame) {
+        FatalError("Renderer::Resize: called between BeginFrame and EndFrame");
+    }
+    if (width < 16 || height < 16 || width > 8192 || height > 8192) {
+        return false;
+    }
     if (width != impl_->config.width || height != impl_->config.height) {
         // The images of the old size may still be in use by the frame the card is drawing.
         SDL_WaitForGPUIdle(impl_->device);
@@ -872,6 +893,7 @@ bool Renderer::SetWindowMode(WindowMode mode, int width, int height) {
         impl_->config.width = width;
         impl_->config.height = height;
         impl_->CreateSizedTargets();
+        // Releasing the sized images also forgot the clouds' history; TAA's goes too.
         impl_->has_taa_history = false;
     }
     return true;

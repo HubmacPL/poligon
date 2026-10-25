@@ -149,6 +149,7 @@ Headers: `poligon/assets/model.h` (model data, uploading, drawing), `poligon/ass
 ## Window and fullscreen
 
 - `Renderer::SetWindowMode(WindowMode::Windowed, width, height)` shows the game in a window of that size; `WindowMode::Fullscreen` switches the display to exactly that resolution and shows only the game (exclusive fullscreen, not a borderless window). It returns false and changes nothing when the display has no such mode. Call it between frames; the next frame is drawn at the new size, because every image that depends on the size is made again (temporal anti-aliasing starts fresh). Without a window only the picture's size changes, which is how tests check it.
+- The window can be resized with the mouse and maximized. `BeginFrame` compares the window's size in pixels with the picture's and, when they differ, calls `Renderer::Resize(width, height)`, which makes every size-dependent image again; temporal anti-aliasing and the clouds start their history afresh, the camera's proportions follow the new width and height, and the debug windows take the new size on their own. A minimized window keeps the last size. `Resize` can also be called by the game between frames (without a window it is the only way). Test: the resize part of `tests/render/effects_render_test.cpp` (a scene drawn after `Resize` matches, within 2 of 255, one drawn by a renderer made at that size); example: `examples/render/window_mode`.
 - In `forest_scene` F11 switches between a 1280 x 720 window and fullscreen at 1920 x 1080. Example: `examples/render/window_mode`; test: the window part of `tests/render/effects_render_test.cpp`.
 
 ## Shaders
@@ -181,4 +182,3 @@ Headers: `poligon/assets/model.h` (model data, uploading, drawing), `poligon/ass
 - Normals are correct for rotation and for scaling along the mesh axes; a general non-uniform scale with rotation would need normal matrices.
 - Textures made from images (`CreateTexture(const Image&)`) are uncompressed (4 bytes per pixel plus mipmaps); cooked assets are block-compressed (a quarter to an eighth of that, see [assets.md](assets.md)).
 - The alpha channel of a texture is used only for cut-out (`alpha_cutoff`), never for blending.
-- The window has a fixed size; resizing is not handled.
