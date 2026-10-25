@@ -162,6 +162,8 @@ struct Surface {
     float2 pixel;
     // Thin foliage lets some sunlight through to the far side.
     bool thin_foliage;
+    // Light the surface gives off itself; added before fog and haze.
+    float3 emission;
 };
 
 // For a tent filter 5 shadow pixels wide centered `offset` pixels past a pixel center: the
@@ -369,6 +371,8 @@ float3 ShadeSurface(Surface surface) {
         float3 ambient = lerp(ambient_ground.rgb * lerp(0.6, 1.0, sky_visible), ambient_sky.rgb * sky_visible, sky_amount);
         color += diffuse_color * ambient * occlusion;
     }
+
+    color += surface.emission;
 
     // Debug aid: show which shadow cascade shades each pixel.
     if (screen.y > 0.5) {

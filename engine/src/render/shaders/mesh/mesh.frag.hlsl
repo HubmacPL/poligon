@@ -1,7 +1,7 @@
 // Fragment shader for lit meshes.
 //
 // Material: the metallic-roughness model used by glTF (base color, metallic, roughness,
-// normal map, ambient occlusion). The lighting itself is in lighting.hlsli.
+// normal map, ambient occlusion, emission). The lighting itself is in lighting.hlsli.
 //
 // Register spaces follow SDL GPU rules: fragment shader textures and samplers are in space2,
 // uniform buffers in space3. For Vulkan a texture and its sampler must be declared as one
@@ -39,10 +39,17 @@ Texture2D<float4> orm_texture : register(t2, space2);
 [[vk::combinedImageSampler]][[vk::binding(2, 2)]]
 SamplerState orm_sampler : register(s2, space2);
 
+// Emitted light, multiplied by Material::emissive (a color texture).
+[[vk::combinedImageSampler]][[vk::binding(8, 2)]]
+Texture2D<float4> emissive_texture : register(t8, space2);
+[[vk::combinedImageSampler]][[vk::binding(8, 2)]]
+SamplerState emissive_sampler : register(s8, space2);
+
 cbuffer MaterialUniforms : register(b1, space3) {
     float4 material_factors;  // x: metallic, y: roughness, z: alpha cutoff, w: the frame's noise offset
     float4 material_flags;    // x: has normal map, y: has ORM texture, z: ORM red is occlusion, w: thin foliage (1; 2: back faces keep the normal)
     float4 material_shading;  // x: how far the normal turns towards straight up
+    float4 material_emissive; // rgb: emitted light, w: 1 = multiplied by the emissive texture
 };
 
 struct FragmentInput {
@@ -115,6 +122,10 @@ float4 main(FragmentInput input) : SV_Target0 {
     surface.world_position = input.world_position;
     surface.pixel = input.clip_position.xy;
     surface.thin_foliage = material_flags.w > 0.5;
+    surface.emission = material_emissive.rgb;
+    if (material_emissive.w > 0.5) {
+        surface.emission *= emissive_texture.Sample(emissive_sampler, input.uv).rgb;
+    }
 
     // The render target is linear and wide-range; tone mapping happens in a later pass.
     return float4(ShadeSurface(surface), coverage);

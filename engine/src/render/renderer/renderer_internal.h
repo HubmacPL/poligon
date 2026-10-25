@@ -134,6 +134,7 @@ struct MaterialUniforms {
     glm::vec4 factors;
     glm::vec4 flags;
     glm::vec4 shading;  // x: Material::normal_up
+    glm::vec4 emissive;  // rgb: emitted light (Material::emissive times its strength), w: 1 = has an emissive texture
 };
 
 struct ImpostorUniforms {
@@ -440,7 +441,9 @@ inline bool SameFragmentBindings(const Material& a, const Material& b) {
     return a.texture.id == b.texture.id && a.normal_texture.id == b.normal_texture.id &&
            a.orm_texture.id == b.orm_texture.id && a.metallic == b.metallic && a.roughness == b.roughness &&
            a.alpha_cutoff == b.alpha_cutoff && a.double_sided == b.double_sided && a.occlusion_in_orm == b.occlusion_in_orm &&
-           a.back_faces_keep_normal == b.back_faces_keep_normal && a.normal_up == b.normal_up;
+           a.back_faces_keep_normal == b.back_faces_keep_normal && a.normal_up == b.normal_up &&
+           a.emissive_texture.id == b.emissive_texture.id && a.emissive.r == b.emissive.r && a.emissive.g == b.emissive.g &&
+           a.emissive.b == b.emissive.b && a.emissive_strength == b.emissive_strength;
 }
 
 // A plane as (normal, distance): points with dot(normal, p) + distance >= 0 are inside.

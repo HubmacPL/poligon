@@ -34,6 +34,8 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
         material.metallic = source.metallic;
         material.roughness = source.roughness;
         material.occlusion_in_orm = source.occlusion_in_orm;
+        material.emissive = source.emissive;
+        material.emissive_strength = source.emissive_strength;
         if (source.base_color_texture.width > 0) {
             TextureOptions color_options;
             color_options.coverage_cutoff = material.alpha_cutoff;
@@ -47,6 +49,9 @@ RenderModel UploadModel(Renderer& renderer, const Model& model) {
         }
         if (source.orm_texture.width > 0) {
             material.orm_texture = renderer.CreateTexture(source.orm_texture, data_options);
+        }
+        if (source.emissive_texture.width > 0) {
+            material.emissive_texture = renderer.CreateTexture(source.emissive_texture);
         }
         result.materials.push_back(material);
     }
@@ -72,7 +77,7 @@ void DestroyRenderModel(Renderer& renderer, RenderModel& model) {
         renderer.DestroyMesh(mesh);
     }
     for (const Material& material : model.materials) {
-        for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+        for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture, material.emissive_texture}) {
             if (texture.id != 0) {
                 renderer.DestroyTexture(texture);
             }

@@ -832,6 +832,66 @@ int main(int argc, char** argv) {
         Expect(std::abs(plant_red - 188) > 4 || std::abs(plant_green - 188) > 4, "a plant in the wind has motion vectors");
     }
 
+    // --- Emission: in complete darkness a floor is black; with emissive 1 at strength 0.5 it
+    // gives off 0.5 (stored as 188), times an emissive texture when there is one (pure red
+    // keeps only the red). A small glowing square feeds bloom like a lit one. ---
+    {
+        const poligon::DirectionalLight dark = MakeFlatLight(0.0f);
+        {
+            poligon::RendererConfig config = MakeConfig(backend);
+            poligon::Renderer renderer(config);
+            const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+            const poligon::Camera camera = MakeTopDownCamera(5.0f);
+            const glm::mat4 floor = glm::scale(identity, {40.0f, 1.0f, 40.0f});
+            const auto middle = [&] {
+                const std::uint8_t* pixel = &frame.pixels[static_cast<size_t>((kSize / 2) * kSize + kSize / 2) * 4];
+                return glm::ivec3(pixel[0], pixel[1], pixel[2]);
+            };
+            poligon::Material glowing = MakeMatte({0.5f, 0.5f, 0.5f, 1.0f});
+            renderer.BeginFrame(camera, dark);
+            renderer.DrawMesh(plane, floor, glowing);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const glm::ivec3 unlit = middle();
+    
+            glowing.emissive = {1.0f, 1.0f, 1.0f, 1.0f};
+            glowing.emissive_strength = 0.5f;
+            renderer.BeginFrame(camera, dark);
+            renderer.DrawMesh(plane, floor, glowing);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const glm::ivec3 glow = middle();
+    
+            glowing.emissive_texture = renderer.CreateTexture(poligon::MakeSolidImage(2, 2, 255, 0, 0));
+            renderer.BeginFrame(camera, dark);
+            renderer.DrawMesh(plane, floor, glowing);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const glm::ivec3 red_glow = middle();
+            if (unlit.x > 2 || std::abs(glow.x - 188) > 2 || std::abs(red_glow.x - 188) > 2 || red_glow.y > 2) {
+                std::printf("  dark floor %d, glowing %d %d %d, with a red emissive texture %d %d %d\n", unlit.x, glow.x, glow.y, glow.z,
+                            red_glow.x, red_glow.y, red_glow.z);
+            }
+            Expect(unlit.x <= 2, "without emission a floor in the dark is black");
+            Expect(std::abs(glow.x - 188) <= 2 && std::abs(glow.z - 188) <= 2, "an emissive floor gives off its light in the dark");
+            Expect(std::abs(red_glow.x - 188) <= 2 && red_glow.y <= 2, "the emissive texture colors the emitted light");
+        }
+
+        poligon::RendererConfig bloom_config = MakeConfig(backend);
+        bloom_config.post.bloom = true;
+        poligon::Renderer bloom_renderer(bloom_config);
+        const poligon::MeshHandle small = bloom_renderer.CreatePlaneMesh();
+        poligon::Material lamp = MakeMatte({0.0f, 0.0f, 0.0f, 1.0f});
+        lamp.emissive = {1.0f, 1.0f, 1.0f, 1.0f};
+        lamp.emissive_strength = 30.0f;
+        bloom_renderer.BeginFrame(MakeTopDownCamera(10.0f), dark);
+        bloom_renderer.DrawMesh(small, identity, lamp);
+        bloom_renderer.EndFrame();
+        bloom_renderer.CaptureFrame(frame);
+        Expect(RedAt(frame, kSize / 2, kSize / 2) == 255 && RedAt(frame, kSize / 2 + 20, kSize / 2) >= 20,
+               "a small bright emissive square glows into its surroundings through bloom");
+    }
+
     // --- Bloom ---
     // A small, very bright square on black. Without bloom the black next to it stays black;
     // with bloom the square's light spills over, less so far away.

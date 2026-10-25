@@ -40,6 +40,11 @@ struct ModelMaterial {
     Image normal_texture;
     Image orm_texture;  // red: occlusion (if occlusion_in_orm), green: roughness, blue: metallic
     bool occlusion_in_orm = false;
+    // Light the surface gives off (glTF emissiveFactor, KHR_materials_emissive_strength and
+    // emissiveTexture; the emissive color of other formats). Black when the file has none.
+    Color emissive{0.0f, 0.0f, 0.0f, 1.0f};
+    float emissive_strength = 1.0f;
+    Image emissive_texture;
 };
 
 // One piece of geometry with a single material. Vertices are in the mesh's own space.

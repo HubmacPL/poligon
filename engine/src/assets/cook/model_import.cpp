@@ -104,6 +104,11 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
     // Formats without these values (OBJ, for example) keep the defaults: a matte non-metal.
     source.Get(AI_MATKEY_METALLIC_FACTOR, material.metallic);
     source.Get(AI_MATKEY_ROUGHNESS_FACTOR, material.roughness);
+    aiColor3D emissive(0.0f, 0.0f, 0.0f);
+    if (source.Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == aiReturn_SUCCESS) {
+        material.emissive = {emissive.r, emissive.g, emissive.b, 1.0f};
+    }
+    source.Get(AI_MATKEY_EMISSIVE_INTENSITY, material.emissive_strength);
 
     const aiTextureType base_color_kinds[] = {aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE};
     if (load_textures) {
@@ -141,6 +146,12 @@ ModelMaterial ConvertMaterial(const aiScene& scene, const aiMaterial& source,
                                "\" is a cut-out, but its texture has no transparent pixels; see "
                                "tools/image_tool merge-alpha and tools/assets/set_gltf_cutout.mjs");
         }
+    }
+
+    const aiTextureType emissive_kinds[] = {aiTextureType_EMISSION_COLOR, aiTextureType_EMISSIVE};
+    if (load_textures) {
+        LoadMaterialTexture(scene, source, model_directory, emissive_kinds, 2, material.name, material.emissive_texture,
+                            warnings);
     }
 
     const aiTextureType normal_kinds[] = {aiTextureType_NORMALS};

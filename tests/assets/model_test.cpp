@@ -46,7 +46,7 @@ std::string Base64(const std::vector<unsigned char>& bytes) {
 }
 
 // A 2x2 m square standing on the ground, facing +Z, with a 2x2 texture: red and green on top,
-// blue and white below. In OBJ files texture coordinate (0, 0) is the bottom-left corner.
+// blue and white below; the same texture makes it glow too (emissive color 0.1 0.2 0.3). In OBJ files texture coordinate (0, 0) is the bottom-left corner.
 void WriteObjModel(const std::string& directory, bool with_texture_file) {
     WriteTextFile(directory + "/model_test_quad.obj", "mtllib model_test_quad.mtl\n"
                                                       "o Quad\n"
@@ -57,7 +57,7 @@ void WriteObjModel(const std::string& directory, bool with_texture_file) {
                                                       "f 1/1/1 2/2/1 3/3/1 4/4/1\n");
     WriteTextFile(directory + "/model_test_quad.mtl", std::string("newmtl Painted\nKd 0.5 0.25 1.0\nmap_Kd ") +
                                                           (with_texture_file ? "model_test_quad.png" : "missing.png") +
-                                                          "\n");
+                                                          "\nKe 0.1 0.2 0.3\nmap_Ke model_test_quad.png\n");
     poligon::Image texture = poligon::MakeSolidImage(2, 2, 255, 255, 255);
     const std::uint8_t colors[4][3] = {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {255, 255, 255}};
     for (int i = 0; i < 4; ++i) {
@@ -81,7 +81,9 @@ void WriteGltfModel(const std::string& directory) {
         "\"nodes\":[{\"name\":\"Parent\",\"translation\":[10,0,0],\"children\":[1]},"
         "{\"name\":\"Child\",\"translation\":[0,5,0],\"mesh\":0}],"
         "\"meshes\":[{\"name\":\"Triangle\",\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":0}]}],"
-        "\"materials\":[{\"name\":\"Blueish\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.2,0.4,0.6,1.0]}}],"
+        "\"extensionsUsed\":[\"KHR_materials_emissive_strength\"],"
+        "\"materials\":[{\"name\":\"Blueish\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.2,0.4,0.6,1.0]},"
+        "\"emissiveFactor\":[1.0,0.5,0.0],\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":4.0}}}],"
         "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},"
         "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}],"
         "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],"
@@ -118,6 +120,9 @@ int main(int argc, char** argv) {
                    "the material keeps its color");
             Expect(material.base_color_texture.width == 2 && material.base_color_texture.height == 2,
                    "the texture next to the model is loaded");
+            Expect(Near(material.emissive.r, 0.1f) && Near(material.emissive.g, 0.2f) && Near(material.emissive.b, 0.3f) &&
+                       material.emissive_texture.width == 2,
+                   "the emissive color and texture are loaded");
 
             bool found_top_left = false;
             bool normals_face_z = true;
@@ -162,6 +167,10 @@ int main(int argc, char** argv) {
             const poligon::ModelMesh& mesh = model.meshes[0];
             const poligon::Color color = model.materials[static_cast<size_t>(mesh.material_index)].base_color;
             Expect(Near(color.r, 0.2f) && Near(color.g, 0.4f) && Near(color.b, 0.6f), "glTF base color is read");
+            const poligon::ModelMaterial& material = model.materials[static_cast<size_t>(mesh.material_index)];
+            Expect(Near(material.emissive.r, 1.0f) && Near(material.emissive.g, 0.5f) && Near(material.emissive.b, 0.0f) &&
+                       Near(material.emissive_strength, 4.0f),
+                   "glTF emissive factor and strength are read");
             Expect(NearVec(mesh.vertices[0].normal, {0, 0, 1}), "missing normals are generated");
         }
     }

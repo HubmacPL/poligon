@@ -64,5 +64,6 @@ float4 main(FragmentInput input) : SV_Target0 {
     surface.world_position = input.world_position;
     surface.pixel = input.clip_position.xy;
     surface.thin_foliage = true;
+    surface.emission = float3(0.0, 0.0, 0.0);
     return float4(ShadeSurface(surface), 1.0);
 }

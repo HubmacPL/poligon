@@ -23,10 +23,15 @@ namespace fs = std::filesystem;
 // Raise whenever cooked files change for the same sources: the cooked folder keeps this
 // number in cook_version.txt, and a different number recooks everything.
 // 2: animation clips stored built, as an ozz-animation archive, instead of as keys.
-constexpr int kCookVersion = 2;
+// 3: materials carry emission (a color, a strength and a fourth image).
+constexpr int kCookVersion = 3;
 
 // The first bytes of a cooked model file (.pmodel).
-inline constexpr const char* kModelFileHeader = "poligon-model 1\n";
+inline constexpr const char* kModelFileHeader = "poligon-model 2\n";
+
+// Images per material in a cooked model, in this order: base color, normal map,
+// occlusion-roughness-metallic, emission.
+constexpr int kModelImageSlots = 4;
 
 // --- Binary writing and reading for cooked files ---
 

@@ -54,11 +54,12 @@ bool CookModel(const AssetEntry& entry, const fs::path& source_folder, const fs:
         animation_archive = BuildAnimationSet(model.skeleton, model.animations)->SaveArchive();
     }
     writer.Array(animation_archive);
-    // Each material's three images, compressed: color (BC1, or BC3 for cut-outs), normal
-    // map (BC5: x and y), occlusion-roughness-metallic (BC1).
+    // Each material's four images, compressed: color (BC1, or BC3 for cut-outs), normal
+    // map (BC5: x and y), occlusion-roughness-metallic (BC1), emission (BC1, a color).
     for (const ModelMaterial& material : model.materials) {
-        const Image* images[3] = {&material.base_color_texture, &material.normal_texture, &material.orm_texture};
-        for (int slot = 0; slot < 3; ++slot) {
+        const Image* images[kModelImageSlots] = {&material.base_color_texture, &material.normal_texture, &material.orm_texture,
+                                                 &material.emissive_texture};
+        for (int slot = 0; slot < kModelImageSlots; ++slot) {
             const Image& image = *images[slot];
             writer.Raw(static_cast<std::uint8_t>(image.width > 0 ? 1 : 0));
             if (image.width == 0) {
@@ -67,7 +68,7 @@ bool CookModel(const AssetEntry& entry, const fs::path& source_folder, const fs:
             const TextureFormat format = slot == 0 ? (material.alpha_cutoff > 0.0f ? TextureFormat::Bc3 : TextureFormat::Bc1)
                                          : slot == 1 ? TextureFormat::Bc5
                                                      : TextureFormat::Bc1;
-            WriteImage(writer, CompressModelImage(image, format, slot == 0, slot == 0 ? material.alpha_cutoff : 0.0f,
+            WriteImage(writer, CompressModelImage(image, format, slot == 0 || slot == 3, slot == 0 ? material.alpha_cutoff : 0.0f,
                                                   entry.texture_max_size));
         }
     }

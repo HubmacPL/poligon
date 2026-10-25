@@ -422,6 +422,15 @@ struct Material {
     TextureHandle orm_texture;
     bool occlusion_in_orm = false;
 
+    // Light the surface gives off itself (lamps, embers, screens, eyes in a flashlight's
+    // beam are not this: they reflect). Added after lighting and before fog, so it shows in
+    // the dark and feeds bloom. The light is emissive * emissive_strength, times
+    // emissive_texture when there is one (a color texture), in the units of other light: a
+    // white matte surface facing a sun of color 1 is as bright as emissive 1. Black = none.
+    Color emissive{0.0f, 0.0f, 0.0f, 1.0f};
+    float emissive_strength = 1.0f;
+    TextureHandle emissive_texture;
+
     // How the wind moves a mesh with this material (0 = not at all). wind_bend: the whole
     // plant leans downwind, by this much times about 3 cm per meter of height at full
     // strength (1 for a tree, more for short plants, which bend more per meter).

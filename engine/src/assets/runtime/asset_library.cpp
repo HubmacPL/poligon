@@ -136,7 +136,7 @@ const LoadedModel* AssetLibrary::LoadModel(Renderer& renderer, const std::string
             return nullptr;
         }
     }
-    std::vector<CompressedImage> images(loaded->model.materials.size() * 3);
+    std::vector<CompressedImage> images(loaded->model.materials.size() * kModelImageSlots);
     std::vector<bool> present(images.size(), false);
     for (size_t i = 0; i < images.size(); ++i) {
         std::uint8_t has = 0;
@@ -175,14 +175,18 @@ const LoadedModel* AssetLibrary::LoadModel(Renderer& renderer, const std::string
     loaded->render = UploadModel(renderer, loaded->model);
     for (size_t m = 0; m < loaded->render.materials.size(); ++m) {
         Material& material = loaded->render.materials[m];
-        if (present[m * 3]) {
-            material.texture = renderer.CreateTexture(images[m * 3]);
+        const size_t first = m * kModelImageSlots;
+        if (present[first]) {
+            material.texture = renderer.CreateTexture(images[first]);
         }
-        if (present[m * 3 + 1]) {
-            material.normal_texture = renderer.CreateTexture(images[m * 3 + 1]);
+        if (present[first + 1]) {
+            material.normal_texture = renderer.CreateTexture(images[first + 1]);
         }
-        if (present[m * 3 + 2]) {
-            material.orm_texture = renderer.CreateTexture(images[m * 3 + 2]);
+        if (present[first + 2]) {
+            material.orm_texture = renderer.CreateTexture(images[first + 2]);
+        }
+        if (present[first + 3]) {
+            material.emissive_texture = renderer.CreateTexture(images[first + 3]);
         }
     }
     for (const Model& lod : loaded->lod_models) {

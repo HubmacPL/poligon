@@ -181,7 +181,7 @@ void Renderer::Impl::DrawFullscreenToCube(SDL_GPUCommandBuffer* commands, SDL_GP
 void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* mesh_vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil),
                                               kMeshVertSpirv, sizeof(kMeshVertSpirv));
-    SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 2, kMeshFragDxil,
+    SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 2, kMeshFragDxil,
                                                 sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
     SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
                                                   sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
@@ -334,7 +334,7 @@ void Renderer::Impl::CreatePipelines() {
     // ("greater or equal" with reversed depth: the surface the depth pass kept) before
     // the shader runs, writing no depth.
     SDL_GPUShader* after_depth_fragment =
-        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
                      kMeshAfterDepthFragSpirv, sizeof(kMeshAfterDepthFragSpirv));
     after_depth_info = mesh_info;
     after_depth_info.fragment_shader = after_depth_fragment;

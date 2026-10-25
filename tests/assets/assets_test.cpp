@@ -77,6 +77,8 @@ f 12/4/1 16/4/1 13/1/1 9/1/1
 const char* kCubesMtl = R"(newmtl painted
 Kd 1 1 1
 map_Kd paint.png
+Ke 0 0.5 1
+map_Ke paint.png
 )";
 
 // A skinned triangle with two joints, "root" and "arm" (1 m up; the loader adds the scene's
@@ -240,10 +242,12 @@ int main(int argc, char** argv) {
             // The OBJ reader adds a default material before the file's own.
             bool textured = false;
             for (size_t m = 0; model != nullptr && m < model->render.materials.size(); ++m) {
-                textured = textured || (model->model.materials[m].name == "painted" && model->render.materials[m].texture.id != 0);
+                const poligon::Material& material = model->render.materials[m];
+                textured = textured || (model->model.materials[m].name == "painted" && material.texture.id != 0 &&
+                                        material.emissive_texture.id != 0 && material.emissive.b == 1.0f);
             }
             Expect(model != nullptr && model->model.instances.size() == 2 && textured,
-                   ("a model with its texture loads from the " + where).c_str());
+                   ("a model with its textures and emission loads from the " + where).c_str());
             Expect(library.LoadModel(renderer, "things/cubes", error) == model, "a second load gives the same model");
             Expect(library.LoadModel(renderer, "things/none", error) == nullptr && !error.empty(), "a missing model is an error");
             if (model == nullptr) {
@@ -271,8 +275,13 @@ int main(int argc, char** argv) {
             light.ambient = {1.0f, 1.0f, 1.0f, 1.0f};
             poligon::Environment environment;
             environment.shadows = false;
+            // First without the material's emission, then with it alone, in darkness.
+            poligon::RenderModel unlit_model = model->render;
+            for (poligon::Material& material : unlit_model.materials) {
+                material.emissive = {0.0f, 0.0f, 0.0f, 1.0f};
+            }
             renderer.BeginFrame(camera, light, environment);
-            poligon::DrawModel(renderer, model->render, glm::mat4(1.0f));
+            poligon::DrawModel(renderer, unlit_model, glm::mat4(1.0f));
             renderer.EndFrame();
             poligon::Image frame;
             renderer.CaptureFrame(frame);
@@ -282,6 +291,27 @@ int main(int argc, char** argv) {
             }
             Expect(std::abs(middle[0] - 40) <= 8 && std::abs(middle[1] - 200) <= 8 && std::abs(middle[2] - 90) <= 8,
                    "the cooked, compressed texture draws in its color");
+
+            // In darkness only the emission shows: (0, 0.5, 1) times the same texture.
+            light.ambient = {0.0f, 0.0f, 0.0f, 1.0f};
+            renderer.BeginFrame(camera, light, environment);
+            poligon::DrawModel(renderer, model->render, glm::mat4(1.0f));
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+            const std::uint8_t* glow = &frame.pixels[static_cast<size_t>(32 * 64 + 32) * 4];
+            const auto to_linear = [](int stored) {
+                const float value = static_cast<float>(stored) / 255.0f;
+                return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
+            };
+            const float green = 0.5f * to_linear(200);
+            const float blue = to_linear(90);
+            const float glow_green = to_linear(glow[1]);
+            const float glow_blue = to_linear(glow[2]);
+            if (glow[0] > 3 || std::abs(glow_green - green) > 0.03f || std::abs(glow_blue - blue) > 0.03f) {
+                std::printf("  glowing middle pixel %d %d %d\n", glow[0], glow[1], glow[2]);
+            }
+            Expect(glow[0] <= 3 && std::abs(glow_green - green) <= 0.03f && std::abs(glow_blue - blue) <= 0.03f,
+                   "the cooked emission glows in the dark through its texture");
         }
     }
 

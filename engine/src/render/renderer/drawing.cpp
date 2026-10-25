@@ -138,7 +138,7 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
 
         if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
             const MaterialUniforms material_uniforms = MakeMaterialUniforms(material, temporal_noise_offset);
-            SDL_GPUTextureSamplerBinding bindings[8]{};
+            SDL_GPUTextureSamplerBinding bindings[9]{};
             bindings[0].texture = GetTexture(material.texture, white_texture);
             bindings[0].sampler = texture_sampler;
             if (IsScenePass(mesh_pass)) {
@@ -152,7 +152,9 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
                 bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
                 bindings[4].sampler = clamp_sampler;
                 AddLightingBindings(&bindings[5]);
-                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 8);
+                bindings[8].texture = GetTexture(material.emissive_texture, white_texture);
+                bindings[8].sampler = texture_sampler;
+                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
             } else {
                 // The depth-only passes need the material only to cut out leaves.
                 SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
@@ -393,6 +395,9 @@ MaterialUniforms Renderer::Impl::MakeMaterialUniforms(const Material& material, 
                                material.occlusion_in_orm ? 1.0f : 0.0f,
                                material.double_sided ? (material.back_faces_keep_normal ? 2.0f : 1.0f) : 0.0f);
     uniforms.shading = glm::vec4(glm::clamp(material.normal_up, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f);
+    const float strength = glm::max(material.emissive_strength, 0.0f);
+    uniforms.emissive = glm::vec4(glm::max(glm::vec3(material.emissive.r, material.emissive.g, material.emissive.b), 0.0f) * strength,
+                                  material.emissive_texture.id != 0 ? 1.0f : 0.0f);
     return uniforms;
 }
 

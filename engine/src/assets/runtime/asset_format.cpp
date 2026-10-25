@@ -49,6 +49,8 @@ void WriteModelData(Writer& writer, const Model& model) {
         writer.Raw(material.metallic);
         writer.Raw(material.roughness);
         writer.Raw(static_cast<std::uint8_t>(material.occlusion_in_orm ? 1 : 0));
+        writer.Raw(material.emissive);
+        writer.Raw(material.emissive_strength);
     }
     writer.Raw(static_cast<std::uint32_t>(model.meshes.size()));
     for (const ModelMesh& mesh : model.meshes) {
@@ -88,7 +90,7 @@ bool ReadModelData(Reader& reader, Model& model) {
         std::uint8_t occlusion_in_orm = 0;
         if (!reader.String(material.name) || !reader.Raw(material.base_color) || !reader.Raw(material.alpha_cutoff) ||
             !reader.Raw(double_sided) || !reader.Raw(material.metallic) || !reader.Raw(material.roughness) ||
-            !reader.Raw(occlusion_in_orm)) {
+            !reader.Raw(occlusion_in_orm) || !reader.Raw(material.emissive) || !reader.Raw(material.emissive_strength)) {
             return false;
         }
         material.double_sided = double_sided != 0;
