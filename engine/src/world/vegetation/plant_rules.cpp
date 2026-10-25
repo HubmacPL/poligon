@@ -175,6 +175,14 @@ bool ParsePlantRules(const std::vector<std::pair<int, std::string>>& lines, std:
 std::vector<std::pair<int, PlantPlacement>> PlacePlantGroup(const TerrainMaps& maps, const std::vector<const PlantRule*>& rules,
                                                              glm::vec2 center, float area, const std::vector<int>& variant_counts,
                                                              const std::function<bool(int rule, glm::vec2)>& keep) {
+    return PlacePlantGroupInRectangle(maps, rules, center, area, glm::vec2(0.0f),
+                                      glm::vec2(maps.height.GetSizeX(), maps.height.GetSizeZ()), variant_counts, keep);
+}
+
+std::vector<std::pair<int, PlantPlacement>> PlacePlantGroupInRectangle(const TerrainMaps& maps, const std::vector<const PlantRule*>& rules,
+                                                                        glm::vec2 center, float area, glm::vec2 area_low,
+                                                                        glm::vec2 area_high, const std::vector<int>& variant_counts,
+                                                                        const std::function<bool(int rule, glm::vec2)>& keep) {
     std::vector<std::pair<int, PlantPlacement>> placements;
     if (rules.empty() || rules.size() != variant_counts.size() || maps.height.IsEmpty()) {
         return placements;
@@ -185,12 +193,10 @@ std::vector<std::pair<int, PlantPlacement>> PlacePlantGroup(const TerrainMaps& m
         radius = std::max(radius, rule->area > 0.0f ? std::min(area, rule->area) : area);
     }
     const float spacing = std::max(first.spacing, 0.05f);
-    const float size_x = maps.height.GetSizeX();
-    const float size_z = maps.height.GetSizeZ();
-    const std::int32_t first_x = static_cast<std::int32_t>(std::floor(std::max(center.x - radius, 0.0f) / spacing));
-    const std::int32_t last_x = static_cast<std::int32_t>(std::floor(std::min(center.x + radius, size_x) / spacing));
-    const std::int32_t first_z = static_cast<std::int32_t>(std::floor(std::max(center.y - radius, 0.0f) / spacing));
-    const std::int32_t last_z = static_cast<std::int32_t>(std::floor(std::min(center.y + radius, size_z) / spacing));
+    const std::int32_t first_x = static_cast<std::int32_t>(std::floor(std::max(center.x - radius, area_low.x) / spacing));
+    const std::int32_t last_x = static_cast<std::int32_t>(std::floor(std::min(center.x + radius, area_high.x) / spacing));
+    const std::int32_t first_z = static_cast<std::int32_t>(std::floor(std::max(center.y - radius, area_low.y) / spacing));
+    const std::int32_t last_z = static_cast<std::int32_t>(std::floor(std::min(center.y + radius, area_high.y) / spacing));
     const std::uint32_t seed = static_cast<std::uint32_t>(first.seed) * 2654435761u + 12345u;
     std::vector<float> chances(rules.size());
     for (std::int32_t cz = first_z; cz <= last_z; ++cz) {
@@ -202,7 +208,8 @@ std::vector<std::pair<int, PlantPlacement>> PlacePlantGroup(const TerrainMaps& m
             const float size_pick = CellRandom(state);
             const float turn = CellRandom(state) * 6.2831853f;
             const float variant_pick = CellRandom(state);
-            if (place.x >= size_x || place.y >= size_z) {
+            // A place belongs to exactly one rectangle of a world cut into patches.
+            if (place.x < area_low.x || place.y < area_low.y || place.x >= area_high.x || place.y >= area_high.y) {
                 continue;
             }
             // Each rule's chance here; the pick falls into one of them or into none.
@@ -257,6 +264,13 @@ std::vector<std::pair<int, PlantPlacement>> PlacePlantGroup(const TerrainMaps& m
 
 std::vector<PlantPlacement> PlacePlants(const TerrainMaps& maps, const PlantRule& rule, glm::vec2 center, float area, int variant_count,
                                         const std::function<bool(glm::vec2)>& keep) {
+    return PlacePlantsInRectangle(maps, rule, center, area, glm::vec2(0.0f), glm::vec2(maps.height.GetSizeX(), maps.height.GetSizeZ()),
+                                  variant_count, keep);
+}
+
+std::vector<PlantPlacement> PlacePlantsInRectangle(const TerrainMaps& maps, const PlantRule& rule, glm::vec2 center, float area,
+                                                   glm::vec2 area_low, glm::vec2 area_high, int variant_count,
+                                                   const std::function<bool(glm::vec2)>& keep) {
     std::vector<PlantPlacement> placements;
     if (variant_count < 1 || rule.density <= 0.0f || maps.height.IsEmpty()) {
         return placements;
@@ -264,12 +278,10 @@ std::vector<PlantPlacement> PlacePlants(const TerrainMaps& maps, const PlantRule
     const float radius = rule.area > 0.0f ? std::min(area, rule.area) : area;
     const float spacing = std::max(rule.spacing, 0.05f);
     const float chance_per_cell = std::min(rule.density * spacing * spacing, 1.0f);
-    const float size_x = maps.height.GetSizeX();
-    const float size_z = maps.height.GetSizeZ();
-    const std::int32_t first_x = static_cast<std::int32_t>(std::floor(std::max(center.x - radius, 0.0f) / spacing));
-    const std::int32_t last_x = static_cast<std::int32_t>(std::floor(std::min(center.x + radius, size_x) / spacing));
-    const std::int32_t first_z = static_cast<std::int32_t>(std::floor(std::max(center.y - radius, 0.0f) / spacing));
-    const std::int32_t last_z = static_cast<std::int32_t>(std::floor(std::min(center.y + radius, size_z) / spacing));
+    const std::int32_t first_x = static_cast<std::int32_t>(std::floor(std::max(center.x - radius, area_low.x) / spacing));
+    const std::int32_t last_x = static_cast<std::int32_t>(std::floor(std::min(center.x + radius, area_high.x) / spacing));
+    const std::int32_t first_z = static_cast<std::int32_t>(std::floor(std::max(center.y - radius, area_low.y) / spacing));
+    const std::int32_t last_z = static_cast<std::int32_t>(std::floor(std::min(center.y + radius, area_high.y) / spacing));
     const std::uint32_t seed = static_cast<std::uint32_t>(rule.seed) * 2654435761u + 12345u;
     for (std::int32_t cz = first_z; cz <= last_z; ++cz) {
         for (std::int32_t cx = first_x; cx <= last_x; ++cx) {
@@ -280,7 +292,8 @@ std::vector<PlantPlacement> PlacePlants(const TerrainMaps& maps, const PlantRule
             const float scale = rule.scale_min + (rule.scale_max - rule.scale_min) * CellRandom(state);
             const float turn = CellRandom(state) * 6.2831853f;
             const float variant_pick = CellRandom(state);
-            if (place.x >= size_x || place.y >= size_z || glm::length(place - center) > radius) {
+            if (place.x < area_low.x || place.y < area_low.y || place.x >= area_high.x || place.y >= area_high.y ||
+                glm::length(place - center) > radius) {
                 continue;
             }
             if (pick >= chance_per_cell) {

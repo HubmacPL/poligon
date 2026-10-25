@@ -52,13 +52,14 @@ float HeightMap::GetHeight(float x, float z) const {
     if (IsEmpty()) {
         return 0.0f;
     }
-    const float gx = glm::clamp(x / spacing, 0.0f, static_cast<float>(width - 1));
-    const float gz = glm::clamp(z / spacing, 0.0f, static_cast<float>(depth - 1));
-    const int ix = glm::min(static_cast<int>(gx), width - 2);
-    const int iz = glm::min(static_cast<int>(gz), depth - 2);
+    // Grid coordinates of the whole map, so that a window gives the same numbers.
+    const float gx = glm::clamp(x / spacing, static_cast<float>(first_x), static_cast<float>(first_x + width - 1));
+    const float gz = glm::clamp(z / spacing, static_cast<float>(first_z), static_cast<float>(first_z + depth - 1));
+    const int ix = glm::min(static_cast<int>(gx), first_x + width - 2);
+    const int iz = glm::min(static_cast<int>(gz), first_z + depth - 2);
     const float fx = gx - static_cast<float>(ix);
     const float fz = gz - static_cast<float>(iz);
-    const float* row = &heights[static_cast<size_t>(iz) * static_cast<size_t>(width) + static_cast<size_t>(ix)];
+    const float* row = &heights[static_cast<size_t>(iz - first_z) * static_cast<size_t>(width) + static_cast<size_t>(ix - first_x)];
     const float* next_row = row + width;
     return glm::mix(glm::mix(row[0], row[1], fx), glm::mix(next_row[0], next_row[1], fx), fz);
 }
@@ -349,6 +350,13 @@ HeightMap CropHeightMap(const HeightMap& map, int ix, int iz, int width, int dep
                     &map.heights[static_cast<size_t>(iz + row) * static_cast<size_t>(map.width) + static_cast<size_t>(ix)],
                     static_cast<size_t>(width) * sizeof(float));
     }
+    return part;
+}
+
+HeightMap CutHeightMap(const HeightMap& map, int ix, int iz, int width, int depth) {
+    HeightMap part = CropHeightMap(map, ix, iz, width, depth);
+    part.first_x = map.first_x + ix;
+    part.first_z = map.first_z + iz;
     return part;
 }
 

@@ -107,6 +107,10 @@ struct TerrainMaps {
     int map_width = 0;
     int map_depth = 0;
     float map_spacing = 2.0f;
+    // For a window of larger maps (CutTerrainMaps): the larger grid's point where the
+    // window starts. Positions stay those of the larger maps.
+    int map_first_x = 0;
+    int map_first_z = 0;
     // Height of the water surface, or kNoWater where no lake stands (or borders: the level
     // reaches one point past the shore, so that the shore can follow the finer heights).
     std::vector<float> water_level;
@@ -158,6 +162,14 @@ struct MapConditions {
 
 // Runs the whole simulation. Ends the process with FatalError on invalid settings.
 void GenerateTerrain(const TerrainGeneratorSettings& settings, TerrainMaps& maps);
+
+// A window of the maps over the rectangle [low, high] (meters), widened by `margin` meters
+// and kept inside the maps: the height map and every map, with their grids' first points
+// (HeightMap::first_x, TerrainMaps::map_first_x) set so that positions stay those of the
+// whole maps. Within the rectangle every Sample, GetHeight and MapConditions::Weight gives
+// the whole maps' numbers to the bit, as long as `margin` is at least two map points. Lakes
+// are copied whole (they are few).
+TerrainMaps CutTerrainMaps(const TerrainMaps& maps, glm::vec2 low, glm::vec2 high, float margin);
 
 // A number that changes when any bit of the result changes (FNV-1a over every map).
 std::uint64_t HashTerrainMaps(const TerrainMaps& maps);

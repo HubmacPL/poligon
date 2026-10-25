@@ -91,6 +91,20 @@ std::vector<std::pair<int, PlantPlacement>> PlacePlantGroup(const TerrainMaps& m
                                                              glm::vec2 center, float area, const std::vector<int>& variant_counts,
                                                              const std::function<bool(int rule, glm::vec2)>& keep = nullptr);
 
+// The same two for a world cut into patches: only places inside the rectangle
+// [area_low, area_high) (map meters) are considered. Every grid cell decides from its own
+// coordinates, so the patches of a world together give exactly the plants the whole map
+// gives, each once, in any order of patches. `maps` may be a window (CutTerrainMaps) that
+// covers the rectangle with a margin of at least two map points. `keep` may be called from
+// a loading thread (poligon/world/streaming.h): it must only read.
+std::vector<PlantPlacement> PlacePlantsInRectangle(const TerrainMaps& maps, const PlantRule& rule, glm::vec2 center, float area,
+                                                   glm::vec2 area_low, glm::vec2 area_high, int variant_count,
+                                                   const std::function<bool(glm::vec2)>& keep = nullptr);
+std::vector<std::pair<int, PlantPlacement>> PlacePlantGroupInRectangle(const TerrainMaps& maps, const std::vector<const PlantRule*>& rules,
+                                                                        glm::vec2 center, float area, glm::vec2 area_low,
+                                                                        glm::vec2 area_high, const std::vector<int>& variant_counts,
+                                                                        const std::function<bool(int rule, glm::vec2)>& keep = nullptr);
+
 // The clump factor of a rule at a map place: 1 inside a clump, 0 between them, soft at the
 // edges. Shared by PlacePlants and the ground cover.
 float GetPatchFactor(float patch_size, float patch_cover, std::uint32_t seed, glm::vec2 place);

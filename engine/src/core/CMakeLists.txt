@@ -4,6 +4,7 @@ add_library(poligon_core STATIC
   app/fixed_step_clock.cpp
   app/game_loop.cpp
   app/version.cpp
+  app/worker.cpp
   image/image.cpp
   image/stb_dxt_impl.cpp
   image/stb_image_impl.cpp

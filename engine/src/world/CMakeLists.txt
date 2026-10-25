@@ -3,6 +3,7 @@ add_library(poligon_world STATIC
   footprints/footprints.cpp
   level/level.cpp
   particles/particles.cpp
+  streaming/streaming.cpp
   terrain/height_map.cpp
   terrain/sky_occlusion.cpp
   terrain/terrain.cpp

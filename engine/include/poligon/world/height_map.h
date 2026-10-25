@@ -14,14 +14,21 @@ namespace poligon {
 //
 // Coordinates: x runs along a row, z from row to row, both in meters from the map's first
 // point; heights are meters. A point (ix, iz) is at index iz * width + ix.
+//
+// A map can be a window of a larger one (CutHeightMap, used for streamed patches): then
+// (first_x, first_z) is the larger map's point where the window starts, and every position
+// is still in meters from the larger map's first point. Inside the window it gives exactly
+// the numbers the larger map gives.
 struct HeightMap {
     int width = 0;         // points along x
     int depth = 0;         // points along z
     float spacing = 1.0f;  // meters between neighboring points
     std::vector<float> heights;
+    int first_x = 0;       // the window's first point in the larger map (0 for a whole map)
+    int first_z = 0;
 
     bool IsEmpty() const { return width < 2 || depth < 2 || heights.empty(); }
-    // Size of the covered land in meters.
+    // Size of the covered land in meters (of the window, for a window).
     float GetSizeX() const { return static_cast<float>(width - 1) * spacing; }
     float GetSizeZ() const { return static_cast<float>(depth - 1) * spacing; }
 
@@ -66,7 +73,11 @@ void PasteHeightMap(HeightMap& map, const HeightMap& tile, int ix, int iz);
 void RescaleHeightMap(HeightMap& map, float horizontal_scale, float vertical_scale);
 
 // The part of a map that starts at point (ix, iz) and is `width` by `depth` points large.
-// The part must lie inside the map.
+// The part must lie inside the map. Its positions start again at 0.
 HeightMap CropHeightMap(const HeightMap& map, int ix, int iz, int width, int depth);
+
+// The same part as a window (HeightMap::first_x, first_z): its positions stay those of the
+// whole map, and inside it GetHeight gives the whole map's numbers to the bit.
+HeightMap CutHeightMap(const HeightMap& map, int ix, int iz, int width, int depth);
 
 } // namespace poligon

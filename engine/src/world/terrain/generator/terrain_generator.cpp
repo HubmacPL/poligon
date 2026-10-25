@@ -38,13 +38,15 @@ float TerrainMaps::Sample(const std::vector<float>& map, float x, float z) const
     if (map.empty() || map_width < 2 || map_depth < 2) {
         return 0.0f;
     }
-    const float gx = glm::clamp(x / map_spacing, 0.0f, static_cast<float>(map_width - 1));
-    const float gz = glm::clamp(z / map_spacing, 0.0f, static_cast<float>(map_depth - 1));
-    const int ix = glm::min(static_cast<int>(gx), map_width - 2);
-    const int iz = glm::min(static_cast<int>(gz), map_depth - 2);
+    // Grid coordinates of the whole maps, so that a window gives the same numbers.
+    const float gx = glm::clamp(x / map_spacing, static_cast<float>(map_first_x), static_cast<float>(map_first_x + map_width - 1));
+    const float gz = glm::clamp(z / map_spacing, static_cast<float>(map_first_z), static_cast<float>(map_first_z + map_depth - 1));
+    const int ix = glm::min(static_cast<int>(gx), map_first_x + map_width - 2);
+    const int iz = glm::min(static_cast<int>(gz), map_first_z + map_depth - 2);
     const float fx = gx - static_cast<float>(ix);
     const float fz = gz - static_cast<float>(iz);
-    const float* row = &map[static_cast<size_t>(iz) * static_cast<size_t>(map_width) + static_cast<size_t>(ix)];
+    const float* row =
+        &map[static_cast<size_t>(iz - map_first_z) * static_cast<size_t>(map_width) + static_cast<size_t>(ix - map_first_x)];
     const float* next_row = row + map_width;
     return glm::mix(glm::mix(row[0], row[1], fx), glm::mix(next_row[0], next_row[1], fx), fz);
 }
@@ -53,13 +55,62 @@ float TerrainMaps::GetWaterDepth(float x, float z) const {
     if (water_level.empty()) {
         return 0.0f;
     }
-    const int ix = glm::clamp(static_cast<int>(std::lround(x / map_spacing)), 0, map_width - 1);
-    const int iz = glm::clamp(static_cast<int>(std::lround(z / map_spacing)), 0, map_depth - 1);
+    const int ix = glm::clamp(static_cast<int>(std::lround(x / map_spacing)), map_first_x, map_first_x + map_width - 1) - map_first_x;
+    const int iz = glm::clamp(static_cast<int>(std::lround(z / map_spacing)), map_first_z, map_first_z + map_depth - 1) - map_first_z;
     const float level = water_level[static_cast<size_t>(iz) * static_cast<size_t>(map_width) + static_cast<size_t>(ix)];
     if (level == kNoWater) {
         return 0.0f;
     }
     return glm::max(level - height.GetHeight(x, z), 0.0f);
+}
+
+TerrainMaps CutTerrainMaps(const TerrainMaps& maps, glm::vec2 low, glm::vec2 high, float margin) {
+    TerrainMaps part;
+    const HeightMap& height = maps.height;
+    // Height points, then map points, covering the widened rectangle, inside the maps.
+    const auto first_point = [margin](float place, float spacing, int first, int count) {
+        return glm::clamp(static_cast<int>(std::floor((place - margin) / spacing)), first, first + count - 2);
+    };
+    const auto last_point = [margin](float place, float spacing, int first, int count) {
+        return glm::clamp(static_cast<int>(std::ceil((place + margin) / spacing)), first + 1, first + count - 1);
+    };
+    const int hx0 = first_point(low.x, height.spacing, height.first_x, height.width);
+    const int hz0 = first_point(low.y, height.spacing, height.first_z, height.depth);
+    const int hx1 = last_point(high.x, height.spacing, height.first_x, height.width);
+    const int hz1 = last_point(high.y, height.spacing, height.first_z, height.depth);
+    part.height = CutHeightMap(height, hx0 - height.first_x, hz0 - height.first_z, hx1 - hx0 + 1, hz1 - hz0 + 1);
+    part.map_spacing = maps.map_spacing;
+    if (maps.map_width >= 2 && maps.map_depth >= 2) {
+        const int mx0 = first_point(low.x, maps.map_spacing, maps.map_first_x, maps.map_width);
+        const int mz0 = first_point(low.y, maps.map_spacing, maps.map_first_z, maps.map_depth);
+        const int mx1 = last_point(high.x, maps.map_spacing, maps.map_first_x, maps.map_width);
+        const int mz1 = last_point(high.y, maps.map_spacing, maps.map_first_z, maps.map_depth);
+        part.map_first_x = mx0;
+        part.map_first_z = mz0;
+        part.map_width = mx1 - mx0 + 1;
+        part.map_depth = mz1 - mz0 + 1;
+        const auto cut = [&](const std::vector<float>& map, std::vector<float>& into) {
+            if (map.empty()) {
+                return;
+            }
+            into.resize(static_cast<size_t>(part.map_width) * static_cast<size_t>(part.map_depth));
+            for (int row = 0; row < part.map_depth; ++row) {
+                const size_t from = static_cast<size_t>(mz0 - maps.map_first_z + row) * static_cast<size_t>(maps.map_width) +
+                                    static_cast<size_t>(mx0 - maps.map_first_x);
+                std::copy(map.begin() + static_cast<std::ptrdiff_t>(from),
+                          map.begin() + static_cast<std::ptrdiff_t>(from + static_cast<size_t>(part.map_width)),
+                          into.begin() + static_cast<std::ptrdiff_t>(static_cast<size_t>(row) * static_cast<size_t>(part.map_width)));
+            }
+        };
+        cut(maps.water_level, part.water_level);
+        cut(maps.flow, part.flow);
+        cut(maps.moisture, part.moisture);
+        cut(maps.sediment, part.sediment);
+        cut(maps.rock, part.rock);
+        cut(maps.water_distance, part.water_distance);
+    }
+    part.lakes = maps.lakes;
+    return part;
 }
 
 void GenerateTerrain(const TerrainGeneratorSettings& settings, TerrainMaps& maps) {

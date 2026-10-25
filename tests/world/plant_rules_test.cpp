@@ -114,6 +114,75 @@ int main() {
     }
     Expect(unique && from_first > 0 && from_second > 0, "a group shares its cells between its rules, one plant per cell");
 
+    // A world cut into patches (poligon/world/streaming.h): each patch places from its own
+    // window of the maps, and all patches together give the whole map's plants to the bit.
+    // 100 m patches do not divide the 4 m grid of the group evenly, so cells straddle them.
+    {
+        poligon::PlantRule slope_rule = first;
+        slope_rule.conditions.slope_degrees = {0.0f, 20.0f, 5.0f};
+        slope_rule.conditions.moisture = {0.1f, 0.9f, 0.1f};
+        slope_rule.patch_size = 40.0f;
+        poligon::PlantRule water_rule = wet;
+        water_rule.on_water = true;
+        const std::vector<const poligon::PlantRule*> group_rules = {&slope_rule, &second};
+        const auto whole_group = poligon::PlacePlantGroup(maps, group_rules, middle, 300.0f, {3, 2});
+        const auto whole_water = poligon::PlacePlants(maps, water_rule, middle, 300.0f, 2);
+        std::vector<std::pair<int, poligon::PlantPlacement>> patched_group;
+        std::vector<poligon::PlantPlacement> patched_water;
+        bool heights_same = true;
+        const float size = maps.height.GetSizeX();
+        // Patches in a scrambled order: the result must not depend on it.
+        const int order[6] = {3, 0, 5, 1, 4, 2};
+        for (const int pz : order) {
+            for (const int px : order) {
+                const glm::vec2 low(static_cast<float>(px) * 100.0f, static_cast<float>(pz) * 100.0f);
+                const glm::vec2 high(std::min(low.x + 100.0f, size), std::min(low.y + 100.0f, size));
+                if (low.x >= size || low.y >= size) {
+                    continue;
+                }
+                const poligon::TerrainMaps window = poligon::CutTerrainMaps(maps, low, high, 2.0f * maps.map_spacing);
+                for (const auto& placed : poligon::PlacePlantGroupInRectangle(window, group_rules, middle, 300.0f, low, high, {3, 2})) {
+                    patched_group.push_back(placed);
+                }
+                for (const auto& placed : poligon::PlacePlantsInRectangle(window, water_rule, middle, 300.0f, low, high, 2)) {
+                    patched_water.push_back(placed);
+                }
+                for (int i = 0; i < 50; ++i) {
+                    const glm::vec2 place = low + (high - low) * glm::vec2(static_cast<float>(i % 7) / 7.0f, static_cast<float>(i) / 50.0f);
+                    heights_same = heights_same && window.height.GetHeight(place.x, place.y) == maps.height.GetHeight(place.x, place.y) &&
+                                   window.Sample(window.moisture, place.x, place.y) == maps.Sample(maps.moisture, place.x, place.y) &&
+                                   window.GetWaterDepth(place.x, place.y) == maps.GetWaterDepth(place.x, place.y);
+                }
+            }
+        }
+        const auto by_place = [](const poligon::PlantPlacement& a, const poligon::PlantPlacement& b) {
+            return a.position.y != b.position.y ? a.position.y < b.position.y : a.position.x < b.position.x;
+        };
+        const auto same_placement = [](const poligon::PlantPlacement& a, const poligon::PlantPlacement& b) {
+            return a.position == b.position && a.height == b.height && a.scale == b.scale && a.turn == b.turn && a.variant == b.variant;
+        };
+        std::vector<std::pair<int, poligon::PlantPlacement>> sorted_whole = whole_group;
+        const auto pair_by_place = [&](const auto& a, const auto& b) { return by_place(a.second, b.second); };
+        std::sort(sorted_whole.begin(), sorted_whole.end(), pair_by_place);
+        std::sort(patched_group.begin(), patched_group.end(), pair_by_place);
+        bool group_same = sorted_whole.size() == patched_group.size();
+        for (size_t i = 0; group_same && i < sorted_whole.size(); ++i) {
+            group_same = sorted_whole[i].first == patched_group[i].first && same_placement(sorted_whole[i].second, patched_group[i].second);
+        }
+        std::vector<poligon::PlantPlacement> sorted_water = whole_water;
+        std::sort(sorted_water.begin(), sorted_water.end(), by_place);
+        std::sort(patched_water.begin(), patched_water.end(), by_place);
+        bool water_same = sorted_water.size() == patched_water.size();
+        for (size_t i = 0; water_same && i < sorted_water.size(); ++i) {
+            water_same = same_placement(sorted_water[i], patched_water[i]);
+        }
+        std::printf("  patches: %zu group plants and %zu floating plants, whole map: %zu and %zu\n", patched_group.size(),
+                    patched_water.size(), whole_group.size(), whole_water.size());
+        Expect(heights_same, "a window of the maps gives the whole maps' heights, map values and water depths to the bit");
+        Expect(group_same && !whole_group.empty(), "patches placed separately, in any order, give the whole map's group plants to the bit");
+        Expect(water_same && !whole_water.empty(), "and the whole map's floating plants");
+    }
+
     bool patches_in_range = true;
     for (int i = 0; i < 200; ++i) {
         const float factor = poligon::GetPatchFactor(30.0f, 0.5f, 7u, glm::vec2(static_cast<float>(i) * 3.1f, static_cast<float>(i) * 1.7f));

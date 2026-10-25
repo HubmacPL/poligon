@@ -6,3 +6,4 @@ poligon_add_example(vegetation ${CMAKE_BINARY_DIR}/test_output/example_vegetatio
 poligon_add_example(wind ${CMAKE_BINARY_DIR}/test_output/example_wind.png)
 poligon_add_example(ground_cover ${CMAKE_BINARY_DIR}/test_output/example_ground_cover.png)
 poligon_add_example(particles ${CMAKE_BINARY_DIR}/test_output/example_particles.png)
+poligon_add_example(streaming)
