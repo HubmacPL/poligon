@@ -7,10 +7,13 @@
 //               (targets.cpp), shaders and pipelines (pipelines.cpp), drawing inside a pass
 //               and culling instances (drawing.cpp)
 //   resources/  what lives on the graphics card: meshes, textures, terrain, impostors,
-//               uploads, the cloud noise volumes
+//               uploads, the cloud noise volumes; decals, particles and 2D each with a
+//               state header (decal_state.h, particle_state.h, overlay_state.h) and the
+//               file that records them and makes their pipelines
 //   passes/     one file per pass of a frame, in the order EndFrame runs them: shadows, cloud
-//               shadows, depth and ambient occlusion, scene, water, clouds, fog, temporal
-//               anti-aliasing, bloom and exposure, output (tone mapping and debug windows)
+//               shadows, depth and ambient occlusion, scene, decals, water, clouds, fog,
+//               temporal anti-aliasing, particles, bloom and exposure, output (tone mapping,
+//               2D overlay and debug windows)
 
 #include <algorithm>
 #include <chrono>
