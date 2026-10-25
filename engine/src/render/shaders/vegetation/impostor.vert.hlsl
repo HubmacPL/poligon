@@ -61,7 +61,7 @@ VertexOutput main(VertexInput input) {
     float3 to_camera = normalize(camera_frames.xyz - center);
     float3 right;
     float3 up;
-    ImpostorFrameAxes(to_camera, right, up);
+    FacingAxes(to_camera, right, up);
     float3 world_position = center + (right * input.position.x + up * input.position.y) * radius;
 
     // Direction of view and the card point in the model's own coordinates.
@@ -81,7 +81,7 @@ VertexOutput main(VertexInput input) {
         float3 frame_direction = HemiOctahedronDirection(cell / (frames - 1.0) * 2.0 - 1.0);
         float3 frame_right;
         float3 frame_up;
-        ImpostorFrameAxes(frame_direction, frame_right, frame_up);
+        FacingAxes(frame_direction, frame_right, frame_up);
         // Each frame shows a square of 2 x radius around the middle; v runs down the picture.
         frame_uv[i] = float2(dot(local_point, frame_right), -dot(local_point, frame_up)) / (2.0 * center_radius.w) + 0.5;
         atlas_uv[i] = (cell + frame_uv[i]) / frames;

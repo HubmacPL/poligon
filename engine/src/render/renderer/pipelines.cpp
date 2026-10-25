@@ -111,6 +111,9 @@ SDL_GPUGraphicsPipeline* Renderer::Impl::CreateFullscreenPipeline(SDL_GPUShader*
         if (blend == FullscreenBlend::AddAndDim) {
             state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
             state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        } else if (blend == FullscreenBlend::Add) {
+            state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
         } else {
             state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
             state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;

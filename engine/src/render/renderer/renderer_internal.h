@@ -29,6 +29,7 @@
 #include "poligon/render/renderer.h"
 #include "../resources/decal_state.h"
 #include "../resources/overlay_state.h"
+#include "../resources/particle_state.h"
 
 namespace poligon {
 
@@ -324,6 +325,8 @@ enum class FullscreenBlend {
     AddAndDim,
     // target = mix(target, written color, written alpha)
     Mix,
+    // target = target + written color (light added: sparks, glowing dust)
+    Add,
 };
 
 struct DrawCommand {
@@ -771,6 +774,8 @@ struct Renderer::Impl {
     OverlayState overlay;
     // Decals recorded this frame (resources/decals.cpp, passes/decal_pass.cpp).
     DecalState decals;
+    // Particles recorded this frame (resources/particles.cpp, passes/particle_pass.cpp).
+    ParticleState particles;
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
     int mesh_lod_draws[kMaxMeshLods] = {};
     bool has_finished_frame = false;
@@ -958,6 +963,9 @@ struct Renderer::Impl {
     void RenderDecalPass(FrameContext& frame);
     void CreateDecalPipeline();
     void ReleaseDecals();
+    void RenderParticlePass(FrameContext& frame);
+    void CreateParticlePipelines();
+    void ReleaseParticles();
 
     // 2D drawing (resources/overlay.cpp).
     void CreateOverlayPipeline();

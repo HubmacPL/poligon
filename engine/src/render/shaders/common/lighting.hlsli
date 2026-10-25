@@ -289,6 +289,21 @@ float SunVisibility(float3 world_position, float3 normal) {
     return lit;
 }
 
+// Fog (Environment::fog_density; distant things fade into the fog color) and the haze of
+// distance, for a point of a lit surface or a particle.
+float3 ApplyDistanceFog(float3 color, float3 world_position) {
+    if (fog.a > 0.0) {
+        float distance_to_camera = length(camera_position.xyz - world_position);
+        float fog_amount = 1.0 - exp(-distance_to_camera * fog.a);
+        float3 fog_color = fog.rgb;
+        if (sky_radiance.w > 0.0) {
+            fog_color = lerp(fog_color, HorizonSky(world_position - camera_position.xyz), sky_radiance.w);
+        }
+        color = lerp(color, fog_color, fog_amount);
+    }
+    return ApplyAerialPerspective(color, world_position);
+}
+
 // The color of a surface point under the frame's light, in linear wide-range values.
 float3 ShadeSurface(Surface surface) {
     float3 base_color = surface.base_color;
@@ -382,15 +397,5 @@ float3 ShadeSurface(Surface surface) {
         color *= kCascadeTints[CascadeAt(surface.world_position, view_depth)];
     }
 
-    // --- Fog: distant things fade into the fog color ---
-    if (fog.a > 0.0) {
-        float distance_to_camera = length(camera_position.xyz - surface.world_position);
-        float fog_amount = 1.0 - exp(-distance_to_camera * fog.a);
-        float3 fog_color = fog.rgb;
-        if (sky_radiance.w > 0.0) {
-            fog_color = lerp(fog_color, HorizonSky(surface.world_position - camera_position.xyz), sky_radiance.w);
-        }
-        color = lerp(color, fog_color, fog_amount);
-    }
-    return ApplyAerialPerspective(color, surface.world_position);
+    return ApplyDistanceFog(color, surface.world_position);
 }

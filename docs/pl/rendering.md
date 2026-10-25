@@ -158,6 +158,10 @@ Nagłówki: `poligon/assets/model.h` (dane modelu, wysyłanie na kartę, rysowan
 - Okno można zmieniać myszą i maksymalizować. `BeginFrame` porównuje rozmiar okna w pikselach z rozmiarem obrazu i gdy się różnią, wywołuje `Renderer::Resize(szerokość, wysokość)`, które tworzy od nowa każdy obraz zależny od rozmiaru; wygładzanie czasowe i chmury zaczynają historię od zera, proporcje kamery idą za nową szerokością i wysokością, a okna debugowe same biorą nowy rozmiar. Zminimalizowane okno zostawia ostatni rozmiar. `Resize` może też wywołać gra między klatkami (bez okna to jedyna droga). Test: część o zmianie rozmiaru w `tests/render/effects_render_test.cpp` (scena narysowana po `Resize` zgadza się, z dokładnością do 2 na 255, z narysowaną przez renderer utworzony od razu w tym rozmiarze); przykład: `examples/render/window_mode`.
 - W `forest_scene` F11 przełącza między oknem 1280 × 720 a pełnym ekranem 1920 × 1080. Przykład: `examples/render/window_mode`; test: część o oknie w `tests/render/effects_render_test.cpp`.
 
+## Cząsteczki
+
+Rysowane przez `Renderer::DrawParticles` (karty zwrócone do kamery, po TAA i przed bloomem, ukrywane i zmiękczane przez obraz głębi), poruszane przez `ParticleEmitter` w module świata: patrz [particles.md](particles.md).
+
 ## Dekale
 
 Tropy, krew, ślady po kulach, kałuże: obrazy odciśnięte na już narysowanych powierzchniach. Renderer rysuje do przodu (bez G-bufora), więc dekale są rzutowane z pudełka na obraz głębi, we własnym przebiegu po nieprzezroczystej scenie (z trawą, więc krew leży na trawie) i przed wodą (`passes/decal_pass.cpp`, shadery w `shaders/decals/`, zapisywanie w `resources/decals.cpp`). Nagłówek: `poligon/render/decal.h`.

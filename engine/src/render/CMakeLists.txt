@@ -9,6 +9,7 @@ add_library(poligon_render STATIC
   passes/depth_pass.cpp
   passes/fog_pass.cpp
   passes/output_pass.cpp
+  passes/particle_pass.cpp
   passes/overlay_pass.cpp
   passes/scene_pass.cpp
   passes/shadow_pass.cpp
@@ -28,6 +29,7 @@ add_library(poligon_render STATIC
   resources/impostors.cpp
   resources/meshes.cpp
   resources/overlay.cpp
+  resources/particles.cpp
   resources/terrain.cpp
   resources/textures.cpp
   resources/uploads.cpp
@@ -120,6 +122,9 @@ poligon_embed_shader(shaders/water/depth_copy.frag.hlsl fragment kDepthCopyFrag 
 # post
 poligon_embed_shader(shaders/decals/decal.vert.hlsl vertex kDecalVert decal_vert)
 poligon_embed_shader(shaders/decals/decal.frag.hlsl fragment kDecalFrag decal_frag)
+
+poligon_embed_shader(shaders/particles/particle.vert.hlsl vertex kParticleVert particle_vert)
+poligon_embed_shader(shaders/particles/particle.frag.hlsl fragment kParticleFrag particle_frag)
 
 poligon_embed_shader(shaders/overlay/overlay.vert.hlsl vertex kOverlayVert overlay_vert)
 poligon_embed_shader(shaders/overlay/overlay.frag.hlsl fragment kOverlayFrag overlay_frag)

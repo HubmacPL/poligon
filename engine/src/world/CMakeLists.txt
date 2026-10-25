@@ -1,6 +1,7 @@
 # World: terrain and its generator, vegetation and plant rules, water, the level file.
 add_library(poligon_world STATIC
   level/level.cpp
+  particles/particles.cpp
   terrain/height_map.cpp
   terrain/sky_occlusion.cpp
   terrain/terrain.cpp

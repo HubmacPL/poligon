@@ -68,6 +68,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     impl_->CreatePipelines();
     impl_->CreateOverlayPipeline();
     impl_->CreateDecalPipeline();
+    impl_->CreateParticlePipelines();
 
     TextureOptions plain_color;
     plain_color.generate_mipmaps = false;
@@ -152,6 +153,7 @@ Renderer::~Renderer() {
         }
         impl_->ReleaseOverlay();
         impl_->ReleaseDecals();
+        impl_->ReleaseParticles();
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->clamp_sampler);
@@ -330,6 +332,8 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->overlay.quads.clear();
     impl_->overlay.batches.clear();
     impl_->decals.commands.clear();
+    impl_->particles.calls.clear();
+    impl_->particles.cards.clear();
     impl_->instance_batches.clear();
     if (impl_->debug_ui_active) {
         ImGui_ImplSDLGPU3_NewFrame();
@@ -780,6 +784,7 @@ void Renderer::EndFrame() {
     impl.RenderCloudPass(frame);
     impl.RenderFogPass(frame);
     impl.RenderTemporalAaPass(frame);
+    impl.RenderParticlePass(frame);
     impl.previous_view_projection = unshifted_view_projection;
     impl.previous_camera_position = camera.position;
     impl.previous_wind = impl.WindUniform();

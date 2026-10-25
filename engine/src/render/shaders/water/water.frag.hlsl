@@ -194,7 +194,7 @@ float4 main(FragmentInput input) : SV_Target0 {
     color = ApplyAerialPerspective(color, position);
 
     // 5. The shore: fade into the ground under the water where it is only centimeters deep.
-    float shore = saturate(water_depth / max(wind.w, 0.001));
+    float shore = SoftFade(water_depth, wind.w);
     float3 ground_seen = scene_texture.SampleLevel(scene_sampler, uv, 0.0).rgb;
     return float4(lerp(ground_seen, color, shore), 1.0);
 }

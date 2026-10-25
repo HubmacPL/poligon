@@ -9,6 +9,7 @@
 #include "poligon/core/image.h"
 #include "poligon/core/math.h"
 #include "poligon/render/overlay.h"
+#include "poligon/render/particles.h"
 
 namespace poligon {
 
@@ -737,6 +738,13 @@ public:
     // material are drawn in one call. Meant for hundreds a frame; each costs about the
     // pixels its box covers on screen.
     void DrawDecal(const glm::mat4& transform, const DecalMaterial& material);
+
+    // Particles (poligon/render/particles.h): `count` cards facing the camera, with one texture
+    // (an atlas of pictures, see ParticleOptions) and one way of blending. They are copied and
+    // sorted from back to front within the call; calls are drawn in order, after the opaque
+    // scene, water and fog. Hidden where the scene is in front of them (by its depth image),
+    // softened where they near it. Meant for some thousands a frame.
+    void DrawParticles(TextureHandle texture, const Particle* particles, int count, const ParticleOptions& options = ParticleOptions{});
 
     // --- 2D over the finished picture (HUD, crosshair, markers, subtitles) ---
     // Positions and sizes in pixels of the output image, (0, 0) at its top-left corner, y down;

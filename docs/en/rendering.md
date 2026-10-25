@@ -156,6 +156,10 @@ Headers: `poligon/assets/model.h` (model data, uploading, drawing), `poligon/ass
 - The window can be resized with the mouse and maximized. `BeginFrame` compares the window's size in pixels with the picture's and, when they differ, calls `Renderer::Resize(width, height)`, which makes every size-dependent image again; temporal anti-aliasing and the clouds start their history afresh, the camera's proportions follow the new width and height, and the debug windows take the new size on their own. A minimized window keeps the last size. `Resize` can also be called by the game between frames (without a window it is the only way). Test: the resize part of `tests/render/effects_render_test.cpp` (a scene drawn after `Resize` matches, within 2 of 255, one drawn by a renderer made at that size); example: `examples/render/window_mode`.
 - In `forest_scene` F11 switches between a 1280 x 720 window and fullscreen at 1920 x 1080. Example: `examples/render/window_mode`; test: the window part of `tests/render/effects_render_test.cpp`.
 
+## Particles
+
+Drawn by `Renderer::DrawParticles` (cards facing the camera, after TAA and before bloom, hidden and softened by the depth image), moved by `ParticleEmitter` in the world module: see [particles.md](particles.md).
+
 ## Decals
 
 Prints, blood, bullet holes, puddles: pictures pressed onto the surfaces already drawn. The renderer draws forward (no G-buffer), so decals are projected from a box onto the depth image, in a pass of their own after the opaque scene (grass included, so blood lies on grass) and before water (`passes/decal_pass.cpp`, shaders in `shaders/decals/`, recording in `resources/decals.cpp`). Header: `poligon/render/decal.h`.

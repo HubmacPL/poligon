@@ -6,6 +6,7 @@
 // at the first frame, 1 at the last) maps to a direction, the middle of the grid looks
 // straight down, the edge of the grid looks from the horizon. renderer.cpp holds the same
 // two functions for baking; they must agree.
+#include "common.hlsli"  // FacingAxes
 
 // Grid point (-1..1, -1..1) to the direction from the model's middle towards the camera.
 float3 HemiOctahedronDirection(float2 grid) {
@@ -19,15 +20,6 @@ float2 HemiOctahedronGrid(float3 direction) {
     direction.y = max(direction.y, 0.0);
     direction /= abs(direction.x) + abs(direction.y) + abs(direction.z);
     return float2(direction.x + direction.z, direction.z - direction.x);
-}
-
-// The picture's right and up for a camera looking back along `direction`. Up stays as
-// close to the model's up as possible.
-void ImpostorFrameAxes(float3 direction, out float3 right, out float3 up) {
-    float3 side = cross(float3(0.0, 1.0, 0.0), direction);
-    float side_length = length(side);
-    right = side_length > 0.0001 ? side / side_length : float3(1.0, 0.0, 0.0);
-    up = cross(direction, right);
 }
 
 #ifdef IMPOSTOR_FRAGMENT

@@ -1,4 +1,6 @@
 // Shared by several shaders. Included with #include "common.hlsli".
+#ifndef POLIGON_COMMON_HLSLI
+#define POLIGON_COMMON_HLSLI
 
 // Color of the sky in a given direction: zenith straight up, horizon at eye level, ground below.
 // The same function draws the sky and lights objects from it, so the two always agree.
@@ -48,6 +50,22 @@ float3 ViewPosition(float2 uv, float depth, float4 projection_info) {
     float distance = ViewDistance(depth, projection_info);
     float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     return float3(ndc * projection_info.zw * distance, -distance);
+}
+
+// The right and up of a card facing back along `direction` (towards the camera, for an
+// impostor or a particle), with up as close to the world's up as possible.
+void FacingAxes(float3 direction, out float3 right, out float3 up) {
+    float3 side = cross(float3(0.0, 1.0, 0.0), direction);
+    float side_length = length(side);
+    right = side_length > 0.0001 ? side / side_length : float3(1.0, 0.0, 0.0);
+    up = cross(direction, right);
+}
+
+// How much of a translucent surface shows where the opaque scene lies `behind` meters
+// behind it: 0 where they meet, rising to 1 over `distance` meters (the water's shore,
+// particles' soft edges).
+float SoftFade(float behind, float distance) {
+    return saturate(behind / max(distance, 0.0001));
 }
 
 // World position of the point seen at `uv` ((0, 0) top-left) with the given depth image value,
@@ -138,3 +156,5 @@ float3 ApplyNormalMapSample(float3 map, float3 normal, float3 world_position, fl
     float inverse_length = rsqrt(scale);
     return normalize(tangent * (map.x * inverse_length) + bitangent * (map.y * inverse_length) + normal * map.z);
 }
+
+#endif  // POLIGON_COMMON_HLSLI
