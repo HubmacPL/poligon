@@ -2,9 +2,12 @@
 // blocked by nearby geometry. Crevices, the inside of tree crowns and the line where a trunk
 // meets the ground get a value below 1 and later receive less ambient light.
 //
-// Method: "Scalable Ambient Obscurance" (McGuire, Mara, Luebke 2012). Points on a spiral
-// around the pixel are looked up in the depth image; each one that lies in front of the
-// surface, within `radius` meters, darkens the pixel.
+// Method: the sampling of "Scalable Ambient Obscurance" (McGuire, Mara, Luebke 2012). Points
+// on a spiral around the pixel are looked up in the depth image; each one that lies in front
+// of the surface, within `radius` meters, darkens the pixel by the cosine of its direction
+// from the surface normal, fading out towards `radius`. Unlike SAO's height / distance^2 the
+// cosine is at most 1 per sample, so a surface a centimeter away (the ground at a trunk, a
+// leaf over a leaf) shades the pixel instead of driving it to black.
 #include "common.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
@@ -71,9 +74,11 @@ float main(FragmentInput input) : SV_Target0 {
         float3 to_sample = PositionAt(pixel + int2(offset)) - position;
         float distance_squared = dot(to_sample, to_sample);
         float height = dot(to_sample, normal);
-        float falloff = max(radius_squared - distance_squared, 0.0);
-        sum += falloff * falloff * falloff * max((height - bias) / (distance_squared + 0.0001), 0.0);
+        float falloff = saturate(1.0 - distance_squared / radius_squared);
+        sum += falloff * saturate((height - bias) * rsqrt(distance_squared + 1e-6));
     }
-    float obscurance = sum * 5.0 / (radius_squared * radius_squared * radius_squared * sample_count);
+    // Scaled so that the floor right at a wall far taller and wider than the radius, which
+    // sees exactly half of the sky, comes out at about 0.5 (measured 0.47, effects_render_test).
+    float obscurance = sum * 3.0 / sample_count;
     return saturate(1.0 - obscurance * ao.y);
 }

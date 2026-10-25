@@ -1,9 +1,11 @@
 // Renders small scenes without a window and checks single pixels: ambient occlusion,
 // volumetric fog with light shafts, bloom and automatic exposure.
 // Usage: effects_render_test d3d12|vulkan
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #include "poligon/render/renderer.h"
 #include "poligon/world/sky_occlusion.h"
@@ -64,14 +66,58 @@ poligon::Camera MakeTopDownCamera(float height) {
     return camera;
 }
 
-// The pixel a world position is drawn at, computed the way the renderer does.
-glm::ivec2 ToPixel(const poligon::Camera& camera, glm::vec3 position) {
+// The pixel a world position is drawn at, computed the way the renderer does (square picture).
+glm::ivec2 ToPixel(const poligon::Camera& camera, glm::vec3 position, int size = kSize) {
     const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
     const glm::mat4 projection =
         glm::perspective(glm::radians(camera.vertical_fov_degrees), 1.0f, camera.near_plane, camera.far_plane);
     const glm::vec4 clip = projection * view * glm::vec4(position, 1.0f);
-    return {static_cast<int>((clip.x / clip.w * 0.5f + 0.5f) * kSize),
-            static_cast<int>((0.5f - clip.y / clip.w * 0.5f) * kSize)};
+    return {static_cast<int>((clip.x / clip.w * 0.5f + 0.5f) * size),
+            static_cast<int>((0.5f - clip.y / clip.w * 0.5f) * size)};
+}
+
+// An upright cylinder (side and top) standing on y = 0, with flat normals per side.
+poligon::MeshHandle CreateCylinderMesh(poligon::Renderer& renderer, float radius, float height) {
+    constexpr int kSides = 48;
+    std::vector<poligon::MeshVertex> vertices;
+    std::vector<std::uint32_t> indices;
+    for (int i = 0; i <= kSides; ++i) {
+        const float angle = glm::two_pi<float>() * static_cast<float>(i) / kSides;
+        const glm::vec3 out(std::sin(angle), 0.0f, std::cos(angle));
+        const float u = static_cast<float>(i) / kSides;
+        vertices.push_back({out * radius, out, {u, 1.0f}});
+        vertices.push_back({out * radius + glm::vec3(0.0f, height, 0.0f), out, {u, 0.0f}});
+    }
+    for (std::uint32_t i = 0; i < kSides; ++i) {
+        const std::uint32_t a = i * 2;
+        indices.insert(indices.end(), {a, a + 2, a + 3, a, a + 3, a + 1});
+    }
+    const auto center = static_cast<std::uint32_t>(vertices.size());
+    vertices.push_back({{0.0f, height, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.5f, 0.5f}});
+    for (int i = 0; i <= kSides; ++i) {
+        const float angle = glm::two_pi<float>() * static_cast<float>(i) / kSides;
+        vertices.push_back({{std::sin(angle) * radius, height, std::cos(angle) * radius}, {0.0f, 1.0f, 0.0f}, {0.5f, 0.5f}});
+    }
+    for (std::uint32_t i = 0; i < kSides; ++i) {
+        indices.insert(indices.end(), {center, center + 1 + i, center + 2 + i});
+    }
+    return renderer.CreateMesh(vertices.data(), static_cast<int>(vertices.size()), indices.data(),
+                               static_cast<int>(indices.size()));
+}
+
+// A stored (sRGB) channel value back to linear 0..1.
+float ToLinear(int stored) {
+    const float value = static_cast<float>(stored) / 255.0f;
+    return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
+
+// The mean linear red of five pixels in a row around `pixel`.
+float MeanLinearRed(const poligon::Image& image, glm::ivec2 pixel) {
+    float sum = 0.0f;
+    for (int dx = -2; dx <= 2; ++dx) {
+        sum += ToLinear(RedAt(image, pixel.x + dx, pixel.y));
+    }
+    return sum / 5.0f;
 }
 
 } // namespace
@@ -288,6 +334,68 @@ int main(int argc, char** argv) {
             renderer.CaptureFrame(frame);
             Expect(RedIs(frame, kSize / 2, row, 0, 2), "fog that has thinned out with height is invisible");
         }
+    }
+
+    // --- Ambient occlusion at the foot of a thin trunk ---
+    // A cylinder 0.3 m across standing on a floor, seen from 2 m up at a slant, sun off.
+    // The floor right at its foot must be shaded, not black: SAO's per-sample term grows
+    // like 1 / distance, so without limits a surface a centimeter away drove it to zero.
+    {
+        constexpr int kAoSize = 512;
+        poligon::RendererConfig config = MakeConfig(backend);
+        config.width = kAoSize;
+        config.height = kAoSize;
+        poligon::Renderer renderer(config);
+        const poligon::MeshHandle plane = renderer.CreatePlaneMesh();
+        const poligon::MeshHandle cylinder = CreateCylinderMesh(renderer, 0.15f, 1.0f);
+        poligon::Camera camera;
+        camera.position = {0.0f, 2.0f, 2.2f};
+        camera.target = {0.0f, 0.0f, 0.6f};
+        camera.vertical_fov_degrees = 30.0f;
+        poligon::Environment environment;
+        environment.ambient_occlusion = true;
+        const glm::ivec2 one_cm = ToPixel(camera, {0.0f, 0.0f, 0.16f}, kAoSize);
+        const glm::ivec2 two_cm = ToPixel(camera, {0.0f, 0.0f, 0.17f}, kAoSize);
+        const glm::ivec2 open = ToPixel(camera, {0.0f, 0.0f, 1.15f}, kAoSize);
+        const auto draw = [&](poligon::DebugView view) {
+            poligon::PostSettings post = renderer.GetPostSettings();
+            post.debug_view = view;
+            renderer.SetPostSettings(post);
+            renderer.BeginFrame(camera, MakeFlatLight(0.5f), environment);
+            renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+            renderer.DrawMesh(cylinder, identity, white);
+            renderer.EndFrame();
+            renderer.CaptureFrame(frame);
+        };
+        draw(poligon::DebugView::AmbientOcclusion);
+        const float ao_one_cm = MeanLinearRed(frame, one_cm);
+        const float ao_two_cm = MeanLinearRed(frame, two_cm);
+        const float ao_open = MeanLinearRed(frame, open);
+        draw(poligon::DebugView::None);
+        const float lit_two_cm = MeanLinearRed(frame, two_cm);
+        const float lit_open = MeanLinearRed(frame, open);
+        std::printf("  ambient occlusion at a trunk's foot: 1 cm %.3f, 2 cm %.3f, open floor %.3f; lit floor at 2 cm %.3f of open\n",
+                    ao_one_cm, ao_two_cm, ao_open, lit_two_cm / glm::max(lit_open, 0.0001f));
+        Expect(ao_two_cm >= 0.3f && ao_two_cm <= 0.7f, "the floor 2 cm from a trunk is shaded, not black");
+        Expect(ao_one_cm >= 0.25f, "the floor 1 cm from a trunk is not black either");
+        Expect(ao_open > 0.95f, "open floor 1 m from the trunk is not shaded");
+        Expect(lit_two_cm > 0.2f * lit_open, "lit by ambient light only, the floor at the trunk's foot is not black");
+
+        // Next to a wall far taller and wider than the radius the floor sees exactly half the
+        // sky (cosine-weighted); the estimate is scaled to give about that.
+        const glm::mat4 wall = glm::translate(identity, {0.0f, 2.0f, 0.0f}) * glm::scale(identity, {8.0f, 4.0f, 0.3f});
+        const poligon::MeshHandle cube = renderer.CreateCubeMesh();
+        poligon::PostSettings post = renderer.GetPostSettings();
+        post.debug_view = poligon::DebugView::AmbientOcclusion;
+        renderer.SetPostSettings(post);
+        renderer.BeginFrame(camera, MakeFlatLight(0.5f), environment);
+        renderer.DrawMesh(plane, glm::scale(identity, {40.0f, 1.0f, 40.0f}), white);
+        renderer.DrawMesh(cube, wall, white);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const float ao_wall = MeanLinearRed(frame, one_cm);
+        std::printf("  ambient occlusion 1 cm from a tall wall %.3f\n", ao_wall);
+        Expect(ao_wall >= 0.35f && ao_wall <= 0.65f, "the floor at a tall wall sees about half the sky");
     }
 
     // --- Far cascades at a smaller share of their image ---
