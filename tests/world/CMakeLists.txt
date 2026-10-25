@@ -1,5 +1,6 @@
 poligon_add_test(plant_rules_test)
 poligon_add_test(particles_test)
+poligon_add_test(footprints_test)
 
 add_executable(terrain_generator_test terrain_generator_test.cpp)
 target_link_libraries(terrain_generator_test PRIVATE poligon_engine poligon_build_options)

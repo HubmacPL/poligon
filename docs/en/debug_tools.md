@@ -38,6 +38,7 @@ fog.volumetric 1
 - Numbers are written with 9 significant digits, so a loaded file gives bit-identical values. Settings missing from a file keep their value; an unknown name, a wrong number of values or a word in place of a number is an error that names the line, and nothing is changed.
 - The standard option `--render-settings FILE` (in `CommandLineOptions::render_settings_path`) is how a look found with the sliders reaches a headless run: Save in the window, then `forest_scene --headless --render-settings FILE --dump-frame out.png`. `toy` and `forest_scene` support it.
 - The `quality` part of the file holds the graphics preset and its values (`RenderSettings::quality`, see [rendering.md](rendering.md)). `quality.preset NAME` is applied before any other line, so a saved file (the preset name plus every value) loads back exactly, and a short file written by hand such as `quality.preset low` plus one changed value means "low, except this".
+- The `weather` part (`RenderSettings::weather`: `weather.rain`, `weather.dust`, 0 to 1) is not used by the renderer: like the quality's scales it is for the game's systems (rain and dust emitters, see [particles.md](particles.md)), kept here so that it is set in the same file and window.
 - One list of settings (`VisitRenderSettings`) drives the file and the window. A new setting is added there, once.
 
 ## Debug views

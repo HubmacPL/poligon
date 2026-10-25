@@ -1,5 +1,6 @@
 #include "poligon/world/particles.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
@@ -175,6 +176,56 @@ std::string ParticleEmitter::DumpStateToJson() const {
     }
     text += "]}";
     return text;
+}
+
+ParticleEmitterSettings MakeRainSettings(float intensity, glm::vec2 wind) {
+    const float amount = std::clamp(intensity, 0.0f, 1.0f);
+    ParticleEmitterSettings rain;
+    rain.lifetime = 2.0f;
+    rain.lifetime_variation = 0.1f;
+    rain.max_particles = static_cast<int>(4500.0f * amount) + 1;
+    rain.rate = 2000.0f * amount;
+    rain.box_size = {30.0f, 1.0f, 30.0f};
+    rain.velocity = {wind.x, -7.0f, wind.y};
+    rain.velocity_variation = {0.3f, 1.0f, 0.3f};
+    rain.start_size = 0.008f;
+    rain.end_size = 0.008f;
+    rain.start_color = {0.75f, 0.78f, 0.82f, 0.45f};
+    rain.end_color = rain.start_color;
+    return rain;
+}
+
+ParticleEmitterSettings MakeDustSettings(float intensity) {
+    const float amount = std::clamp(intensity, 0.0f, 1.0f);
+    ParticleEmitterSettings dust;
+    dust.lifetime = 6.0f;
+    dust.lifetime_variation = 0.4f;
+    dust.max_particles = static_cast<int>(3000.0f * amount) + 1;
+    dust.rate = 420.0f * amount;
+    dust.box_size = {24.0f, 8.0f, 24.0f};
+    dust.velocity = {0.05f, 0.0f, 0.0f};
+    dust.velocity_variation = {0.08f, 0.04f, 0.08f};
+    dust.start_size = 0.025f;
+    dust.end_size = 0.025f;
+    // Fades in over its life (alpha 0 to 0.8) and disappears at its end; with many small
+    // motes the moment one goes is not seen.
+    dust.start_color = {1.0f, 0.95f, 0.85f, 0.0f};
+    dust.end_color = {1.0f, 0.95f, 0.85f, 0.8f};
+    dust.rotation_speed_variation = 1.0f;
+    return dust;
+}
+
+Image MakeParticleDotImage(int size) {
+    Image image = MakeSolidImage(size, size, 255, 255, 255);
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(size) * 2.0f - 1.0f;
+            const float v = (static_cast<float>(y) + 0.5f) / static_cast<float>(size) * 2.0f - 1.0f;
+            const float alpha = std::max(0.0f, 1.0f - std::sqrt(u * u + v * v));
+            image.pixels[static_cast<size_t>(y * size + x) * 4 + 3] = static_cast<std::uint8_t>(alpha * alpha * 255.0f);
+        }
+    }
+    return image;
 }
 
 std::uint64_t ParticleEmitter::HashState() const {

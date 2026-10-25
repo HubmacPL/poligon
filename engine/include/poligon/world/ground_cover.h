@@ -82,6 +82,12 @@ public:
     // world position (x, z) plus `world_to_map`. nullptr turns the conditions off. Cells
     // are built again. The maps must outlive the ground cover.
     void SetMaps(const TerrainMaps* maps, const glm::vec2& world_to_map);
+    // Plants per square meter that `layer` grows at a world place on average: its density
+    // where its clumps, slope, height and map conditions allow it, as placement decides,
+    // without the density scale (so that what a game decides from it does not change with
+    // the graphics quality). For the game: whether the ground there is bare (footprints),
+    // what an animal finds to eat. Works anywhere, also outside the radius.
+    float GetDensity(int layer, float x, float z) const;
     // Appends the transforms of all living plants of a layer (for tests and tools).
     void CollectInstances(int layer, std::vector<glm::mat4>& out) const;
     const GroundCoverStats& GetStats() const;

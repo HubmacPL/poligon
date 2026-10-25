@@ -83,6 +83,16 @@ struct GroundCover::Impl {
     bool has_camera = false;
     std::pair<int, int> camera_cell{0, 0};
 
+    // The share of plants a layer's clumps keep at a place: 1 inside a clump, 0 between.
+    static float PatchShare(const GroundCoverLayer& layer, float x, float z) {
+        if (layer.patch_threshold <= 0.0f) {
+            return 1.0f;
+        }
+        const float noise = ValueNoise(x / layer.patch_size + static_cast<float>(layer.seed) * 3.7f,
+                                       z / layer.patch_size - static_cast<float>(layer.seed) * 1.3f);
+        return glm::clamp((noise - layer.patch_threshold) / glm::max(layer.patch_softness, 0.001f) + 1.0f, 0.0f, 1.0f);
+    }
+
     Cell Build(int column, int row) const {
         Cell cell;
         cell.layers.resize(layers.size());
@@ -107,14 +117,8 @@ struct GroundCover::Impl {
                 const float map_roll = maps != nullptr ? random.Next() : 0.0f;
                 // Every random number is drawn before any rule, so that a plant rejected by a
                 // rule does not shift the plants after it.
-                if (layer.patch_threshold > 0.0f) {
-                    const float noise = ValueNoise(x / layer.patch_size + static_cast<float>(layer.seed) * 3.7f,
-                                                   z / layer.patch_size - static_cast<float>(layer.seed) * 1.3f);
-                    const float share = glm::clamp((noise - layer.patch_threshold) / glm::max(layer.patch_softness, 0.001f) + 1.0f,
-                                                   0.0f, 1.0f);
-                    if (patch_roll >= share) {
-                        continue;
-                    }
+                if (patch_roll >= PatchShare(layer, x, z)) {
+                    continue;
                 }
                 if (terrain->GetSlopeDegrees(x, z) > layer.max_slope_degrees) {
                     continue;
@@ -254,6 +258,25 @@ void GroundCover::SetMaps(const TerrainMaps* maps, const glm::vec2& world_to_map
 
 float GroundCover::GetRadius() const {
     return impl_->radius;
+}
+
+float GroundCover::GetDensity(int layer_index, float x, float z) const {
+    if (layer_index < 0 || static_cast<size_t>(layer_index) >= impl_->layers.size()) {
+        return 0.0f;
+    }
+    const GroundCoverLayer& layer = impl_->layers[static_cast<size_t>(layer_index)];
+    if (impl_->terrain->GetSlopeDegrees(x, z) > layer.max_slope_degrees) {
+        return 0.0f;
+    }
+    const float height = impl_->terrain->GetHeight(x, z);
+    if (height < layer.min_height || height > layer.max_height) {
+        return 0.0f;
+    }
+    float share = Impl::PatchShare(layer, x, z);
+    if (impl_->maps != nullptr) {
+        share *= layer.conditions.Weight(*impl_->maps, glm::vec2(x, z) + impl_->world_to_map);
+    }
+    return layer.density * share;
 }
 
 void GroundCover::CollectInstances(int layer, std::vector<glm::mat4>& out) const {

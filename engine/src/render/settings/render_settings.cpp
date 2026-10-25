@@ -61,6 +61,10 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("wind.direction_x", environment.wind_direction.x, -1.0f, 1.0f);
     visitor.Float("wind.direction_z", environment.wind_direction.y, -1.0f, 1.0f);
 
+    visitor.Section("weather");
+    visitor.Float("weather.rain", settings.weather.rain, 0.0f, 1.0f);
+    visitor.Float("weather.dust", settings.weather.dust, 0.0f, 1.0f);
+
     visitor.Section("ambient occlusion");
     visitor.Bool("ambient_occlusion.on", environment.ambient_occlusion);
     visitor.Float("ambient_occlusion.radius", environment.ambient_occlusion_radius, 0.02f, 2.0f);

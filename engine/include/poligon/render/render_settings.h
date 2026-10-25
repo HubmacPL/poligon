@@ -13,6 +13,17 @@ namespace poligon {
 // The settings window (poligon/debug/debug_ui.h) edits these with sliders; the file functions
 // below write and read them, so a look found by hand can be reproduced exactly in a
 // headless run (the standard option --render-settings FILE).
+// Weather a game shows with particles (poligon/world/particles.h: MakeRainSettings,
+// MakeDustSettings). The renderer itself does not use these: like the quality's scales, they
+// are for the game's systems, and live here so that they are set in the same file and window.
+struct WeatherSettings {
+    // 0 = none, 1 = steady rain.
+    float rain = 0.0f;
+    // Dust or pollen floating in the air around the camera, seen where the sun shines on it:
+    // 0 = none, 1 = plainly visible.
+    float dust = 0.0f;
+};
+
 struct RenderSettings {
     DirectionalLight sun;
     Environment environment;
@@ -21,6 +32,7 @@ struct RenderSettings {
     // "quality.preset NAME" sets all quality values to the preset first; quality lines after
     // it change single values.
     GraphicsQuality quality;
+    WeatherSettings weather;
 };
 
 // One call per setting, in a fixed order. The same list drives the file format and the

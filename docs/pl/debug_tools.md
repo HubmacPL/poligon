@@ -38,6 +38,7 @@ fog.volumetric 1
 - Liczby mają 9 cyfr znaczących, więc wczytany plik daje wartości identyczne co do bitu. Ustawienia, których w pliku nie ma, zachowują wartość; nieznana nazwa, zła liczba wartości albo słowo zamiast liczby to błąd, który nazywa wiersz, i wtedy nic się nie zmienia.
 - Standardowa opcja `--render-settings PLIK` (w `CommandLineOptions::render_settings_path`) to droga, którą wygląd znaleziony suwakami trafia do uruchomienia bez okna: Save w oknie, potem `forest_scene --headless --render-settings PLIK --dump-frame out.png`. Obsługują ją `toy` i `forest_scene`.
 - Część `quality` pliku trzyma zestaw ustawień grafiki i jego wartości (`RenderSettings::quality`, patrz [rendering.md](rendering.md)). `quality.preset NAZWA` jest stosowane przed każdym innym wierszem, więc zapisany plik (nazwa zestawu plus wszystkie wartości) wczytuje się dokładnie, a krótki plik pisany ręcznie, np. `quality.preset low` i jedna zmieniona wartość, znaczy „low, poza tym”.
+- Część `weather` (`RenderSettings::weather`: `weather.rain`, `weather.dust`, od 0 do 1) nie jest używana przez renderer: jak skale jakości jest dla systemów gry (emitery deszczu i kurzu, patrz [particles.md](particles.md)), trzymana tu, żeby ustawiać ją w tym samym pliku i oknie.
 - Jedna lista ustawień (`VisitRenderSettings`) steruje plikiem i oknem. Nowe ustawienie dopisuje się tam, raz.
 
 ## Podglądy diagnostyczne

@@ -12,6 +12,10 @@ No library was taken: SPARK (the best-known C++ particle engine) is LGPL, which 
 - State: `DumpStateToJson()` writes the generator, the carried fraction, the position and every particle with its age, with 9 significant digits like the ECS state dump; `HashState()` is its FNV-1a hash. The ECS dump does not take vectors, so a game that keeps an emitter in a component dumps or hashes it through these.
 - Test: `tests/world/particles_test.cpp` (two runs of 180 ticks with a burst and a move give the same dump, another seed another; one particle falls, grows and dies as its settings say). Example: `examples/world/particles` (rain and dust).
 
+## Weather
+
+`MakeRainSettings(intensity, wind)` and `MakeDustSettings(intensity)` give ready emitter settings for weather around the camera (rain: drops at about 7 m/s in a box 30 m wide up to 8 m above the camera, slanted by the wind, about 4000 alive at 1, drawn as streaks with `stretch` 0.03; dust: motes drifting in a box 24 x 8 x 24 m, about 2500 at 1, drawn lit so that they show in sunlit places and vanish in shade); `MakeParticleDotImage(size)` is a soft round dot for their picture. Both follow the camera through `SetPosition` every tick. The amounts come from the render settings file (`weather.rain`, `weather.dust`, see [debug_tools.md](debug_tools.md)). `forest_scene` uses them: dust at 1 by default, rain off.
+
 ## Drawing: Renderer::DrawParticles
 
 - `void DrawParticles(TextureHandle texture, const Particle* particles, int count, const ParticleOptions& options)`. `Particle`: `position`, `size` (meters), `velocity` (only for stretching), `rotation` (radians, in the card's plane), `color` (linear, alpha for transparency), `frame` (picture of the atlas). `ParticleOptions`: `blend` (`Alpha` or `Additive`), `lighting` (`Simple`: the sun with its shadows and the clouds', plus sky light, without normals; `None`: own colors), `atlas_columns`, `atlas_rows`, `stretch` (cards stretched along their velocity on screen to `size + speed * stretch`: rain), `soft_distance` (meters over which a card fades where it nears the scene behind it).

@@ -50,10 +50,13 @@
 #include "poligon/debug/free_camera.h"
 #include "poligon/core/game_loop.h"
 #include "poligon/render/graphics_quality.h"
+#include "poligon/world/footprints.h"
 #include "poligon/world/ground_cover.h"
+#include "poligon/render/decal.h"
 #include "poligon/render/impostor.h"
 #include "poligon/core/input.h"
 #include "poligon/world/level.h"
+#include "poligon/world/particles.h"
 #include "poligon/assets/model.h"
 #include "poligon/physics/physics.h"
 #include "poligon/world/plant_rules.h"
@@ -131,6 +134,10 @@ private:
 
 // One kind of plant, rock or dead wood: its variants (poligon/world/plants.h), and whether it is
 // small (small things may stand in the view to the lake and need no long distances).
+// Pictures for the decals (defined below).
+poligon::Image MakeBootPrintImage();
+poligon::Image MakeBloodImage();
+
 struct Kind {
     poligon::PlantKind plants;
     bool is_small = false;
@@ -266,6 +273,7 @@ public:
         walker.position = {view[0], Ground(view[0], view[1]), view[1]};
         walker_ = physics_.AddCharacter(walker);
         std::printf("forest_scene: %d physics bodies\n", physics_.GetBodyCount());
+        SetUpTracesAndWeather();
     }
 
     int GetLoadedKindCount() const { return loaded_kind_count_; }
@@ -366,6 +374,10 @@ public:
             }
         }
         trample_.Recover(0.011f * delta);
+        if (!flying_) {
+            footprints_.Update(physics_.GetCharacterPosition(walker_), [this](float x, float z) { return TakesPrints(x, z); });
+        }
+        UpdateWeather(delta);
     }
 
     // Average processor time of EndFrame over the run, for the summary at the end.
@@ -443,6 +455,10 @@ public:
         vegetation_.Draw(renderer_, camera);
         ground_cover_->Update(camera.position);
         ground_cover_->Draw(renderer_, camera);
+        footprints_.Draw(renderer_, print_material_);
+        renderer_.DrawDecal(blood_transform_, blood_material_);
+        DrawWeather();
+        DrawHud(camera);
         if (show_windows_ && renderer_.IsDebugUiActive()) {
             const poligon::VegetationStats& stats = vegetation_.GetStats();
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 140.0f), ImGuiCond_FirstUseEver,
@@ -1089,7 +1105,10 @@ private:
                 layer.sink_meters = rule.sink * variants[i].height * (rule.scale_min + rule.scale_max) * 0.5f;
                 layer.seed = rule.seed * 100 + static_cast<int>(i);
                 layer.conditions = rule.conditions;
-                ground_cover_->AddLayer(layer);
+                const int layer_index = ground_cover_->AddLayer(layer);
+                if (rule.kind.find("grass") != std::string::npos) {
+                    grass_layers_.push_back(layer_index);
+                }
             }
         }
     }
@@ -1117,6 +1136,89 @@ private:
     // The lakes' water surfaces and how they look (the defaults: clear lake water).
     std::vector<poligon::WaterSurface> lakes_;
     poligon::WaterMaterial water_material_;
+    // The player's prints on bare ground, and the trail they walked in on: 40 m to the start.
+    void SetUpTracesAndWeather() {
+        print_material_.texture = renderer_.CreateTexture(MakeBootPrintImage());
+        print_material_.roughness = 0.95f;
+        blood_material_.texture = renderer_.CreateTexture(MakeBloodImage());
+        blood_material_.roughness = 0.35f;
+        // To the level's start along its heading, whatever view the command line asked for,
+        // so that every view sees the same trail.
+        const glm::vec2 start(0.0f);
+        const float yaw = glm::radians(start_yaw_);
+        const glm::vec2 forward(-std::sin(yaw), -std::cos(yaw));
+        for (int step = 0; step <= 800; ++step) {
+            const glm::vec2 at = start - forward * (40.0f - 0.05f * static_cast<float>(step));
+            footprints_.Update({at.x, Ground(at.x, at.y), at.y}, [this](float x, float z) { return TakesPrints(x, z); });
+        }
+        // Blood a little in front of the fox that stands still.
+        blood_transform_ = glm::translate(glm::mat4(1.0f), {-1.1f, Ground(-1.1f, -2.0f), -2.0f}) *
+                           glm::rotate(glm::mat4(1.0f), 0.7f, {0.0f, 1.0f, 0.0f}) * glm::scale(glm::mat4(1.0f), {0.7f, 0.6f, 0.5f});
+        dot_texture_ = renderer_.CreateTexture(poligon::MakeParticleDotImage(32));
+        // The weather starts as if it had been going on for a while.
+        for (int step = 0; step < 240; ++step) {
+            UpdateWeather(1.0f / 40.0f);
+        }
+    }
+
+    // Bare ground keeps prints: where the ground cover grows fewer than 4 grass plants per
+    // square meter (half of what the short grass alone grows on open ground), not in water.
+    bool TakesPrints(float x, float z) const {
+        if (maps_.GetWaterDepth(x + map_offset_.x, z + map_offset_.y) > 0.0f) {
+            return false;
+        }
+        float grass = 0.0f;
+        for (const int layer : grass_layers_) {
+            grass += ground_cover_->GetDensity(layer, x, z);
+        }
+        return grass < 4.0f;
+    }
+
+    // Rain and dust follow the camera; how much of each comes from the settings file
+    // (weather.rain, weather.dust). Rain is slanted by the wind.
+    void UpdateWeather(float delta) {
+        const glm::vec2 wind = settings_.environment.wind_direction * (1.5f * settings_.environment.wind_strength);
+        rain_.SetSettings(poligon::MakeRainSettings(settings_.weather.rain, wind));
+        rain_.SetEmitting(settings_.weather.rain > 0.0f);
+        rain_.SetPosition(camera_.position + glm::vec3(0.0f, 8.0f, 0.0f));
+        rain_.Update(delta);
+        dust_.SetSettings(poligon::MakeDustSettings(settings_.weather.dust));
+        dust_.SetEmitting(settings_.weather.dust > 0.0f);
+        dust_.SetPosition(camera_.position);
+        dust_.Update(delta);
+    }
+
+    void DrawWeather() {
+        if (rain_.GetParticleCount() > 0) {
+            poligon::ParticleOptions streaks;
+            streaks.stretch = 0.03f;
+            streaks.soft_distance = 0.1f;
+            renderer_.DrawParticles(poligon::TextureHandle{}, rain_.GetParticles().data(), rain_.GetParticleCount(), streaks);
+        }
+        if (dust_.GetParticleCount() > 0) {
+            renderer_.DrawParticles(dot_texture_, dust_.GetParticles().data(), dust_.GetParticleCount());
+        }
+    }
+
+    // A crosshair and a line of text in the built-in font: where the player is and which way
+    // they look (no clock in it, so that headless frames repeat).
+    void DrawHud(const poligon::Camera& camera) {
+        const float cx = static_cast<float>(renderer_.GetWidth()) * 0.5f;
+        const float cy = static_cast<float>(renderer_.GetHeight()) * 0.5f;
+        const poligon::Color white{1.0f, 1.0f, 1.0f, 0.85f};
+        renderer_.DrawRect({cx - 14.0f, cy - 1.0f, 9.0f, 2.0f}, white);
+        renderer_.DrawRect({cx + 5.0f, cy - 1.0f, 9.0f, 2.0f}, white);
+        renderer_.DrawRect({cx - 1.0f, cy - 14.0f, 2.0f, 9.0f}, white);
+        renderer_.DrawRect({cx - 1.0f, cy + 5.0f, 2.0f, 9.0f}, white);
+        const float heading = std::fmod(std::fmod(camera_.yaw_degrees, 360.0f) + 360.0f, 360.0f);
+        char text[96];
+        // + 0.0f: no "-0" for small negative positions.
+        std::snprintf(text, sizeof(text), "x %.0f  z %.0f  heading %03.0f  prints %zu", std::round(camera.position.x) + 0.0f,
+                      std::round(camera.position.z) + 0.0f, heading, footprints_.GetPrints().size());
+        renderer_.DrawText(renderer_.GetBuiltinFont(), text, {16.0f, static_cast<float>(renderer_.GetHeight()) - 40.0f}, 24.0f,
+                           {1.0f, 1.0f, 1.0f, 0.9f});
+    }
+
     std::vector<poligon::RenderModel> render_models_;
     Kind pine_, spruce_, birch_, oak_, young_spruce_, young_pine_, shrub_, low_shrub_, fern_, nettle_, grass_, boulder_,
         rocks_, stump_, fallen_trunk_, reed_, cattail_, water_lily_, short_grass_, meadow_grass_, flowers_, grass_medium_, grass_tall_, pine_b_,
@@ -1159,6 +1261,16 @@ private:
     // Bodies below this id are the ground and the fences, which the collision view leaves out.
     std::uint32_t first_shown_body_id_ = 1;
     bool show_collision_ = false;
+
+    // Traces and weather (SetUpTracesAndWeather).
+    poligon::FootprintTrail footprints_;
+    std::vector<int> grass_layers_;  // ground cover layers of grass, for TakesPrints
+    poligon::DecalMaterial print_material_;
+    poligon::DecalMaterial blood_material_;
+    glm::mat4 blood_transform_{1.0f};
+    poligon::ParticleEmitter rain_{poligon::ParticleEmitterSettings{}, 11};
+    poligon::ParticleEmitter dust_{poligon::ParticleEmitterSettings{}, 12};
+    poligon::TextureHandle dot_texture_;
 
     poligon::RenderSettings settings_;
     std::string settings_path_;
@@ -1211,6 +1323,8 @@ poligon::RenderSettings MakeForestSettings() {
     environment.cloud_density = 0.025f;
     environment.cloud_speed = 6.0f;
     environment.aerial_density = 0.00012f;
+    // Dust floating in the sun around the player; rain off (weather.rain in the file).
+    settings.weather.dust = 1.0f;
     environment.foliage_translucency = 0.5f;
 
     settings.post.bloom = true;
@@ -1227,6 +1341,41 @@ poligon::RenderSettings MakeForestSettings() {
     settings.post.contrast = 1.06f;
     settings.post.vignette = 0.18f;
     return settings;
+}
+
+// A boot print: the sole and the heel, dark and soft-edged, the toe at the top of the picture.
+poligon::Image MakeBootPrintImage() {
+    constexpr int kWidth = 32;
+    constexpr int kHeight = 64;
+    poligon::Image image = poligon::MakeSolidImage(kWidth, kHeight, 38, 30, 22);
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const float u = (static_cast<float>(x) + 0.5f) / kWidth * 2.0f - 1.0f;
+            const float v = (static_cast<float>(y) + 0.5f) / kHeight * 2.0f - 1.0f;
+            const float sole = 1.0f - std::hypot(u / 0.9f, (v + 0.3f) / 0.62f);
+            const float heel = 1.0f - std::hypot(u / 0.75f, (v - 0.68f) / 0.28f);
+            const float inside = std::max(sole, heel);
+            image.pixels[static_cast<size_t>(y * kWidth + x) * 4 + 3] = static_cast<std::uint8_t>(glm::clamp(inside * 6.0f, 0.0f, 1.0f) * 190.0f);
+        }
+    }
+    return image;
+}
+
+// A splash of blood with a ragged edge.
+poligon::Image MakeBloodImage() {
+    constexpr int kSize = 64;
+    poligon::Image image = poligon::MakeSolidImage(kSize, kSize, 120, 8, 6);
+    for (int y = 0; y < kSize; ++y) {
+        for (int x = 0; x < kSize; ++x) {
+            const float u = (static_cast<float>(x) + 0.5f) / kSize * 2.0f - 1.0f;
+            const float v = (static_cast<float>(y) + 0.5f) / kSize * 2.0f - 1.0f;
+            const float angle = std::atan2(v, u);
+            const float edge = 0.6f + 0.18f * std::sin(angle * 5.0f) + 0.1f * std::sin(angle * 11.0f + 1.0f);
+            const float inside = edge - std::hypot(u, v);
+            image.pixels[static_cast<size_t>(y * kSize + x) * 4 + 3] = static_cast<std::uint8_t>(glm::clamp(inside * 10.0f, 0.0f, 1.0f) * 230.0f);
+        }
+    }
+    return image;
 }
 
 } // namespace

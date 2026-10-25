@@ -12,6 +12,10 @@ Nie wzięto biblioteki: SPARK (najbardziej znany silnik cząsteczek w C++) ma li
 - Stan: `DumpStateToJson()` zapisuje generator, przeniesiony ułamek, pozycję i każdą cząsteczkę z jej wiekiem, z 9 cyframi znaczącymi jak zrzut stanu ECS; `HashState()` to jego skrót FNV-1a. Zrzut ECS nie przyjmuje wektorów, więc gra trzymająca emiter w komponencie zrzuca go lub liczy skrót przez te funkcje.
 - Test: `tests/world/particles_test.cpp` (dwa przebiegi po 180 ticków z wyrzutem i przesunięciem dają ten sam zrzut, inne ziarno inny; jedna cząsteczka spada, rośnie i ginie tak, jak mówią ustawienia). Przykład: `examples/world/particles` (deszcz i kurz).
 
+## Pogoda
+
+`MakeRainSettings(intensity, wind)` i `MakeDustSettings(intensity)` dają gotowe ustawienia emiterów pogody wokół kamery (deszcz: krople z prędkością około 7 m/s w pudełku szerokim na 30 m do 8 m nad kamerą, pochylone przez wiatr, przy 1 około 4000 naraz, rysowane jako smugi z `stretch` 0,03; kurz: drobinki dryfujące w pudełku 24 x 8 x 24 m, przy 1 około 2500, rysowane z oświetleniem, więc widać je w słońcu, a w cieniu znikają); `MakeParticleDotImage(size)` to miękka okrągła kropka na ich obraz. Oba idą za kamerą przez `SetPosition` w każdym ticku. Ilości pochodzą z pliku ustawień obrazu (`weather.rain`, `weather.dust`, patrz [debug_tools.md](debug_tools.md)). `forest_scene` ich używa: domyślnie kurz 1, deszcz wyłączony.
+
 ## Rysowanie: Renderer::DrawParticles
 
 - `void DrawParticles(TextureHandle texture, const Particle* particles, int count, const ParticleOptions& options)`. `Particle`: `position`, `size` (metry), `velocity` (tylko do rozciągania), `rotation` (radiany, w płaszczyźnie karty), `color` (liniowy, alfa dla przezroczystości), `frame` (obraz atlasu). `ParticleOptions`: `blend` (`Alpha` lub `Additive`), `lighting` (`Simple`: słońce z cieniami, także chmur, plus światło nieba, bez normalnych; `None`: własne kolory), `atlas_columns`, `atlas_rows`, `stretch` (karty rozciągnięte wzdłuż prędkości na ekranie do `size + speed * stretch`: deszcz), `soft_distance` (metry, na których karta zanika, zbliżając się do sceny za nią).

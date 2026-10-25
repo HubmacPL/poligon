@@ -140,6 +140,37 @@ int main(int argc, char** argv) {
     }
     Expect(renderer.GetFrameStats().instances_drawn > 0 && red_pixels > 20, "the ground cover is drawn");
 
+    // GetDensity: the layer without limits grows its density everywhere; the patchy one its
+    // density in clumps and nothing between; the slope-limited one nothing on steep ground. And
+    // the patchy layer's plants stand where its density is above 0.
+    {
+        bool everywhere_full = true;
+        int patch_full = 0;
+        int patch_empty = 0;
+        int steep_empty = 0;
+        for (int z = -60; z <= 60; z += 3) {
+            for (int x = -60; x <= 60; x += 3) {
+                const float fx = static_cast<float>(x);
+                const float fz = static_cast<float>(z);
+                everywhere_full = everywhere_full && cover.GetDensity(everywhere_layer, fx, fz) == everywhere.density;
+                const float patch = cover.GetDensity(patchy_layer, fx, fz);
+                patch_full += patch == patchy.density ? 1 : 0;
+                patch_empty += patch == 0.0f ? 1 : 0;
+                steep_empty += terrain.GetSlopeDegrees(fx, fz) > tufts.max_slope_degrees && cover.GetDensity(tuft_layer, fx, fz) == 0.0f ? 1 : 0;
+            }
+        }
+        std::vector<glm::mat4> patch_plants;
+        cover.CollectInstances(patchy_layer, patch_plants);
+        bool plants_in_clumps = !patch_plants.empty();
+        for (const glm::mat4& plant : patch_plants) {
+            plants_in_clumps = plants_in_clumps && cover.GetDensity(patchy_layer, plant[3].x, plant[3].z) > 0.0f;
+        }
+        Expect(everywhere_full, "GetDensity: a layer without limits grows its density everywhere");
+        Expect(patch_full > 0 && patch_empty > 0, "GetDensity: a patchy layer grows in clumps with gaps between");
+        Expect(steep_empty > 0, "GetDensity: nothing where the ground is too steep");
+        Expect(plants_in_clumps, "GetDensity agrees with where plants were placed");
+    }
+
     std::printf("ground_cover_test finished\n");
     return test::ExitCode();
 }

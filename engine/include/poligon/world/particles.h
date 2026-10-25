@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "poligon/core/color.h"
+#include "poligon/core/image.h"
 #include "poligon/core/math.h"
 #include "poligon/render/particles.h"
 
@@ -96,5 +97,19 @@ private:
     std::vector<Particle> particles_;
     std::vector<Life> lives_;
 };
+
+// Ready settings for weather around the camera (WeatherSettings in render_settings.h). Move the
+// emitter with the camera every tick: SetPosition(camera position) for both.
+// Rain: drops falling at about 7 m/s through a box 30 m wide reaching 8 m above the camera,
+// slanted by the wind (meters per second along x and z); draw them with ParticleOptions
+// stretch 0.03 (streaks) and no texture. intensity 1: about 4000 drops alive.
+ParticleEmitterSettings MakeRainSettings(float intensity, glm::vec2 wind);
+// Dust: small motes drifting slowly in a box 24 x 8 x 24 m around the camera, fading in and
+// out; drawn lit (ParticleLighting::Simple) they show where the sun shines and vanish in
+// shade, as in shafts of light. intensity 1: about 2500 motes alive. Texture: MakeParticleDotImage.
+ParticleEmitterSettings MakeDustSettings(float intensity);
+// A round white dot fading to its edge (alpha), `size` x `size` pixels: a picture for dust,
+// snow or sparks, whose color comes from the particles.
+Image MakeParticleDotImage(int size);
 
 } // namespace poligon
