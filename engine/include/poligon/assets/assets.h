@@ -66,4 +66,14 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// One mesh of a cooked model with its simpler levels, for Renderer::DrawMesh or
+// DrawSkinnedMesh with levels of detail (an animal, a building far away): level 0 is the mesh
+// that model.model.instances[instance] draws, then each simpler level's mesh of the node with
+// the same name. `distances` says where each level ends, full model first, one per level
+// (levels without a distance are left out; an empty list gives an empty group); a simpler
+// level without that node is left out and the level before it reaches as far. Draw it with the instance's transform and the material of
+// its mesh (model.render.mesh_material_index). Skinned simpler levels use the full model's
+// skeleton: their joints are matched by name when the model loads.
+MeshLodGroup MakeMeshLodGroup(const LoadedModel& model, int instance, const std::vector<float>& distances);
+
 } // namespace poligon

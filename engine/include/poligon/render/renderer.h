@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "poligon/core/color.h"
 #include "poligon/core/graphics_backend.h"
@@ -440,6 +441,29 @@ struct Material {
     float wind_flutter = 0.0f;
 };
 
+// At most this many levels in a MeshLodGroup.
+inline constexpr int kMaxMeshLods = 8;
+
+// One level of a MeshLodGroup: `mesh` is drawn while the object's origin is at most
+// `distance` meters from the camera (and beyond the previous level's distance).
+struct MeshLod {
+    MeshHandle mesh;
+    float distance = 0.0f;
+};
+
+// One object's mesh in several levels of detail, nearest and most detailed first, like
+// Unity's LODGroup: the farther the object, the simpler the mesh it is drawn with, and
+// beyond the last level's distance it is not drawn at all. Over the last `fade_width` of
+// each level's range (0.1 = the last tenth) it dissolves into the next by the same dithered
+// pattern plants use (see DrawMeshInstances), so that no level pops in. For skinned meshes
+// every level is made by CreateSkinnedMesh for the same skeleton and is drawn with the same
+// joint matrices. Cooked models give their simpler levels as groups (MakeMeshLodGroup in
+// poligon/assets/assets.h).
+struct MeshLodGroup {
+    std::vector<MeshLod> levels;  // 1 to kMaxMeshLods, distances growing
+    float fade_width = 0.1f;
+};
+
 // What the last finished frame cost, for checking that culling works and where time goes.
 struct FrameStats {
     // Time the processor spent in EndFrame preparing the frame (culling, copying instance
@@ -463,6 +487,9 @@ struct FrameStats {
     // Draw calls the instances needed, over all passes: one per batch and pass, however
     // many instances the batch has.
     int instance_draw_calls = 0;
+    // Draws of each level by DrawMesh and DrawSkinnedMesh with a MeshLodGroup (index =
+    // level); an object fading between two levels counts in both.
+    int mesh_lod_draws[kMaxMeshLods] = {};
 };
 
 // Where the four shadow cascades end, as distances in front of the camera (see
@@ -601,6 +628,10 @@ public:
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material, std::uint64_t object_id = 0);
     // Same, with a plain color and no texture.
     void DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color);
+    // Draws the level of `group` that the distance from the camera to the transform's origin
+    // calls for: two levels while fading from one to the next, none beyond the last level's
+    // distance. Returns the level drawn (the nearer one while fading), -1 for none.
+    int DrawMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material, std::uint64_t object_id = 0);
     // Draws one mesh many times in a single draw call per pass: `transforms` holds one
     // matrix per copy. This is the way to draw vegetation. Each copy is culled on its own
     // against the camera's view and against each shadow cascade. The matrices are copied,
@@ -617,6 +648,10 @@ public:
     // `object_id` as in DrawMesh: with it, the previous frame's pose gives motion vectors.
     void DrawSkinnedMesh(MeshHandle mesh, const glm::mat4& transform, const Material& material,
                          const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id = 0);
+    // Same with levels of detail (see DrawMesh with a MeshLodGroup): every level is drawn with
+    // these joint matrices. Returns the level drawn, -1 for none.
+    int DrawSkinnedMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material,
+                        const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id = 0);
 
     // Photographs a model for an impostor (see Impostor): frames_per_side x frames_per_side
     // pictures of frame_size x frame_size pixels, without perspective. Cut-out materials are

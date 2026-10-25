@@ -27,7 +27,7 @@ cbuffer ObjectUniforms : register(b1, space1) {
     float4x4 model;
     float4 object_color;
     float4 uv_scale;  // xy: multiplier for texture coordinates, z: index of this mesh's first joint matrix, w: the same for its pose in the previous frame
-    float4 wind_response;  // unused here
+    float4 wind_response;  // z: fade between levels of detail (KeptByFade)
     float4x4 previous_model;  // the transform in the previous frame (motion vectors)
     float4x4 normal_matrix;   // inverse transpose of the model's 3 x 3 part: normals under any scale
 };
@@ -80,7 +80,7 @@ VertexOutput main(VertexInput input) {
     output.color = object_color;
     output.uv = input.uv * uv_scale.xy;
     output.world_position = world_position.xyz;
-    output.fade = 1.0;
+    output.fade = wind_response.z;
     output.motion_clip = 0.0;
     output.previous_clip = 0.0;
     if (motion.x > 0.0) {

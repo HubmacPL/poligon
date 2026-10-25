@@ -189,11 +189,38 @@ const LoadedModel* AssetLibrary::LoadModel(Renderer& renderer, const std::string
             material.emissive_texture = renderer.CreateTexture(images[first + 3]);
         }
     }
-    for (const Model& lod : loaded->lod_models) {
+    for (Model& lod : loaded->lod_models) {
+        // A skinned simpler level was exported with its own copy of the skeleton, whose joints
+        // may be in another order: point its weights at the full model's joints by name, so
+        // that every level is posed by the same joint matrices.
+        std::vector<std::uint8_t> to_full(lod.skeleton.joints.size(), 0);
+        for (size_t j = 0; j < lod.skeleton.joints.size(); ++j) {
+            const int full = loaded->model.skeleton.FindJoint(lod.skeleton.joints[j].name.c_str());
+            if (full < 0) {
+                error = name + ": a simpler level has joint \"" + lod.skeleton.joints[j].name + "\", which the full model lacks";
+                return nullptr;
+            }
+            to_full[j] = static_cast<std::uint8_t>(full);
+        }
         std::vector<MeshHandle> meshes;
-        for (const ModelMesh& mesh : lod.meshes) {
-            meshes.push_back(renderer.CreateMesh(mesh.vertices.data(), static_cast<int>(mesh.vertices.size()), mesh.indices.data(),
-                                                 static_cast<int>(mesh.indices.size())));
+        for (ModelMesh& mesh : lod.meshes) {
+            const int vertex_count = static_cast<int>(mesh.vertices.size());
+            const int index_count = static_cast<int>(mesh.indices.size());
+            if (mesh.skin.empty()) {
+                meshes.push_back(renderer.CreateMesh(mesh.vertices.data(), vertex_count, mesh.indices.data(), index_count));
+                continue;
+            }
+            for (SkinVertex& skin : mesh.skin) {
+                for (std::uint8_t& joint : skin.joints) {
+                    if (joint >= to_full.size()) {
+                        error = name + ": the model file is broken";
+                        return nullptr;
+                    }
+                    joint = to_full[joint];
+                }
+            }
+            meshes.push_back(renderer.CreateSkinnedMesh(mesh.vertices.data(), mesh.skin.data(), vertex_count, mesh.indices.data(),
+                                                        index_count));
         }
         loaded->lod_meshes.push_back(std::move(meshes));
     }
@@ -204,6 +231,29 @@ const LoadedModel* AssetLibrary::LoadModel(Renderer& renderer, const std::string
     const LoadedModel* result = loaded.get();
     impl_->models[name] = std::move(loaded);
     return result;
+}
+
+MeshLodGroup MakeMeshLodGroup(const LoadedModel& model, int instance, const std::vector<float>& distances) {
+    MeshLodGroup group;
+    if (instance < 0 || static_cast<size_t>(instance) >= model.model.instances.size() || distances.empty()) {
+        return group;
+    }
+    const auto distance_at = [&distances](size_t level) { return distances[level]; };
+    const ModelInstance& full = model.model.instances[static_cast<size_t>(instance)];
+    group.levels.push_back({model.render.meshes[static_cast<size_t>(full.mesh_index)], distance_at(0)});
+    for (size_t lod = 0; lod < model.lod_models.size() && lod + 1 < distances.size() &&
+                         group.levels.size() < static_cast<size_t>(kMaxMeshLods);
+         ++lod) {
+        const Model& simpler = model.lod_models[lod];
+        const auto found = std::find_if(simpler.instances.begin(), simpler.instances.end(),
+                                        [&full](const ModelInstance& candidate) { return candidate.node_name == full.node_name; });
+        if (found == simpler.instances.end()) {
+            group.levels.back().distance = distance_at(lod + 1);
+            continue;
+        }
+        group.levels.push_back({model.lod_meshes[lod][static_cast<size_t>(found->mesh_index)], distance_at(lod + 1)});
+    }
+    return group;
 }
 
 } // namespace poligon

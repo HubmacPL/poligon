@@ -430,6 +430,90 @@ int main(int argc, char** argv) {
         Expect(std::abs(lit - expected_normal.y) < 0.05f, "normals stay square to the surface under a non-uniform scale");
     }
 
+    // --- Levels of detail for single meshes (MeshLodGroup): two levels of a 2 m square seen
+    // from above, the same material, told apart by their texture coordinates: level 0 reads
+    // the red half of a 2 x 1 texture, level 1 the blue half. Level 0 ends at 10 m, level 1
+    // at 50 m, each fading over its last tenth. Near: red; far: blue; beyond 50 m: nothing;
+    // in the middle of the fade both are drawn and share every pixel between them. The same
+    // with skinned levels, posed by one joint matrix that moves them 0.5 m along x. ---
+    {
+        poligon::Renderer renderer(MakeConfig(backend));
+        const auto make_square = [&](float u, bool skinned) {
+            const poligon::MeshVertex vertices[4] = {{{-1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {u, 0.5f}},
+                                                     {{-1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {u, 0.5f}},
+                                                     {{1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {u, 0.5f}},
+                                                     {{1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {u, 0.5f}}};
+            const std::uint32_t indices[6] = {0, 1, 2, 0, 2, 3};
+            poligon::SkinVertex skin[4];
+            for (poligon::SkinVertex& vertex : skin) {
+                vertex.weights[0] = 1.0f;
+            }
+            return skinned ? renderer.CreateSkinnedMesh(vertices, skin, 4, indices, 6) : renderer.CreateMesh(vertices, 4, indices, 6);
+        };
+        poligon::Image two_colors = poligon::MakeSolidImage(2, 1, 255, 0, 0);
+        two_colors.pixels[4] = 0;
+        two_colors.pixels[6] = 255;
+        poligon::Material material = MakeMatte({1.0f, 1.0f, 1.0f, 1.0f});
+        material.texture = renderer.CreateTexture(two_colors);
+        poligon::Environment environment;
+        environment.shadows = false;
+        const glm::mat4 joint = glm::translate(identity, {0.5f, 0.0f, 0.0f});
+        for (int skinned = 0; skinned < 2; ++skinned) {
+            poligon::MeshLodGroup group;
+            group.levels = {{make_square(0.25f, skinned == 1), 10.0f}, {make_square(0.75f, skinned == 1), 50.0f}};
+            // Seen from `height` meters up, narrowly enough that the square fills the middle.
+            const auto draw = [&](float height, int& level) {
+                poligon::Camera camera = MakeTopDownCamera(height);
+                camera.vertical_fov_degrees = 2.0f * glm::degrees(std::atan(1.5f / height));
+                camera.far_plane = 100.0f;
+                renderer.BeginFrame(camera, MakeFlatLight(1.0f), environment);
+                level = skinned == 1 ? renderer.DrawSkinnedMesh(group, identity, material, &joint, 1)
+                                     : renderer.DrawMesh(group, identity, material);
+                renderer.EndFrame();
+                renderer.CaptureFrame(frame);
+            };
+            // Middle of the square: shifted by the joint for the skinned levels.
+            const int middle_x = kSize / 2 + (skinned == 1 ? kSize / 6 : 0);
+            const auto color_at = [&](int x, int y) {
+                const std::uint8_t* pixel = &frame.pixels[static_cast<size_t>(y * kSize + x) * 4];
+                return pixel[0] > 200 && pixel[2] < 30 ? 'r' : pixel[2] > 200 && pixel[0] < 30 ? 'b' : pixel[0] + pixel[2] < 30 ? '0' : '?';
+            };
+            int level = 0;
+            draw(5.0f, level);
+            const char near_color = color_at(middle_x, kSize / 2);
+            const int near_draws = renderer.GetFrameStats().mesh_lod_draws[0];
+            const int near_level = level;
+            draw(30.0f, level);
+            const char far_color = color_at(middle_x, kSize / 2);
+            const int far_level = level;
+            const poligon::FrameStats far_stats = renderer.GetFrameStats();
+            draw(60.0f, level);
+            const int gone_level = level;
+            draw(9.5f, level);  // halfway through level 0's fade (9 to 10 m)
+            const poligon::FrameStats fade_stats = renderer.GetFrameStats();
+            int red = 0;
+            int blue = 0;
+            int other = 0;
+            for (int y = kSize / 2 - 30; y < kSize / 2 + 30; ++y) {
+                for (int x = middle_x - 30; x < middle_x + 30; ++x) {
+                    const char color = color_at(x, y);
+                    red += color == 'r' ? 1 : 0;
+                    blue += color == 'b' ? 1 : 0;
+                    other += color == 'r' || color == 'b' ? 0 : 1;
+                }
+            }
+            std::printf("  %s levels: near %c (level %d), far %c (level %d), beyond %d; fading %d red, %d blue, %d other\n",
+                        skinned == 1 ? "skinned" : "mesh", near_color, near_level, far_color, far_level, gone_level, red, blue, other);
+            Expect(near_color == 'r' && near_level == 0 && near_draws == 1, "near, the first level of detail is drawn");
+            Expect(far_color == 'b' && far_level == 1 && far_stats.mesh_lod_draws[0] == 0 && far_stats.mesh_lod_draws[1] == 1,
+                   "farther away, the second level is drawn, and the frame statistics say so");
+            Expect(gone_level == -1, "beyond the last level's distance nothing is drawn");
+            Expect(fade_stats.mesh_lod_draws[0] == 1 && fade_stats.mesh_lod_draws[1] == 1 && other == 0 &&
+                       red > 3600 * 35 / 100 && blue > 3600 * 35 / 100,
+                   "while fading both levels are drawn and every pixel shows one of them");
+        }
+    }
+
     // --- Far cascades at a smaller share of their image ---
     // A slab 3 m above the floor 20 m in front of the camera, with the sun straight
     // overhead, falls in the last cascade. With far_shadow_scale 0.5 that cascade uses a

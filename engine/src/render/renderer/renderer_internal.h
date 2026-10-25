@@ -339,6 +339,8 @@ struct DrawCommand {
     // its transform and, for skinned meshes, where that pose's joint matrices start.
     glm::mat4 previous_transform{1.0f};
     std::uint32_t previous_first_joint = 0;
+    // Dithered fade between levels of detail (KeptByFade in common.hlsli): 1 = drawn whole.
+    float fade = 1.0f;
 };
 
 // A draw with an object id (Renderer::DrawMesh), told apart from other draws with the same id
@@ -763,6 +765,8 @@ struct Renderer::Impl {
 
     // Recorded between BeginFrame and EndFrame.
     bool in_frame = false;
+    // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
+    int mesh_lod_draws[kMaxMeshLods] = {};
     bool has_finished_frame = false;
     Camera camera;
     DirectionalLight light;

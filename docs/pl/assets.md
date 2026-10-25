@@ -58,7 +58,7 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 ```
 
 - Drugie wczytanie tej samej nazwy daje ten sam obiekt. Brakujący albo uszkodzony asset nic nie zwraca i ustawia `error`.
-- `LoadedModel` trzyma dane modelu (wierzchołki dla fizyki i rozstawiania, szkielet, klipy), jego `RenderModel`, siatki prostszych poziomów i impostor.
+- `LoadedModel` trzyma dane modelu (wierzchołki dla fizyki i rozstawiania, szkielet, klipy), jego `RenderModel`, siatki prostszych poziomów (także ze szkieletem, pozowane szkieletem pełnego modelu) i impostor. `MakeMeshLodGroup(loaded, instance, distances)` zamienia jedną siatkę i jej prostsze poziomy w `MeshLodGroup` dla `Renderer::DrawMesh` lub `DrawSkinnedMesh` (patrz rendering.md).
 - `Renderer::CreateTexture(const CompressedImage&)` i `CreateTextureArray(const CompressedImage*, count)` przyjmują wypieczone obrazy tak, jak są; `CreateImpostor` ma wersję dla skompresowanych obrazów.
 
 ## Rośliny z modeli

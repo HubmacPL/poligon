@@ -58,7 +58,7 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 ```
 
 - A second load of the same name gives the same object. A missing or broken asset returns nothing and sets `error`.
-- `LoadedModel` holds the model data (vertices for physics and placement, skeleton, clips), its `RenderModel`, the simpler levels' meshes and the impostor.
+- `LoadedModel` holds the model data (vertices for physics and placement, skeleton, clips), its `RenderModel`, the simpler levels' meshes (skinned ones too, posed by the full model's skeleton) and the impostor. `MakeMeshLodGroup(loaded, instance, distances)` turns one mesh and its simpler levels into a `MeshLodGroup` for `Renderer::DrawMesh` or `DrawSkinnedMesh` (see rendering.md).
 - `Renderer::CreateTexture(const CompressedImage&)` and `CreateTextureArray(const CompressedImage*, count)` take cooked images as they are; `CreateImpostor` has an overload for compressed pictures.
 
 ## Plants from models

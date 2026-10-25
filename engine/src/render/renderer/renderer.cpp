@@ -7,6 +7,10 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 
+#include <algorithm>
+#include <iterator>
+#include <string>
+
 namespace poligon {
 
 Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>()) {
@@ -316,6 +320,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->object_draw_counts.clear();
     impl_->previous_joint_palette.swap(impl_->joint_palette);
     impl_->joint_palette.clear();
+    std::fill(std::begin(impl_->mesh_lod_draws), std::end(impl_->mesh_lod_draws), 0);
     impl_->instance_sources.clear();
     impl_->instance_batches.clear();
     if (impl_->debug_ui_active) {
@@ -355,7 +360,7 @@ void Renderer::DrawMesh(MeshHandle mesh_handle, const glm::mat4& transform, cons
         impl_->meshes[mesh_handle.id - 1].vertex_buffer == nullptr) {
         FatalError("Renderer::DrawMesh: invalid or destroyed mesh handle");
     }
-    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture, material.emissive_texture}) {
         if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
             FatalError("Renderer::DrawMesh: invalid or destroyed texture handle");
         }
@@ -389,7 +394,7 @@ void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& materia
     if (count < 0 || (count > 0 && transforms == nullptr)) {
         FatalError("Renderer::DrawMeshInstances: needs one transform per instance");
     }
-    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture, material.emissive_texture}) {
         if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
             FatalError("Renderer::DrawMeshInstances: invalid or destroyed texture handle");
         }
@@ -494,7 +499,7 @@ void Renderer::DrawSkinnedMesh(MeshHandle mesh_handle, const glm::mat4& transfor
     if (joint_matrices == nullptr || joint_count < 1 || joint_count > kMaxJoints) {
         FatalError("Renderer::DrawSkinnedMesh: needs between 1 and 256 joint matrices");
     }
-    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture}) {
+    for (const TextureHandle texture : {material.texture, material.normal_texture, material.orm_texture, material.emissive_texture}) {
         if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
             FatalError("Renderer::DrawSkinnedMesh: invalid or destroyed texture handle");
         }
@@ -557,6 +562,92 @@ void Renderer::DrawWater(MeshHandle mesh, const glm::mat4& transform, const Wate
     command.transform = transform;
     command.material = material;
     impl_->water_commands.push_back(command);
+}
+
+namespace {
+
+void CheckLodGroup(const MeshLodGroup& group, const char* function) {
+    const size_t count = group.levels.size();
+    if (count == 0 || count > static_cast<size_t>(kMaxMeshLods)) {
+        FatalError((std::string(function) + ": a MeshLodGroup needs 1 to 8 levels").c_str());
+    }
+    for (size_t i = 1; i < count; ++i) {
+        if (!(group.levels[i].distance > group.levels[i - 1].distance)) {
+            FatalError((std::string(function) + ": MeshLodGroup distances must grow from level to level").c_str());
+        }
+    }
+    if (group.fade_width < 0.0f || group.fade_width >= 1.0f) {
+        FatalError((std::string(function) + ": MeshLodGroup::fade_width must be at least 0 and below 1").c_str());
+    }
+}
+
+// The level an object `distance` meters away shows (-1: none), and how far it is into the
+// fade towards the next one: 0 = not fading, up to 1 at the level's end. As in Vegetation.
+int ChooseMeshLod(const MeshLodGroup& group, float distance, float& fade) {
+    fade = 0.0f;
+    for (size_t level = 0; level < group.levels.size(); ++level) {
+        const float end = group.levels[level].distance;
+        const float start = end * (1.0f - group.fade_width);
+        if (distance <= start) {
+            return static_cast<int>(level);
+        }
+        if (distance <= end) {
+            fade = (distance - start) / (end - start);
+            return static_cast<int>(level);
+        }
+    }
+    return -1;
+}
+
+} // namespace
+
+int Renderer::DrawMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material, std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawMesh: call BeginFrame first");
+    }
+    CheckLodGroup(group, "Renderer::DrawMesh");
+    float fade = 0.0f;
+    const int level = ChooseMeshLod(group, glm::distance(impl_->camera.position, glm::vec3(transform[3])), fade);
+    if (level < 0) {
+        return -1;
+    }
+    DrawMesh(group.levels[static_cast<size_t>(level)].mesh, transform, material, object_id);
+    ++impl_->mesh_lod_draws[level];
+    if (fade > 0.0f) {
+        // This level keeps the pixels the next one leaves (KeptByFade).
+        impl_->draw_commands.back().fade = -fade;
+        if (static_cast<size_t>(level) + 1 < group.levels.size()) {
+            DrawMesh(group.levels[static_cast<size_t>(level) + 1].mesh, transform, material, object_id);
+            impl_->draw_commands.back().fade = fade;
+            ++impl_->mesh_lod_draws[level + 1];
+        }
+    }
+    return level;
+}
+
+int Renderer::DrawSkinnedMesh(const MeshLodGroup& group, const glm::mat4& transform, const Material& material,
+                              const glm::mat4* joint_matrices, int joint_count, std::uint64_t object_id) {
+    if (!impl_->in_frame) {
+        FatalError("Renderer::DrawSkinnedMesh: call BeginFrame first");
+    }
+    CheckLodGroup(group, "Renderer::DrawSkinnedMesh");
+    float fade = 0.0f;
+    const int level = ChooseMeshLod(group, glm::distance(impl_->camera.position, glm::vec3(transform[3])), fade);
+    if (level < 0) {
+        return -1;
+    }
+    DrawSkinnedMesh(group.levels[static_cast<size_t>(level)].mesh, transform, material, joint_matrices, joint_count, object_id);
+    ++impl_->mesh_lod_draws[level];
+    if (fade > 0.0f) {
+        impl_->draw_commands.back().fade = -fade;
+        if (static_cast<size_t>(level) + 1 < group.levels.size()) {
+            DrawSkinnedMesh(group.levels[static_cast<size_t>(level) + 1].mesh, transform, material, joint_matrices, joint_count,
+                            object_id);
+            impl_->draw_commands.back().fade = fade;
+            ++impl_->mesh_lod_draws[level + 1];
+        }
+    }
+    return level;
 }
 
 void Renderer::DrawMesh(MeshHandle mesh, const glm::mat4& transform, Color color) {
@@ -651,6 +742,7 @@ void Renderer::EndFrame() {
         }
     }
     impl.stats = FrameStats{};
+    std::copy(std::begin(impl.mesh_lod_draws), std::end(impl.mesh_lod_draws), std::begin(impl.stats.mesh_lod_draws));
     {
         // Instances are culled against the view and against every cascade before any pass
         // starts, because their transforms must be on the graphics card by then.

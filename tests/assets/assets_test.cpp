@@ -322,7 +322,7 @@ int main(int argc, char** argv) {
         std::ofstream(source / "arm.bin", std::ios::binary)
             .write(reinterpret_cast<const char*>(arm_bin.data()), static_cast<std::streamsize>(arm_bin.size()));
         const fs::path animated_list_path = root / "animated.txt";
-        WriteText(animated_list_path, "poligon-assets 1\n\nmodel animals/arm\nsource arm.gltf\n");
+        WriteText(animated_list_path, "poligon-assets 1\n\nmodel animals/arm\nsource arm.gltf\nlod arm.gltf\n");
         poligon::AssetList animated_list;
         const fs::path animated_cooked = root / "cooked_animated";
         Expect(poligon::LoadAssetList(animated_list_path.string().c_str(), animated_list, error), "the second list loads");
@@ -366,6 +366,21 @@ int main(int argc, char** argv) {
                 moved = moved || a != start;
             }
             Expect(same && moved, "the cooked clip plays exactly as the one built from the file");
+        }
+        // Its simpler level (here the same file) is skinned too, so the two levels of its mesh
+        // can be drawn as one group with one set of joint matrices.
+        if (arm != nullptr && !arm->model.instances.empty()) {
+            const poligon::MeshLodGroup group = poligon::MakeMeshLodGroup(*arm, 0, {20.0f, 80.0f});
+            Expect(group.levels.size() == 2 && group.levels[1].mesh.id == arm->lod_meshes[0][0].id && group.levels[1].distance == 80.0f,
+                   "a cooked skinned model's simpler level makes the second level of its group");
+            const std::vector<glm::mat4> rest(arm->model.skeleton.joints.size(), glm::mat4(1.0f));
+            poligon::Camera far_camera;
+            far_camera.position = {0.0f, 1.0f, 50.0f};
+            renderer.BeginFrame(far_camera, poligon::DirectionalLight{});
+            const int level = renderer.DrawSkinnedMesh(group, glm::mat4(1.0f), arm->render.materials[0], rest.data(),
+                                                       static_cast<int>(rest.size()));
+            renderer.EndFrame();
+            Expect(level == 1, "50 m away the skinned model is drawn with its simpler level");
         }
     }
 
