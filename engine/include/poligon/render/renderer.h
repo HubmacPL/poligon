@@ -236,6 +236,11 @@ struct Environment {
     // that replays match; 0 (no tick since the last frame) leaves the exposure where it is.
     float frame_seconds = 1.0f / 60.0f;
 
+    // Multiplies the distances of every MeshLodGroup drawn this frame (DrawMesh and
+    // DrawSkinnedMesh with levels of detail): above 1 objects keep their detailed levels
+    // farther away. Set from GraphicsQuality::mesh_detail by ApplyGraphicsQuality.
+    float mesh_detail = 1.0f;
+
     // Ambient occlusion: crevices and places close to other surfaces (the inside of a tree
     // crown, where a trunk meets the ground) receive less ambient light. Computed from what
     // is on screen. Does not affect direct sunlight.

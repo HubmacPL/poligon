@@ -56,6 +56,11 @@ struct GraphicsQuality {
     int cloud_light_steps = 5;
     float cloud_resolution = 0.25f;
 
+    // Multiplies how far single meshes with levels of detail (animals, buildings; see
+    // MeshLodGroup) keep each level (Environment::mesh_detail). Separate from
+    // vegetation_detail: plants are counted in tens of thousands, these in tens.
+    float mesh_detail = 1.0f;
+
     // --- For the game's systems ---
     // Multiply how far plants keep each level of detail, and how far they cast shadows.
     float vegetation_detail = 1.0f;
@@ -76,7 +81,7 @@ const char* GetGraphicsPresetName(GraphicsPreset preset);
 bool ParseGraphicsPreset(const char* name, GraphicsPreset& preset);
 
 // Limits a frame's environment and post-processing to what the quality allows: switches
-// are combined with "and", the shadow range is scaled, step counts are set.
+// are combined with "and", the shadow range is scaled, step counts and the mesh detail are set.
 void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environment, PostSettings& post);
 // Shadow image size and multisampling for a renderer about to be created.
 void ApplyGraphicsQuality(const GraphicsQuality& quality, RendererConfig& config);

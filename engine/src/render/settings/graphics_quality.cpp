@@ -23,6 +23,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.cloud_steps = 20;
         quality.cloud_light_steps = 3;
         quality.vegetation_detail = 0.6f;
+        quality.mesh_detail = 0.6f;
         quality.vegetation_shadow = 0.5f;
         quality.ground_cover_density = 0.35f;
         quality.ground_cover_radius = 0.6f;
@@ -40,6 +41,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.cloud_steps = 32;
         quality.cloud_light_steps = 4;
         quality.vegetation_detail = 0.8f;
+        quality.mesh_detail = 0.8f;
         quality.vegetation_shadow = 0.75f;
         quality.ground_cover_density = 0.65f;
         quality.ground_cover_radius = 0.8f;
@@ -58,6 +60,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.cloud_light_steps = 6;
         quality.cloud_resolution = 0.5f;
         quality.vegetation_detail = 1.5f;
+        quality.mesh_detail = 1.5f;
         quality.vegetation_shadow = 1.5f;
         quality.ground_cover_density = 1.5f;
         quality.ground_cover_radius = 1.3f;
@@ -104,6 +107,7 @@ void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environme
     environment.clouds = environment.clouds && quality.clouds;
     environment.cloud_steps = quality.cloud_steps;
     environment.cloud_light_steps = quality.cloud_light_steps;
+    environment.mesh_detail = quality.mesh_detail;
     post.bloom = post.bloom && quality.bloom;
     post.temporal_aa = post.temporal_aa && quality.temporal_aa;
 }

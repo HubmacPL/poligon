@@ -607,7 +607,9 @@ int Renderer::DrawMesh(const MeshLodGroup& group, const glm::mat4& transform, co
     }
     CheckLodGroup(group, "Renderer::DrawMesh");
     float fade = 0.0f;
-    const int level = ChooseMeshLod(group, glm::distance(impl_->camera.position, glm::vec3(transform[3])), fade);
+    // Detail above 1 keeps the levels farther: the same as seeing the object nearer.
+    const float distance = glm::distance(impl_->camera.position, glm::vec3(transform[3])) / glm::max(impl_->environment.mesh_detail, 0.01f);
+    const int level = ChooseMeshLod(group, distance, fade);
     if (level < 0) {
         return -1;
     }
@@ -632,7 +634,9 @@ int Renderer::DrawSkinnedMesh(const MeshLodGroup& group, const glm::mat4& transf
     }
     CheckLodGroup(group, "Renderer::DrawSkinnedMesh");
     float fade = 0.0f;
-    const int level = ChooseMeshLod(group, glm::distance(impl_->camera.position, glm::vec3(transform[3])), fade);
+    // Detail above 1 keeps the levels farther: the same as seeing the object nearer.
+    const float distance = glm::distance(impl_->camera.position, glm::vec3(transform[3])) / glm::max(impl_->environment.mesh_detail, 0.01f);
+    const int level = ChooseMeshLod(group, distance, fade);
     if (level < 0) {
         return -1;
     }

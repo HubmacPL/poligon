@@ -130,6 +130,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("quality.fog_steps", fog_steps, 4.0f, 128.0f);
     quality.fog_steps = static_cast<int>(fog_steps);
     visitor.Float("quality.vegetation_detail", quality.vegetation_detail, 0.2f, 3.0f);
+    visitor.Float("quality.mesh_detail", quality.mesh_detail, 0.2f, 3.0f);
     visitor.Float("quality.vegetation_shadow", quality.vegetation_shadow, 0.0f, 3.0f);
     visitor.Float("quality.ground_cover_density", quality.ground_cover_density, 0.0f, 3.0f);
     visitor.Float("quality.ground_cover_radius", quality.ground_cover_radius, 0.2f, 2.0f);

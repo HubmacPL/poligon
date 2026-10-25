@@ -8,6 +8,7 @@
 #include <cstring>
 #include <vector>
 
+#include "poligon/render/graphics_quality.h"
 #include "poligon/render/renderer.h"
 #include "poligon/world/sky_occlusion.h"
 #include "test_support.h"
@@ -512,6 +513,23 @@ int main(int argc, char** argv) {
                        red > 3600 * 35 / 100 && blue > 3600 * 35 / 100,
                    "while fading both levels are drawn and every pixel shows one of them");
         }
+
+        // Graphics presets scale the distances (GraphicsQuality::mesh_detail): at 8 m, low
+        // (0.6: level 0 ends at 6 m) draws the simpler level, ultra (1.5: at 15 m) the detailed one.
+        poligon::MeshLodGroup group;
+        group.levels = {{make_square(0.25f, false), 10.0f}, {make_square(0.75f, false), 50.0f}};
+        int levels[2] = {0, 0};
+        for (int preset = 0; preset < 2; ++preset) {
+            poligon::Environment scaled = environment;
+            poligon::PostSettings post;
+            poligon::ApplyGraphicsQuality(poligon::GetGraphicsPreset(preset == 0 ? poligon::GraphicsPreset::Low : poligon::GraphicsPreset::Ultra),
+                                          scaled, post);
+            renderer.BeginFrame(MakeTopDownCamera(8.0f), MakeFlatLight(1.0f), scaled);
+            levels[preset] = renderer.DrawMesh(group, identity, material);
+            renderer.EndFrame();
+        }
+        std::printf("  at 8 m: level %d in low, %d in ultra\n", levels[0], levels[1]);
+        Expect(levels[0] == 1 && levels[1] == 0, "the graphics preset scales the distances of mesh levels of detail");
     }
 
     // --- Far cascades at a smaller share of their image ---
