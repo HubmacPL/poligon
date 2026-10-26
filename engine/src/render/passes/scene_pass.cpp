@@ -149,19 +149,7 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
             SDL_GPUTextureSamplerBinding bindings[9]{};
-            bindings[0].texture = impl.GetTexture(material.texture, impl.white_texture);
-            bindings[0].sampler = impl.texture_sampler;
-            bindings[1].texture = impl.GetTexture(material.normal_texture, impl.flat_normal_texture);
-            bindings[1].sampler = impl.texture_sampler;
-            bindings[2].texture = impl.GetTexture(material.orm_texture, impl.white_texture);
-            bindings[2].sampler = impl.texture_sampler;
-            bindings[3].texture = impl.shadow_atlas;
-            bindings[3].sampler = impl.shadow_sampler;
-            bindings[4].texture = ao_on ? impl.ao_target : impl.textures[impl.white_texture.id - 1];
-            bindings[4].sampler = impl.clamp_sampler;
-            impl.AddLightingBindings(&bindings[5]);
-            bindings[8].texture = impl.GetTexture(material.emissive_texture, impl.white_texture);
-            bindings[8].sampler = impl.texture_sampler;
+            impl.FillMeshBindings(material, ao_on, bindings);
             SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
             impl.DrawCommandGeometry(pass, command);
         }

@@ -41,6 +41,8 @@
 #include "poligon_shaders/luminance_frag_dxil.h"
 #include "poligon_shaders/luminance_frag_spirv.h"
 #include "poligon_shaders/mesh_after_depth_frag_dxil.h"
+#include "poligon_shaders/mesh_blend_frag_dxil.h"
+#include "poligon_shaders/mesh_blend_frag_spirv.h"
 #include "poligon_shaders/mesh_after_depth_frag_spirv.h"
 #include "poligon_shaders/mesh_frag_dxil.h"
 #include "poligon_shaders/mesh_frag_spirv.h"
@@ -351,6 +353,38 @@ void Renderer::Impl::CreatePipelines() {
     mesh_pipelines[kSceneAfterDepthPass][0][1] = SDL_CreateGPUGraphicsPipeline(device, &after_depth_info);
     mesh_pipelines[kSceneAfterDepthPass][1][0] = create_skinned(after_depth_info, SDL_GPU_CULLMODE_BACK);
     mesh_pipelines[kSceneAfterDepthPass][1][1] = create_skinned(after_depth_info, SDL_GPU_CULLMODE_NONE);
+    // The blend pass (passes/blend_pass.cpp): blended materials over the finished scene image
+    // (one sample per pixel), mixed over it by their alpha. No depth target: the shader tests
+    // the depth pass's image, which it also reads for fog.
+    SDL_GPUShader* blend_fragment =
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 11, 3, kMeshBlendFragDxil, sizeof(kMeshBlendFragDxil), kMeshBlendFragSpirv,
+                     sizeof(kMeshBlendFragSpirv));
+    SDL_GPUColorTargetDescription blend_color_description = scene_color_description;
+    blend_color_description.blend_state.enable_blend = true;
+    blend_color_description.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+    blend_color_description.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    blend_color_description.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+    blend_color_description.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    blend_color_description.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+    blend_color_description.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    SDL_GPUGraphicsPipelineCreateInfo blend_info = after_depth_info;
+    blend_info.fragment_shader = blend_fragment;
+    blend_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    blend_info.target_info.color_target_descriptions = &blend_color_description;
+    blend_info.depth_stencil_state.enable_depth_test = false;
+    blend_info.depth_stencil_state.enable_depth_write = false;
+    blend_info.target_info.has_depth_stencil_target = false;
+    blend_info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_INVALID;
+    blend_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+    mesh_pipelines[kBlendPass][0][0] = SDL_CreateGPUGraphicsPipeline(device, &blend_info);
+    blend_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    mesh_pipelines[kBlendPass][0][1] = SDL_CreateGPUGraphicsPipeline(device, &blend_info);
+    if (mesh_pipelines[kBlendPass][0][0] == nullptr || mesh_pipelines[kBlendPass][0][1] == nullptr) {
+        FatalSdlError("cannot create blend pipeline");
+    }
+    mesh_pipelines[kBlendPass][1][0] = create_skinned(blend_info, SDL_GPU_CULLMODE_BACK);
+    mesh_pipelines[kBlendPass][1][1] = create_skinned(blend_info, SDL_GPU_CULLMODE_NONE);
+    SDL_ReleaseGPUShader(device, blend_fragment);
     SDL_ReleaseGPUShader(device, skinned_vertex);
     if (mesh_pipelines[kSceneAfterDepthPass][0][0] == nullptr || mesh_pipelines[kSceneAfterDepthPass][0][1] == nullptr) {
         FatalSdlError("cannot create scene pipeline after the depth pass");

@@ -147,6 +147,15 @@ struct MaterialUniforms {
     glm::vec4 emissive;  // rgb: emitted light (Material::emissive times its strength), w: 1 = has an emissive texture
 };
 
+// What the blend pass's fragment shader adds to MaterialUniforms (mesh.frag.hlsl, BLENDED):
+// how to work out the volumetric fog in front of a blended surface from the fog of the scene
+// behind it.
+struct BlendUniforms {
+    glm::vec4 fog;      // x: 1 = volumetric fog image bound, y: density at the base height, z: height falloff, w: base height relative to the camera
+    glm::vec4 screen;   // xy: scene image size in pixels, z: how far the fog was walked (kFogWalkDistance)
+    glm::mat4 inverse_view_projection;
+};
+
 struct ImpostorUniforms {
     glm::vec4 center_radius;
     glm::vec4 camera_frames;
@@ -401,7 +410,8 @@ struct DrawnObject {
 // The three passes that draw meshes.
 // kSceneAfterDepthPass: the scene pass when the depth pass has already drawn the final
 // depth; it tests against that depth before shading and writes none (see EndFrame).
-enum MeshPass { kScenePass, kShadowPass, kDepthPass, kSceneAfterDepthPass, kMeshPassCount };
+// kBlendPass: blended materials (BlendMode::Blend) over the finished scene, testing its depth.
+enum MeshPass { kScenePass, kShadowPass, kDepthPass, kSceneAfterDepthPass, kBlendPass, kMeshPassCount };
 
 inline bool IsScenePass(MeshPass pass) {
     return pass == kScenePass || pass == kSceneAfterDepthPass;
@@ -772,6 +782,8 @@ struct Renderer::Impl {
 
     // The two lighting textures every lit surface reads, after its others (lighting.hlsli).
     void AddLightingBindings(SDL_GPUTextureSamplerBinding* bindings) const;
+    // The nine textures of a lit mesh's fragment shader (mesh.frag.hlsl) for `material`.
+    void FillMeshBindings(const Material& material, bool ao_on, SDL_GPUTextureSamplerBinding* bindings) const;
 
     SDL_GPUTexture* CreateVolume(int size, const std::vector<std::uint8_t>& bytes);
 
@@ -906,6 +918,10 @@ struct Renderer::Impl {
     DirectionalLight light;
     Environment environment;
     std::vector<DrawCommand> draw_commands;
+    // Draws with blended materials (BlendMode::Blend): drawn only by the blend pass.
+    std::vector<DrawCommand> blended_commands;
+    // Adds a draw to draw_commands or, blended, to blended_commands.
+    void AddDrawCommand(const DrawCommand& command);
     // Indices into draw_commands of what survives culling, rebuilt every frame.
     std::vector<std::uint32_t> visible_commands;
     std::vector<std::uint32_t> cascade_commands[kCascadeCount];
@@ -1095,6 +1111,7 @@ struct Renderer::Impl {
     void RenderWaterPass(FrameContext& frame);
     void RenderCloudPass(FrameContext& frame);
     void RenderFogPass(FrameContext& frame);
+    void RenderBlendPass(FrameContext& frame);
     void RenderTemporalAaPass(FrameContext& frame);
     void RenderBloomPass(FrameContext& frame);
     void RenderOutputPass(FrameContext& frame);

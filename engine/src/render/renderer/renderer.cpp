@@ -198,8 +198,13 @@ Renderer::~Renderer() {
         }
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kSceneAfterDepthPass][kRigid][0]);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kSceneAfterDepthPass][kRigid][1]);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kBlendPass][kRigid][0]);
+        SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kBlendPass][kRigid][1]);
         for (int pass = 0; pass < kMeshPassCount; ++pass) {
             for (const int kind : {kSkinned, kInstanced}) {
+                if (impl_->mesh_pipelines[pass][kind][0] == nullptr) {
+                    continue;  // the blend pass has no instanced pipelines
+                }
                 // The shadow pass uses one pipeline for both kinds of material.
                 SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[pass][kind][0]);
                 if (impl_->mesh_pipelines[pass][kind][1] != impl_->mesh_pipelines[pass][kind][0]) {
@@ -277,6 +282,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->light = light;
     impl_->environment = environment;
     impl_->draw_commands.clear();
+    impl_->blended_commands.clear();
     impl_->water_commands.clear();
     // The sky occlusion map, copied to the card when it changed.
     impl_->sky_map = impl_->sky_occlusion_source != nullptr ? impl_->sky_occlusion_source->GetGroundMap() : GroundMap{};
@@ -428,7 +434,7 @@ void Renderer::DrawMeshRelative(MeshHandle mesh_handle, const glm::mat4& transfo
     command.bounds_max = mesh.bounds_max;
     command.noise_shift = noise_shift;
     impl_->MatchPreviousDraw(object_id, command, 0);
-    impl_->draw_commands.push_back(command);
+    impl_->AddDrawCommand(command);
 }
 
 void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& material, const glm::dvec3& origin, const glm::mat4* transforms,
@@ -442,6 +448,9 @@ void Renderer::DrawMeshInstances(MeshHandle mesh_handle, const Material& materia
     }
     if (impl_->meshes[mesh_handle.id - 1].skin_buffer != nullptr) {
         FatalError("Renderer::DrawMeshInstances: skinned meshes cannot be instanced");
+    }
+    if (material.blend == BlendMode::Blend) {
+        FatalError("Renderer::DrawMeshInstances: blended materials are drawn with DrawMesh, one object at a time (sorted)");
     }
     if (count < 0 || (count > 0 && transforms == nullptr)) {
         FatalError("Renderer::DrawMeshInstances: needs one transform per instance");
@@ -631,7 +640,7 @@ void Renderer::DrawSkinnedMeshRelative(MeshHandle mesh_handle, const glm::mat4& 
     }
     command.noise_shift = noise_shift;
     impl_->MatchPreviousDraw(object_id, command, joint_count);
-    impl_->draw_commands.push_back(command);
+    impl_->AddDrawCommand(command);
 }
 
 void Renderer::PrepareClouds() {
@@ -772,7 +781,8 @@ int Renderer::DrawLodRelative(const MeshLodGroup& group, const glm::mat4& transf
         ++impl_->mesh_lod_draws[index];
     };
     draw(level);
-    if (fade > 0.0f) {
+    // Blended levels switch without fading: dithering through a see-through surface would show.
+    if (fade > 0.0f && material.blend != BlendMode::Blend) {
         // This level keeps the pixels the next one leaves (KeptByFade).
         impl_->draw_commands.back().fade = -fade;
         if (static_cast<size_t>(level) + 1 < group.levels.size()) {
@@ -911,6 +921,7 @@ void Renderer::EndFrame() {
     impl.RenderWaterPass(frame);
     impl.RenderCloudPass(frame);
     impl.RenderFogPass(frame);
+    impl.RenderBlendPass(frame);
     impl.RenderTemporalAaPass(frame);
     impl.RenderParticlePass(frame);
     impl.previous_view_projection = unshifted_view_projection;

@@ -52,6 +52,65 @@ cbuffer MaterialUniforms : register(b1, space3) {
     float4 material_emissive; // rgb: emitted light, w: 1 = multiplied by the emissive texture
 };
 
+#ifdef BLENDED
+// The blend pass: the volumetric fog image (rgb: light the fog adds in front of the scene,
+// a: the part of the scene let through) and the scene's depth (the depth pass's image).
+[[vk::combinedImageSampler]][[vk::binding(9, 2)]]
+Texture2D<float4> fog_texture : register(t9, space2);
+[[vk::combinedImageSampler]][[vk::binding(9, 2)]]
+SamplerState fog_sampler : register(s9, space2);
+
+[[vk::combinedImageSampler]][[vk::binding(10, 2)]]
+Texture2D<float> scene_depth_texture : register(t10, space2);
+[[vk::combinedImageSampler]][[vk::binding(10, 2)]]
+SamplerState scene_depth_sampler : register(s10, space2);
+
+cbuffer BlendUniforms : register(b2, space3) {
+    float4 blend_fog;     // x: 1 = volumetric fog, y: density at the base height, z: height falloff, w: base height relative to the camera
+    float4 blend_screen;  // xy: scene image size in pixels, z: how far the fog was walked
+    float4x4 blend_inverse_view_projection;
+};
+
+// How much fog lies between the camera (at 0) and `distance` along `direction`: the
+// density of fog.frag.hlsl summed in eight steps.
+float FogOpticalDepth(float3 direction, float distance) {
+    float step_length = distance / 8.0;
+    float total = 0.0;
+    for (int i = 0; i < 8; ++i) {
+        float height = direction.y * (float(i) + 0.5) * step_length;
+        total += blend_fog.y * exp(-max(height - blend_fog.w, 0.0) * blend_fog.z) * step_length;
+    }
+    return total;
+}
+
+// The volumetric fog in front of a blended surface, taken from the fog walked to the scene
+// behind it: along one ray the part let through to the surface is the part let through to
+// the scene raised to the share of fog that lies before the surface, and the fog's light
+// grows with the part it blocks. Mixed over the fogged scene by alpha, this gives the same
+// result as fogging the mix (the fog's light cancels out).
+float3 ApplyFogInFront(float3 color, float3 world_position, float2 pixel) {
+    if (blend_fog.x < 0.5) {
+        return color;
+    }
+    float2 uv = pixel / blend_screen.xy;
+    float4 behind = fog_texture.SampleLevel(fog_sampler, uv, 0.0);
+    float depth = scene_depth_texture.Load(int3(int2(pixel), 0));
+    float surface_distance = length(world_position);
+    float3 direction = world_position / max(surface_distance, 0.0001);
+    float behind_distance = blend_screen.z;
+    if (depth > 0.0) {
+        behind_distance = min(length(WorldPositionFromDepth(uv, depth, blend_inverse_view_projection)), blend_screen.z);
+    }
+    float near = FogOpticalDepth(direction, min(surface_distance, blend_screen.z));
+    float far = FogOpticalDepth(direction, behind_distance);
+    float share = far > 1e-6 ? saturate(near / far) : 0.0;
+    float let_through = pow(max(behind.a, 1e-6), share);
+    float blocked_behind = 1.0 - behind.a;
+    float3 added = behind.rgb * (blocked_behind > 1e-4 ? (1.0 - let_through) / blocked_behind : share);
+    return color * let_through + added;
+}
+#endif
+
 struct FragmentInput {
     float4 clip_position : SV_Position;
     float3 world_normal : TEXCOORD0;
@@ -71,12 +130,19 @@ float4 main(FragmentInput input) : SV_Target0 {
     if (!KeptByFade(input.fade, input.clip_position.xy + float2(material_factors.w, 0.0))) {
         discard;
     }
+#ifdef BLENDED
+    // Behind what the scene shows here (reversed depth: larger is nearer).
+    if (input.clip_position.z < scene_depth_texture.Load(int3(int2(input.clip_position.xy), 0))) {
+        discard;
+    }
+#endif
     // Color textures are stored sRGB-encoded; the texture format makes this sample linear.
     float4 texel = base_texture.Sample(base_sampler, input.uv);
     float alpha = texel.a * input.color.a;
 
     // Alpha cutout: pixels below the cutoff are not drawn (leaves, fences). With multisampling
     // the edge is smoothed by covering only some of the pixel's samples ("alpha to coverage").
+    // Blended materials have no cutoff (0).
     float alpha_cutoff = material_factors.z;
     float coverage = 1.0;
     if (alpha_cutoff > 0.0) {
@@ -128,5 +194,9 @@ float4 main(FragmentInput input) : SV_Target0 {
     }
 
     // The render target is linear and wide-range; tone mapping happens in a later pass.
+#ifdef BLENDED
+    return float4(ApplyFogInFront(ShadeSurface(surface), input.world_position, input.clip_position.xy), saturate(alpha));
+#else
     return float4(ShadeSurface(surface), coverage);
+#endif
 }

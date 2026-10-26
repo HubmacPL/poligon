@@ -54,9 +54,9 @@ void Renderer::Impl::RenderDepthPass(FrameContext& frame) {
         SDL_PushGPUVertexUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
         return pass;
     };
-    // Decals find the surfaces they lie on in this depth image, particles what hides them.
+    // Decals find the surfaces they lie on in this depth image, particles and blended surfaces what hides them.
     if (ao_on || fog_on || taa_on || scene_after_depth || water_on || (environment.clouds && environment.draw_sky) ||
-        !impl.decals.commands.empty() || !impl.particles.calls.empty()) {
+        !impl.decals.commands.empty() || !impl.particles.calls.empty() || !impl.blended_commands.empty()) {
         SDL_GPURenderPass* pass = begin_depth_pass(true);
         // With ambient occlusion on, what does not cast it is left out here and added after it.
         impl.DrawDepthGeometry(commands, pass, ao_on ? Impl::kAoCasters : Impl::kAllBatches);

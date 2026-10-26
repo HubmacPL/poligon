@@ -11,3 +11,4 @@ poligon_add_example(mesh_lod ${CMAKE_BINARY_DIR}/test_output/example_mesh_lod.pn
 poligon_add_example(hud ${CMAKE_BINARY_DIR}/test_output/example_hud.png)
 poligon_add_example(decals ${CMAKE_BINARY_DIR}/test_output/example_decals.png)
 poligon_add_example(render_target ${CMAKE_BINARY_DIR}/test_output/example_render_target.png)
+poligon_add_example(glass ${CMAKE_BINARY_DIR}/test_output/example_glass.png)

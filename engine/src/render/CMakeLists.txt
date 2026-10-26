@@ -3,6 +3,7 @@
 # and drawing inside a pass, around Renderer::Impl in renderer/renderer_internal.h.
 # resources/: what lives on the graphics card. passes/: one file per pass of a frame.
 add_library(poligon_render STATIC
+  passes/blend_pass.cpp
   passes/bloom_pass.cpp
   passes/cloud_pass.cpp
   passes/decal_pass.cpp
@@ -101,6 +102,7 @@ poligon_embed_shader(shaders/mesh/mesh.frag.hlsl fragment kMeshFrag mesh_frag)
 poligon_embed_shader(shaders/mesh/shadow.frag.hlsl fragment kShadowFrag shadow_frag)
 poligon_embed_shader(shaders/mesh/depth_motion.frag.hlsl fragment kDepthMotionFrag depth_motion_frag)
 poligon_embed_shader(shaders/mesh/mesh_after_depth.frag.hlsl fragment kMeshAfterDepthFrag mesh_after_depth_frag)
+poligon_embed_shader(shaders/mesh/mesh_blend.frag.hlsl fragment kMeshBlendFrag mesh_blend_frag)
 # terrain
 poligon_embed_shader(shaders/terrain/terrain.vert.hlsl vertex kTerrainVert terrain_vert)
 poligon_embed_shader(shaders/terrain/terrain.frag.hlsl fragment kTerrainFrag terrain_frag)

@@ -13,6 +13,22 @@ void Renderer::Impl::AddLightingBindings(SDL_GPUTextureSamplerBinding* bindings)
     bindings[2].sampler = cube_sampler;
 }
 
+void Renderer::Impl::FillMeshBindings(const Material& material, bool ao_on, SDL_GPUTextureSamplerBinding* bindings) const {
+    bindings[0].texture = GetTexture(material.texture, white_texture);
+    bindings[0].sampler = texture_sampler;
+    bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
+    bindings[1].sampler = texture_sampler;
+    bindings[2].texture = GetTexture(material.orm_texture, white_texture);
+    bindings[2].sampler = texture_sampler;
+    bindings[3].texture = shadow_atlas;
+    bindings[3].sampler = shadow_sampler;
+    bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
+    bindings[4].sampler = clamp_sampler;
+    AddLightingBindings(&bindings[5]);
+    bindings[8].texture = GetTexture(material.emissive_texture, white_texture);
+    bindings[8].sampler = texture_sampler;
+}
+
 void Renderer::Impl::DrawCommandGeometry(SDL_GPURenderPass* pass, const DrawCommand& command) {
     const Mesh& mesh = meshes[command.mesh_id - 1];
     SDL_GPUBufferBinding vertex_bindings[2]{};
@@ -145,17 +161,7 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
             bindings[0].sampler = texture_sampler;
             if (IsScenePass(mesh_pass)) {
                 SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
-                bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
-                bindings[1].sampler = texture_sampler;
-                bindings[2].texture = GetTexture(material.orm_texture, white_texture);
-                bindings[2].sampler = texture_sampler;
-                bindings[3].texture = shadow_atlas;
-                bindings[3].sampler = shadow_sampler;
-                bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
-                bindings[4].sampler = clamp_sampler;
-                AddLightingBindings(&bindings[5]);
-                bindings[8].texture = GetTexture(material.emissive_texture, white_texture);
-                bindings[8].sampler = texture_sampler;
+                FillMeshBindings(material, ao_on, bindings);
                 SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
             } else {
                 // The depth-only passes need the material only to cut out leaves.
@@ -408,9 +414,23 @@ void Renderer::Impl::CullInstances(const glm::mat4& view_projection, const Casca
     }
 }
 
+void Renderer::Impl::AddDrawCommand(const DrawCommand& command) {
+    if (command.material.blend == BlendMode::Blend) {
+        blended_commands.push_back(command);
+    } else {
+        draw_commands.push_back(command);
+    }
+}
+
 MaterialUniforms Renderer::Impl::MakeMaterialUniforms(const Material& material, float noise_offset) {
     MaterialUniforms uniforms;
-    uniforms.factors = glm::vec4(material.metallic, material.roughness, material.alpha_cutoff, noise_offset);
+    float alpha_cutoff = material.alpha_cutoff;
+    if (material.blend == BlendMode::Cutout && alpha_cutoff <= 0.0f) {
+        alpha_cutoff = 0.5f;
+    } else if (material.blend == BlendMode::Blend) {
+        alpha_cutoff = 0.0f;  // alpha blends instead
+    }
+    uniforms.factors = glm::vec4(material.metallic, material.roughness, alpha_cutoff, noise_offset);
     uniforms.flags = glm::vec4(material.normal_texture.id != 0 ? 1.0f : 0.0f, material.orm_texture.id != 0 ? 1.0f : 0.0f,
                                material.occlusion_in_orm ? 1.0f : 0.0f,
                                material.double_sided ? (material.back_faces_keep_normal ? 2.0f : 1.0f) : 0.0f);

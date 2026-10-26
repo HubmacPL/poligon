@@ -401,6 +401,18 @@ struct TerrainPatch {
     int page = 0;
 };
 
+// How a material covers what lies behind it (Material::blend), as glTF's alpha modes.
+enum class BlendMode {
+    // Solid; alpha is ignored (unless alpha_cutoff is set, which cuts as Cutout does).
+    Opaque,
+    // Pixels whose alpha is below alpha_cutoff (0.5 when it is 0) are not drawn: leaves, fences.
+    Cutout,
+    // See-through by its alpha: glass, a window, a bottle. Drawn after everything solid and
+    // water, from the farthest object to the nearest, lit like any surface, with fog, writing
+    // no depth. Casts no shadow and no ambient occlusion. See rendering.md.
+    Blend,
+};
+
 // How a surface looks. This is the metallic-roughness material model of glTF.
 struct Material {
     // Base color; multiplied by `texture` when there is one.
@@ -412,6 +424,9 @@ struct Material {
     // 0 turns it off. This is how leaves are drawn: a flat square with a picture of a twig,
     // of which only the twig is visible. A typical value is 0.5.
     float alpha_cutoff = 0.0f;
+    // Solid, cut out by alpha, or blended (see BlendMode). Blend: the color's alpha times the
+    // texture's alpha is how much of the surface's own color covers the background.
+    BlendMode blend = BlendMode::Opaque;
     // Draw both sides of every triangle. Needed for thin things seen from both sides, such
     // as leaves; such surfaces also let some sunlight shine through.
     bool double_sided = false;
