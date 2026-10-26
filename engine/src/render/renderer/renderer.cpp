@@ -139,6 +139,15 @@ Renderer::~Renderer() {
         for (SDL_GPUFence* fence : impl_->frames_in_flight) {
             SDL_ReleaseGPUFence(impl_->device, fence);
         }
+        // Render targets' images (their pictures are also in `textures`: released here, not there).
+        for (RenderTargetData& target : impl_->render_targets) {
+            if (target.alive) {
+                impl_->SwapView(target.view);
+                impl_->ReleaseViewTargets();
+                impl_->SwapView(target.view);
+                impl_->textures[target.texture.id - 1] = nullptr;
+            }
+        }
         if (impl_->debug_ui_active) {
             ImGui_ImplSDLGPU3_Shutdown();
             ImGui_ImplSDL3_Shutdown();
@@ -253,7 +262,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     }
     // The window may have been resized or maximized with the mouse since the last frame: the
     // picture follows its size (a minimized window reports 0 and keeps the old one).
-    if (impl_->window != nullptr) {
+    if (impl_->window != nullptr && impl_->active_target == 0) {
         int window_width = 0;
         int window_height = 0;
         SDL_GetWindowSizeInPixels(impl_->window, &window_width, &window_height);
@@ -912,7 +921,7 @@ void Renderer::EndFrame() {
     impl.RenderBloomPass(frame);
     impl.RenderOutputPass(frame);
 
-    if (impl.window != nullptr) {
+    if (impl.window != nullptr && impl.active_target == 0) {
         // The swapchain texture is the image the window shows. It can be unavailable
         // (for example while the window is minimized); the frame is then simply not shown.
         SDL_GPUTexture* swapchain_texture = nullptr;
@@ -965,6 +974,11 @@ void Renderer::EndFrame() {
         std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - submit_start).count();
     impl.in_frame = false;
     impl.has_finished_frame = true;
+    if (impl.active_target != 0) {
+        // A render target's frame: the window's view comes back.
+        impl.SwapView(impl.render_targets[impl.active_target - 1].view);
+        impl.active_target = 0;
+    }
 }
 
 void Renderer::CaptureFrame(Image& image) {

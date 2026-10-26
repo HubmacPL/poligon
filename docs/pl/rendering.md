@@ -191,6 +191,18 @@ Tropy, krew, ślady po kulach, kałuże: obrazy odciśnięte na już narysowanyc
 - Test: `tests/render/decal_render_test.cpp` (czerwony dekal barwi podłogę w swoim pudełku, nie rusza podłogi poza nim ani ściany stojącej w pudełku i jest ciemniejszy tam, gdzie płyta zasłania słońce: 224 w świetle, 97 w cieniu). Przykład: `examples/render/decals`.
 - Ograniczenia: dekal zastępuje oświetlenie tego, co przykrywa, zamiast dodawać się do materiału tej powierzchni (trop na kamieniu jest oświetlany z chropowatością dekalu, nie kamienia); dekale padają na wszystko nieprzezroczyste w pudełku, co jest wystarczająco zwrócone w górę, także na ruchome obiekty (zwierzę idące przez pudełko kałuży dostaje kałużę; żadnego obiektu nie da się jeszcze wyłączyć); normalna jest liczona z głębi, więc jest zgrubna na trawie i przy konturach.
 
+## Cele renderowania (druga kamera)
+
+Luneta, lornetka albo lustro: obraz rysowany przez drugą kamerę i pokazany jako tekstura. Wywołania są na `Renderer`, poza `BeginFrame` i `EndFrame` (kod w `renderer/render_targets.cpp`):
+
+- `RenderTargetHandle CreateRenderTarget(int width, int height)` (od 16 do 8192 pikseli w każdą stronę), `ResizeRenderTarget`, `DestroyRenderTarget`, `TextureHandle GetRenderTargetTexture(RenderTargetHandle)`.
+- Klatka celu: `BeginFrame(camera, light, environment, target)`, rysowanie jak zwykle, `EndFrame()`. Potem w klatce okna tekstura trafia do `Material` (na siatce: lustro, ekran) albo do `DrawSprite` (na obrazie: luneta). Cel rysuje się pierwszy; klatka okna widzi wtedy jego najnowszy obraz.
+- Jak: każdy widok ma własne obrazy i historie (`ViewState` w `renderer_internal.h`: scena, głębia, zacienienie otoczenia, mgła, poświata, ekspozycja, historie chmur i wygładzania, ruch rysowanych obiektów). `BeginFrame` celu podmienia jego widok w polach renderera, a `EndFrame` oddaje go z powrotem (`Impl::SwapView`), więc każdy przebieg działa dla niego bez zmian: cienie z jego kamery, mgła, chmury i wygładzanie czasowe, które idzie za nim klatka po klatce. Skala renderowania z presetu też go dotyczy.
+- Koszt: osobna klatka, mniej więcej proporcjonalna do pikseli plus stały koszt przebiegów (kaskady cieni rysują się ponownie). Cel nierysowany kosztuje tylko pamięć. Lunetę rysuje się więc w ułamku rozmiaru okna i tylko w klatkach, gdy jest przy oku; po przerwie jej historie doganiają w kilka klatek.
+- Mapa światła nieba powstaje tylko z klatek okna; cel używa mapy okna (to samo niebo). `GetFrameStats` po `EndFrame` celu opisuje tę klatkę.
+- Test: `tests/render/render_target_test.cpp` (cel 256 x 256 widzi z drugiej kamery czerwony sześcian na zielonej podłodze; płaszczyzna w widoku okna, która go nosi, jest czerwona w środku i zielona na brzegu; nadal dobrze po zmianie na 64 x 64; klatka okna liczy tylko swoją płaszczyznę; oba backendy). Przykład: `examples/render/render_target` (lornetka: widok sześć razy węższy, 180 x 180, w kole w rogu).
+- Ograniczenia: okno rysuje zwykłe `BeginFrame`; cel nie może być czytany we własnej klatce (bez rekurencji: lustro w lustrze pokaże co najwyżej obraz z poprzedniej klatki i tylko przez drugi cel).
+
 ## 2D i tekst
 
 HUD, celownik, znaczniki i napisy są rysowane na gotowym obrazie: po mapowaniu tonów (więc ekspozycja, korekcja barwna i bloom ich nie zmieniają) i przed oknami debugowymi, we własnym przebiegu (`passes/overlay_pass.cpp`, shadery w `shaders/overlay/`). Nagłówek: `poligon/render/overlay.h` (`Rect`, `FontHandle`); wywołania są w `Renderer`, między `BeginFrame` a `EndFrame`:

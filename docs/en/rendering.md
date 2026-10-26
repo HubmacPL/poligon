@@ -189,6 +189,18 @@ Prints, blood, bullet holes, puddles: pictures pressed onto the surfaces already
 - Test: `tests/render/decal_render_test.cpp` (a red decal colors the floor in its box, leaves the floor outside and a wall standing in the box untouched, and is darker where a slab shades it: 224 lit, 97 in shadow). Example: `examples/render/decals`.
 - Limits: a decal replaces the lighting of what it covers rather than adding to that surface's own material (a print on a rock is lit as the decal's roughness, not the rock's); decals land on everything opaque in the box that faces up enough, moving objects included (an animal walking through a puddle's box gets the puddle; no object can be excluded yet); the normal is worked out from depth, so it is coarse on grass and at outlines.
 
+## Render targets (a second camera)
+
+A scope, binoculars or a mirror: a picture drawn by a second camera and shown as a texture. The calls are on `Renderer`, outside `BeginFrame` and `EndFrame` (code in `renderer/render_targets.cpp`):
+
+- `RenderTargetHandle CreateRenderTarget(int width, int height)` (16 to 8192 pixels each way), `ResizeRenderTarget`, `DestroyRenderTarget`, `TextureHandle GetRenderTargetTexture(RenderTargetHandle)`.
+- A target's frame: `BeginFrame(camera, light, environment, target)`, draws as usual, `EndFrame()`. Then, in the window's frame, the texture goes into a `Material` (on a mesh: a mirror, a screen) or into `DrawSprite` (over the picture: a scope). Draw the target first; the window's frame then sees its latest picture.
+- How: every view keeps its own images and histories (`ViewState` in `renderer_internal.h`: scene, depth, ambient occlusion, fog, bloom, exposure, cloud and anti-aliasing histories, motion of drawn objects). A target's `BeginFrame` swaps its view into the renderer's fields and `EndFrame` swaps it back (`Impl::SwapView`), so every pass runs for it unchanged: shadows from its own camera, fog, clouds, and temporal anti-aliasing that follows it frame by frame. The quality preset's render scale applies to it too.
+- Cost: a frame of its own, roughly in proportion to its pixels plus the fixed cost of the passes (shadow cascades are drawn again). A target not drawn costs only its memory. So draw a scope at a fraction of the window's size and only in the frames it is at the eye; after a pause its histories catch up within a few frames.
+- The sky light map is built over the window's frames only; a target uses the window's (it is the same sky). `GetFrameStats` after a target's `EndFrame` describes that frame.
+- Test: `tests/render/render_target_test.cpp` (a 256 x 256 target sees a red cube on a green floor from a second camera; a plane in the window's view wearing it shows red in its middle and green at its edge; still right after resizing to 64 x 64; the window's frame counts only its own plane; both backends). Example: `examples/render/render_target` (binoculars: the view six times narrower, 180 x 180, in a disc in the corner).
+- Limits: the window must be drawn by the plain `BeginFrame`; a target cannot be read in its own frame (no recursion: a mirror in a mirror shows the previous frame's picture at best, and only through a second target).
+
 ## 2D and text
 
 HUD, crosshair, markers and subtitles are drawn over the finished picture: after tone mapping (so exposure, grading and bloom leave them alone) and before the debug windows, in a pass of their own (`passes/overlay_pass.cpp`, shaders in `shaders/overlay/`). Header: `poligon/render/overlay.h` (`Rect`, `FontHandle`); the calls are on `Renderer`, between `BeginFrame` and `EndFrame`:

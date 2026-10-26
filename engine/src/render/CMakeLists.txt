@@ -19,6 +19,7 @@ add_library(poligon_render STATIC
   renderer/drawing.cpp
   renderer/pipelines.cpp
   renderer/renderer.cpp
+  renderer/render_targets.cpp
   renderer/targets.cpp
   resources/cloud_noise.cpp
   resources/cloud_textures.cpp

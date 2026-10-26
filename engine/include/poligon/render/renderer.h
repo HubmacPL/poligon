@@ -325,6 +325,12 @@ struct TextureOptions {
     float coverage_cutoff = 0.0f;
 };
 
+// Identifies a render target (Renderer::CreateRenderTarget). An id of 0 means "the window"
+// (or, headless, the renderer's own picture).
+struct RenderTargetHandle {
+    std::uint32_t id = 0;
+};
+
 // Identifies a terrain created by Renderer. An id of 0 is never a valid terrain.
 struct TerrainHandle {
     std::uint32_t id = 0;
@@ -655,6 +661,23 @@ public:
 
     void BeginFrame(const Camera& camera, const DirectionalLight& light,
                     const Environment& environment = Environment{});
+
+    // --- Render targets: a second camera (a scope, binoculars, a mirror) ---
+    // A picture of its own size, drawn by a frame of its own: BeginFrame with the target,
+    // draws, EndFrame; then GetRenderTargetTexture gives it as a texture for a material (or
+    // DrawImage) in the window's frame. Every pass runs for it as for the window, with its own
+    // images and histories: shadows, fog, clouds, ambient occlusion, exposure, and temporal
+    // anti-aliasing that follows it frame by frame. Draw it smaller than the window when it
+    // is small on screen, and only in the frames it is seen: a target not drawn costs nothing
+    // but its memory (ResizeRenderTarget to change its size). Its frame counts in
+    // GetFrameStats like any frame, until the next EndFrame. The sky light map is built over
+    // the window's frames only; a target uses the window's. Outside BeginFrame and EndFrame.
+    RenderTargetHandle CreateRenderTarget(int width, int height);
+    void ResizeRenderTarget(RenderTargetHandle target, int width, int height);
+    void DestroyRenderTarget(RenderTargetHandle target);
+    TextureHandle GetRenderTargetTexture(RenderTargetHandle target) const;
+    // A frame drawn into `target` instead of the window; id 0 is the window.
+    void BeginFrame(const Camera& camera, const DirectionalLight& light, const Environment& environment, RenderTargetHandle target);
     // `object_id`: any nonzero number that stays the same for this object from frame to
     // frame (an entity, a physics body). The renderer then remembers where the object was
     // drawn in the previous frame, and temporal anti-aliasing follows it when it moves

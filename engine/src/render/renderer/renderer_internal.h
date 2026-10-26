@@ -422,6 +422,58 @@ void ReleaseTrackedBuffer(SDL_GPUDevice* device, SDL_GPUBuffer* buffer);
 std::uint64_t GetTrackedTextureBytes();
 std::uint64_t GetTrackedBufferBytes();
 
+// What each view keeps of its own: the window's, and every render target's
+// (Renderer::CreateRenderTarget). The renderer draws with the fields of Renderer::Impl; a frame
+// into a render target swaps its view in at BeginFrame and out at EndFrame (Impl::SwapView),
+// so every pass works for either without knowing which.
+struct ViewState {
+    int width = 0;  // the output's size (RendererConfig::width and height while active)
+    int height = 0;
+    int render_width = 0;
+    int render_height = 0;
+    SDL_GPUTexture* scene_color = nullptr;
+    SDL_GPUTexture* scene_depth = nullptr;
+    SDL_GPUTexture* scene_resolved = nullptr;
+    SDL_GPUTexture* output_target = nullptr;
+    SDL_GPUTexture* prepass_depth = nullptr;
+    SDL_GPUTexture* ao_target = nullptr;
+    SDL_GPUTexture* ao_scratch = nullptr;
+    SDL_GPUTexture* fog_target = nullptr;
+    int fog_width = 0;
+    int fog_height = 0;
+    std::vector<BloomLevel> bloom_levels;
+    SDL_GPUTexture* luminance_targets[2] = {nullptr, nullptr};
+    int luminance_index = 0;
+    bool has_luminance_history = false;
+    SDL_GPUTexture* water_scene_copy = nullptr;
+    SDL_GPUTexture* water_depth_copy = nullptr;
+    SDL_GPUTexture* cloud_target = nullptr;
+    SDL_GPUTexture* cloud_history[2] = {nullptr, nullptr};
+    int cloud_history_index = 0;
+    bool cloud_history_valid = false;
+    std::uint64_t cloud_history_frame = 0;
+    glm::mat4 previous_cloud_view_projection{1.0f};
+    SDL_GPUTexture* taa_targets[2] = {nullptr, nullptr};
+    SDL_GPUTexture* motion_target = nullptr;
+    int taa_index = 0;
+    bool has_taa_history = false;
+    glm::mat4 previous_view_projection{1.0f};
+    glm::dvec3 previous_camera_position{0.0};
+    std::uint64_t frame_index = 0;
+    std::unordered_map<DrawnObjectKey, DrawnObject, DrawnObjectKeyHash> drawn_objects;
+    std::unordered_map<DrawnObjectKey, DrawnObject, DrawnObjectKeyHash> previous_drawn_objects;
+    std::vector<glm::mat4> previous_joint_palette;
+    glm::vec4 previous_wind{0.0f};
+    bool has_previous_wind = false;
+};
+
+// A render target: its view, and its picture as a texture.
+struct RenderTargetData {
+    ViewState view;
+    TextureHandle texture;
+    bool alive = false;
+};
+
 // One page of a terrain's height array: a terrain of one map has one page.
 struct TerrainPage {
     glm::dvec3 origin{0.0};  // world position of the first point; y is that of image value 0
@@ -842,6 +894,14 @@ struct Renderer::Impl {
     // Without a window nothing waits for the graphics card (a swapchain does that): fences of
     // the frames still in flight, oldest first, at most kMaxFramesInFlight of them.
     std::deque<SDL_GPUFence*> frames_in_flight;
+    // Render targets (CreateRenderTarget), and the one this frame draws into (0 = the window).
+    std::vector<RenderTargetData> render_targets;
+    std::uint32_t active_target = 0;
+    // Exchanges the view the renderer draws with (its fields here) with `view`.
+    void SwapView(ViewState& view);
+    // Makes the images of the view now in the fields (CreateSizedTargets and the exposure pair).
+    void CreateViewTargets();
+    void ReleaseViewTargets();
     Camera camera;
     DirectionalLight light;
     Environment environment;

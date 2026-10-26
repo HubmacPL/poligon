@@ -73,6 +73,10 @@ void Renderer::Impl::RenderSkyLightPass(FrameContext& frame) {
         }
     };
 
+    // Render targets use the window's map: the cycle follows the window's frames only.
+    if (active_target != 0 && sky_radiance_ready) {
+        return;
+    }
     const bool continuing = sky_radiance_ready && sky_light_frame + 1 == frame_index;
     if (!continuing) {
         for (int face = 0; face < 6; ++face) {
