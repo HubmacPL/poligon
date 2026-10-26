@@ -6,9 +6,14 @@
 #include "poligon/world/height_map.h"
 #include "poligon/core/image.h"
 #include "poligon/render/renderer.h"
+#include "poligon/world/streaming.h"
 #include "poligon/world/terrain_generator.h"
 
 namespace poligon {
+
+struct LandInfo;   // poligon/world/land.h
+class LandSource;  // poligon/world/land.h
+class PhysicsWorld;
 
 // Draws a height map as land, kilometers of it at once.
 //
@@ -39,6 +44,13 @@ class Terrain {
 public:
     // The height map is copied; the caller may free it.
     Terrain(Renderer& renderer, const HeightMap& map, const TerrainConfig& config);
+    // A streamed terrain (poligon/world/streaming.h, poligon/world/land.h): it has no land
+    // until patches are given (by a TerrainPatchSource, or SetPatch). `land` says how the
+    // land is cut and where it lies (config.origin is not used: LandInfo::world_origin is);
+    // `pages`: how many patches it can hold at once. Each patch is its own tree of squares;
+    // all of them are drawn by one draw call per pass. The patch size must be 64, 128, 256,
+    // 512... height points. Heights where no patch is held come from LandInfo::background.
+    Terrain(Renderer& renderer, const LandInfo& land, const TerrainConfig& config, int pages);
     ~Terrain();
     Terrain(const Terrain&) = delete;
     Terrain& operator=(const Terrain&) = delete;
@@ -55,7 +67,18 @@ public:
     // The map's extent in world coordinates.
     glm::dvec2 GetMin() const;
     glm::dvec2 GetMax() const;
+    // The height map (of a streamed terrain: the background, coarse heights).
     const HeightMap& GetHeightMap() const;
+
+    // --- Streamed terrain ---
+    // Gives a patch its land: `heights` is a window of the whole height map (CutHeightMap,
+    // map coordinates) covering the patch and one point around it where the land has one;
+    // `weights` two images over the patch's map points (TerrainMaterial::weights' layout),
+    // or nullptr. Outside BeginFrame and EndFrame.
+    void SetPatch(PatchCoord patch, const HeightMap& heights, const Image* weights);
+    void RemovePatch(PatchCoord patch);
+    bool HasPatch(PatchCoord patch) const;
+    int GetPatchCount() const;
 
     void SetMaterial(const TerrainMaterial& material);
     void SetDetail(float detail);
@@ -64,6 +87,36 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+// The land of a streamed terrain, patch by patch: a Background source for WorldStreamer.
+// Load reads the patch from `land` (on the loading thread); Attach gives it to the terrain.
+class TerrainPatchSource : public PatchSource {
+public:
+    TerrainPatchSource(Terrain& terrain, LandSource& land);
+    std::unique_ptr<PatchData> Load(PatchCoord patch) override;
+    void Attach(PatchCoord patch, std::unique_ptr<PatchData> data) override;
+    void Detach(PatchCoord patch) override;
+
+private:
+    Terrain& terrain_;
+    LandSource& land_;
+};
+
+// The land's collision shapes, patch by patch: an Immediate source (it is what the
+// simulation stands on). Each patch becomes one height field in `physics`, exactly the
+// whole map's heights; neighbors share their border points, so nothing falls through.
+class TerrainPhysicsSource : public PatchSource {
+public:
+    TerrainPhysicsSource(PhysicsWorld& physics, LandSource& land, float friction = 0.5f);
+    std::unique_ptr<PatchData> Load(PatchCoord patch) override;
+    void Attach(PatchCoord patch, std::unique_ptr<PatchData> data) override;
+    void Detach(PatchCoord patch) override;
+    int GetBodyCount() const;
+
+private:
+    struct Impl;
+    std::shared_ptr<Impl> impl_;
 };
 
 // --- Ground layers from the generator's maps ---

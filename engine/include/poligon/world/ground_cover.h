@@ -55,6 +55,8 @@ struct GroundCoverStats {
     int cells_built = 0;
 };
 
+class LandSource;  // poligon/world/land.h
+
 class GroundCover {
 public:
     // The terrain gives heights and slopes; it must outlive the ground cover.
@@ -82,6 +84,11 @@ public:
     // world position (x, z) plus `world_to_map`. nullptr turns the conditions off. Cells
     // are built again. The maps must outlive the ground cover.
     void SetMaps(const TerrainMaps* maps, const glm::dvec2& world_to_map);
+    // For a streamed world (poligon/world/land.h): the maps come from the land's patches, and
+    // a cell is grown only once the land of every patch it touches is held by `land` and
+    // the terrain (until then it is tried again on every Update). nullptr turns it off.
+    // The land source must outlive the ground cover.
+    void SetLand(const LandSource* land);
     // Plants per square meter that `layer` grows at a world place on average: its density
     // where its clumps, slope, height and map conditions allow it, as placement decides,
     // without the density scale (so that what a game decides from it does not change with

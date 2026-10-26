@@ -194,4 +194,22 @@ void BackgroundWorker::SetDelayMilliseconds(int milliseconds) {
     impl_->delay_milliseconds = milliseconds;
 }
 
+Mutex::Mutex() : mutex_(SDL_CreateMutex()) {
+    if (mutex_ == nullptr) {
+        FatalError((std::string("Mutex: cannot create a mutex: ") + SDL_GetError()).c_str());
+    }
+}
+
+Mutex::~Mutex() {
+    SDL_DestroyMutex(static_cast<SDL_Mutex*>(mutex_));
+}
+
+void Mutex::Lock() {
+    SDL_LockMutex(static_cast<SDL_Mutex*>(mutex_));
+}
+
+void Mutex::Unlock() {
+    SDL_UnlockMutex(static_cast<SDL_Mutex*>(mutex_));
+}
+
 } // namespace poligon

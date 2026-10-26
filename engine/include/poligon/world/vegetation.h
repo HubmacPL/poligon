@@ -95,6 +95,13 @@ public:
     void AddInstance(int species, const glm::dvec3& origin, const glm::mat4& local);
     // Removes all plants; species stay.
     void ClearInstances();
+    // Where the cell grid starts (world x and z of a cell corner); by default 0. Set it before
+    // the first plant. A streamed world sets its land's origin, so that its patches are made
+    // of whole cells.
+    void SetCellOrigin(const glm::dvec2& origin);
+    // Removes the plants of every cell whose corner lies in [low, high) (world x and z): for a
+    // patch of a streamed world, exactly its plants.
+    void RemoveInstancesInRectangle(const glm::dvec2& low, const glm::dvec2& high);
     int GetInstanceCount() const;
 
     // Changes a species' distances after the fact (for tuning with sliders): multiplies

@@ -5,8 +5,13 @@
 namespace poligon {
 
 void Renderer::Impl::UploadR8(SDL_GPUTexture* texture, const std::uint8_t* values, int resolution) {
-    SDL_GPUTransferBuffer* transfer =
-        CreateFilledTransferBuffer(values, static_cast<Uint32>(resolution) * static_cast<Uint32>(resolution));
+    UploadTextureLayer(texture, 0, values, resolution, resolution, 1);
+}
+
+void Renderer::Impl::UploadTextureLayer(SDL_GPUTexture* texture, Uint32 layer, const void* pixels, int width, int height,
+                                        int bytes_per_pixel) {
+    SDL_GPUTransferBuffer* transfer = CreateFilledTransferBuffer(
+        pixels, static_cast<Uint32>(width) * static_cast<Uint32>(height) * static_cast<Uint32>(bytes_per_pixel));
     SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
     if (commands == nullptr) {
         FatalSdlError("cannot acquire command buffer");
@@ -14,12 +19,13 @@ void Renderer::Impl::UploadR8(SDL_GPUTexture* texture, const std::uint8_t* value
     SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(commands);
     SDL_GPUTextureTransferInfo source{};
     source.transfer_buffer = transfer;
-    source.pixels_per_row = static_cast<Uint32>(resolution);
-    source.rows_per_layer = static_cast<Uint32>(resolution);
+    source.pixels_per_row = static_cast<Uint32>(width);
+    source.rows_per_layer = static_cast<Uint32>(height);
     SDL_GPUTextureRegion destination{};
     destination.texture = texture;
-    destination.w = static_cast<Uint32>(resolution);
-    destination.h = static_cast<Uint32>(resolution);
+    destination.layer = layer;
+    destination.w = static_cast<Uint32>(width);
+    destination.h = static_cast<Uint32>(height);
     destination.d = 1;
     SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
     SDL_EndGPUCopyPass(copy_pass);

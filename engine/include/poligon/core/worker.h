@@ -57,4 +57,30 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// A mutex for data shared with a BackgroundWorker's jobs (SDL_Mutex). Lock it with MutexLock.
+class Mutex {
+public:
+    Mutex();
+    ~Mutex();
+    Mutex(const Mutex&) = delete;
+    Mutex& operator=(const Mutex&) = delete;
+    void Lock();
+    void Unlock();
+
+private:
+    void* mutex_;  // SDL_Mutex
+};
+
+// Holds a Mutex for one scope.
+class MutexLock {
+public:
+    explicit MutexLock(Mutex& mutex) : mutex_(mutex) { mutex_.Lock(); }
+    ~MutexLock() { mutex_.Unlock(); }
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+
+private:
+    Mutex& mutex_;
+};
+
 } // namespace poligon

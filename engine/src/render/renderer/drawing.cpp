@@ -198,18 +198,17 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
     object_uniforms.uv_scale = glm::vec4(1.0f, 1.0f, static_cast<float>(batch.list_first[list]), 0.0f);
     SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
     TerrainVertexUniforms vertex_uniforms;
-    // The height map's first point relative to the camera, which is at 0.
-    const glm::vec3 map_origin(terrain.origin - origin);
-    vertex_uniforms.map = glm::vec4(map_origin.x, map_origin.z, terrain.spacing, mesh_pass == kShadowPass ? 0.0f : 1.0f);
-    vertex_uniforms.map_heights = glm::vec4(map_origin.y, terrain.height_range, static_cast<float>(terrain.width - 1),
-                                            static_cast<float>(terrain.depth - 1));
+    // Where each page lies comes with each patch (DrawTerrain); these are shared by all pages.
+    vertex_uniforms.map = glm::vec4(0.0f, 0.0f, terrain.spacing, mesh_pass == kShadowPass ? 0.0f : 1.0f);
+    vertex_uniforms.map_heights = glm::vec4(0.0f, 0.0f, static_cast<float>(terrain.width - 1), static_cast<float>(terrain.depth - 1));
     SDL_PushGPUVertexUniformData(commands, 2, &vertex_uniforms, sizeof(vertex_uniforms));
 
     if (IsScenePass(mesh_pass)) {
         const TerrainMaterial& look = batch.terrain_material;
         TerrainMaterialUniforms material_uniforms;
         material_uniforms.map = vertex_uniforms.map;
-        material_uniforms.map_heights = glm::vec4(0.0f, terrain.height_range, 1.0f / static_cast<float>(terrain.width),
+        // x: 1 = each page has its own weights (read the page's layer), 0 = one weight image for all.
+        material_uniforms.map_heights = glm::vec4(terrain.paged_weights ? 1.0f : 0.0f, 0.0f, 1.0f / static_cast<float>(terrain.width),
                                                   1.0f / static_cast<float>(terrain.depth));
         const bool textured = look.colors.id != 0 && look.layer_count > 0;
         material_uniforms.steep = glm::vec4(std::cos(glm::radians(look.steep_start_degrees)),
@@ -225,15 +224,24 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
             material_uniforms.tile_phases[layer] =
                 glm::vec4(glm::vec2(glm::fract(at_camera)), glm::vec2(glm::fract(at_camera / 7.0)));
         }
-        material_uniforms.noise_shift = glm::vec4(glm::vec2(glm::dvec2(origin.x, origin.z) - glm::dvec2(terrain.origin.x, terrain.origin.z)),
-                                                  0.0f, 0.0f);
+        // The mottling of steep ground is fixed to the land: to a terrain of one map's first
+        // point, or for a paged terrain (whose pages come and go) to the 4096 m grid.
+        const glm::dvec3 noise_anchor = terrain.paged
+                                            ? glm::round(origin / 4096.0) * 4096.0
+                                            : terrain.pages.front().origin;
+        material_uniforms.noise_shift =
+            glm::vec4(glm::vec2(glm::dvec2(origin.x, origin.z) - glm::dvec2(noise_anchor.x, noise_anchor.z)), 0.0f, 0.0f);
         // Height map point -> weight image coordinates: the corner pixels' centers lie on
-        // the map's first and last points.
-        const glm::vec2 weight_size = look.weights[0].id != 0 ? texture_sizes[look.weights[0].id - 1] : glm::vec2(1.0f);
-        material_uniforms.weight_map =
-            glm::vec4((weight_size.x - 1.0f) / (weight_size.x * static_cast<float>(terrain.width - 1)),
-                      (weight_size.y - 1.0f) / (weight_size.y * static_cast<float>(terrain.depth - 1)), 0.5f / weight_size.x,
-                      0.5f / weight_size.y);
+        // the map's (or page's) first and last points.
+        const glm::vec2 weight_size =
+            terrain.paged_weights ? glm::vec2(static_cast<float>(terrain.weight_points))
+                                  : (look.weights[0].id != 0 ? texture_sizes[look.weights[0].id - 1] : glm::vec2(1.0f));
+        // A page's weights leave out its rim of border points.
+        const float border = static_cast<float>(terrain.border_points);
+        const glm::vec2 weight_scale((weight_size.x - 1.0f) / (weight_size.x * (static_cast<float>(terrain.width - 1) - 2.0f * border)),
+                                     (weight_size.y - 1.0f) / (weight_size.y * (static_cast<float>(terrain.depth - 1) - 2.0f * border)));
+        material_uniforms.weight_map = glm::vec4(weight_scale, 0.5f / weight_size.x - border * weight_scale.x,
+                                                 0.5f / weight_size.y - border * weight_scale.y);
         SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
         SDL_GPUTextureSamplerBinding bindings[10]{};
@@ -244,9 +252,9 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
         bindings[2].texture = GetTexture(textured && look.normals.id != 0 ? look.normals : flat_normal_array_texture,
                                          flat_normal_array_texture);
         bindings[2].sampler = texture_sampler;
-        bindings[3].texture = GetTexture(look.weights[0], first_layer_weights);
+        bindings[3].texture = terrain.low_weights != nullptr ? terrain.low_weights : GetTexture(first_layer_weights_array, first_layer_weights_array);
         bindings[3].sampler = linear_clamp_sampler;
-        bindings[4].texture = GetTexture(look.weights[1], no_weights);
+        bindings[4].texture = terrain.high_weights != nullptr ? terrain.high_weights : GetTexture(no_weights_array, no_weights_array);
         bindings[4].sampler = linear_clamp_sampler;
         bindings[5].texture = shadow_atlas;
         bindings[5].sampler = shadow_sampler;

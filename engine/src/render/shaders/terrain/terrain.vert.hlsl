@@ -3,7 +3,9 @@
 // The terrain is not one big mesh. One flat grid mesh (a square of 64 x 64 cells) is drawn
 // many times, each copy stretched over a square piece of land ("patch"): small patches near
 // the camera, large ones far away. This shader lifts every vertex to the height of the land
-// at its place, read from an image that holds the whole height map.
+// at its place, read from an image that holds the whole height map, or for a streamed
+// terrain one page of an array of them (one page per patch of the world, see
+// Renderer::CreateTerrainPages).
 //
 // The grid mesh has a rim of extra vertices marked with position.y = -1. They are pushed
 // down to form a "skirt" that hides the gaps where a small patch meets a large one.
@@ -12,12 +14,15 @@
 // after them. Same outputs as mesh.vert.hlsl.
 
 [[vk::combinedImageSampler]][[vk::binding(0, 0)]]
-Texture2D<float> height_texture : register(t0, space0);
+Texture2DArray<float> height_texture : register(t0, space0);
 [[vk::combinedImageSampler]][[vk::binding(0, 0)]]
 SamplerState height_sampler : register(s0, space0);
 
 // One matrix per patch, read as plain bytes (see mesh_skinned.vert.hlsl for why).
-// Column 0 holds the patch's size, column 3 its corner.
+// Column 0 holds the patch's size (x) and the index of the page's last point that holds
+// land along x and z (yz), column 3 its corner; column 1: x = its page, z = the
+// page's height of image value 0, w = the page's height of image value 1 above that;
+// column 2: xy = world x and z of the page's first point. All relative to the camera.
 [[vk::binding(1, 0)]]
 ByteAddressBuffer instance_matrices : register(t1, space0);
 
@@ -41,8 +46,8 @@ cbuffer ObjectUniforms : register(b1, space1) {
 };
 
 cbuffer TerrainUniforms : register(b2, space1) {
-    float4 map;          // xy: world x and z of the height map's first point, z: meters between points, w: 1 = skirts hang down, 0 = skirts stay on the surface (shadow pass)
-    float4 map_heights;  // x: world height of image value 0, y: height difference of image value 1, zw: index of the last point along x and z
+    float4 map;          // z: meters between points, w: 1 = skirts hang down, 0 = skirts stay on the surface (shadow pass)
+    float4 map_heights;  // zw: index of the last point along x and z (of every page)
 };
 
 struct VertexInput {
@@ -61,17 +66,22 @@ struct VertexOutput {
     float fade : TEXCOORD4;  // see KeptByFade in common.hlsli
     float4 motion_clip : TEXCOORD5;    // without the camera's shift (motion vectors, depth pass only)
     float4 previous_clip : TEXCOORD6;  // where the vertex was in the previous frame
+    nointerpolation float2 page : TEXCOORD7;  // x: the page, y: its height of image value 1
 };
 
 VertexOutput main(VertexInput input) {
     uint address = ((uint)uv_scale.z + input.instance) * 64;
-    float patch_size = asfloat(instance_matrices.Load(address));
+    float3 size_and_last = asfloat(instance_matrices.Load3(address));
+    float patch_size = size_and_last.x;
+    float4 page_heights = asfloat(instance_matrices.Load4(address + 16));
+    float2 page_corner = asfloat(instance_matrices.Load2(address + 32));
     float3 patch_corner = asfloat(instance_matrices.Load3(address + 48));
+    int page = (int)(page_heights.x + 0.5);
 
-    // Where the vertex is on the map, in points; never beyond the map's edge.
-    float2 point_position = (patch_corner.xz + input.position.xz * patch_size - map.xy) / map.z;
-    point_position = clamp(point_position, float2(0.0, 0.0), map_heights.zw);
-    float height = height_texture.Load(int3(int2(point_position + 0.5), 0)) * map_heights.y + map_heights.x;
+    // Where the vertex is on its page, in points; never beyond the page's edge.
+    float2 point_position = (patch_corner.xz + input.position.xz * patch_size - page_corner) / map.z;
+    point_position = clamp(point_position, float2(0.0, 0.0), min(map_heights.zw, size_and_last.yz));
+    float height = height_texture.Load(int4(int2(point_position + 0.5), page, 0)) * page_heights.w + page_heights.z;
     if (input.position.y < -0.5) {
         // Skirts hang down only in the picture. Seen from the sun they are walls standing
         // on every patch edge, which would shadow the slope below them in a grid pattern.
@@ -79,7 +89,7 @@ VertexOutput main(VertexInput input) {
     }
 
     VertexOutput output;
-    float3 world_position = float3(map.x + point_position.x * map.z, height, map.y + point_position.y * map.z);
+    float3 world_position = float3(page_corner.x + point_position.x * map.z, height, page_corner.y + point_position.y * map.z);
     output.clip_position = mul(view_projection, float4(world_position, 1.0));
     // The fragment shader works out the real direction of the ground from the height image.
     output.world_normal = float3(0.0, 1.0, 0.0);
@@ -87,6 +97,7 @@ VertexOutput main(VertexInput input) {
     output.uv = point_position;
     output.world_position = world_position;
     output.fade = 1.0;
+    output.page = float2((float)page, page_heights.w);
     // The ground stands still: only the cameras differ.
     output.motion_clip = 0.0;
     output.previous_clip = 0.0;

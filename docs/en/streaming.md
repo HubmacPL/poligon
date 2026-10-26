@@ -2,7 +2,7 @@
 
 A large world is cut into square **patches**, and only a window of patches around the camera is kept in memory. The pattern is theHunter Classic's: a 32 768 m reserve is 64 x 64 patches of 512 m, a 9 x 9 window of them is loaded around the camera, loading runs in the background ring by ring from the nearest, patches outside the window are let go, and each kind of data does this on its own.
 
-Header: `poligon/world/streaming.h`. Example: `examples/world/streaming`. Test: `tests/world/streaming_test.cpp`.
+Headers: `poligon/world/streaming.h` (the grid and the streamer), `poligon/world/land.h` (the land by patches). Examples: `examples/world/streaming` (the streamer alone), `examples/world/streamed_land` (a drawn world with every source). Tests: `tests/world/streaming_test.cpp`, `tests/world/terrain_streaming_test.cpp` (both backends).
 
 ## Terms
 
@@ -34,7 +34,42 @@ The terrain generator simulates the whole land at once (rivers and erosion are n
 - `CutHeightMap` and `CutTerrainMaps` cut a window of a height map or of all the generator's maps. The window keeps the whole map's coordinates (`HeightMap::first_x`, `TerrainMaps::map_first_x`), so inside it `GetHeight`, `Sample`, `GetWaterDepth` and `MapConditions::Weight` give the whole map's numbers to the bit, as long as the window has a margin of two map points around the patch.
 - `PlacePlantsInRectangle` and `PlacePlantGroupInRectangle` place a rule's plants only inside a patch's rectangle. Every grid cell decides from its own coordinates and the seed, and a place belongs to exactly one rectangle, so the patches together give the whole map's plants, each once, in any order of patches. `plant_rules_test` checks this to the bit on 6 x 6 patches of 100 m (which cut through the 4 m grid cells), visited in a scrambled order.
 
+## The land and its sources
+
+`LandSource` hands out the land patch by patch (`LandPatch`): the generator's maps over the patch with a margin of 8 m (`kLandPatchMargin`), and the ground layer weights over the patch's map points. `LandInfo` says how the land is cut, where it lies (`world_origin`), its lakes, and its **background**: the whole land's heights a point every 64 m, used where no patch is held. `LandFromMaps` cuts patches from whole maps in memory and keeps the last 32 (newest first, the oldest unused go); every source reads through one LandSource, so a patch is cut or read once.
+
+Sources, each with its own window:
+
+| Source | Header | Mode | What a patch becomes |
+|---|---|---|---|
+| `TerrainPatchSource` | terrain.h | Background | a page of the streamed `Terrain` |
+| `TerrainPhysicsSource` | terrain.h | Immediate | one height field, the whole map's heights |
+| `WaterPatchSource` | water.h | Background | a mesh per lake of the patch's wet squares |
+| `PlantPatchSource` | plants.h | Background | the plants a `Planter` puts there, in the `Vegetation` |
+| `PlantColliderSource` | plants.h | Immediate | their trunks and blocks in the physics world |
+| `SkyOcclusionPatchSource` | sky_occlusion.h | Background | a tile of sky occlusion (land and crowns), joined for the renderer |
+
+- **Streamed terrain**: `Terrain(renderer, land_info, config, pages)` holds up to `pages` patches; each is a page of a texture array on the graphics card (`Renderer::CreateTerrainPages`, `SetTerrainPage`), with a rim of one point so that the ground's direction at the edge is right, and its own ground layer weights. Each patch is its own tree of squares (the patch size must be 64, 128, 256, 512... height points); all held patches go out in one `DrawTerrain` call, one draw call per pass. `GetHeight`, `GetNormal` and `GetSlopeDegrees` read the held patch, or the background where none is held.
+- **Plants**: the game gives a `Planter`, a function that puts the plants of a rectangle of the land (usually `PlacePlantGroupInRectangle` with the level's rules). It is called on the loading thread and by several sources for the same patch, so it must only read. The `Vegetation`'s cells must fit the patches: `SetCellOrigin(land origin)` and a patch size that is a whole number of cells; `RemoveInstancesInRectangle` then takes exactly a patch's plants.
+- **Sky occlusion**: each patch's tile is worked out from the patch and its eight neighbors (so `reach` must not be longer than a patch) and the crowns the planter puts on and around it; the held tiles are joined into one map, built again only after a change.
+- **Ground cover** is not a source (it is grown in small cells around the camera anyway): `GroundCover::SetLand(&land)` makes it read each place's maps from the held land patch, and a cell grows only once every patch it touches is held by the land and the terrain; until then it is tried again on every `Update`.
+- **Trample map**: it is game state that follows the player, not loaded data. `TrampleMap::SetRememberOutside(true)` keeps the values of cells that leave its grid and gives them back, less what they would have recovered meanwhile, when the grid comes back.
+
+What `terrain_streaming_test` checks, on 512 m of generated land cut into 4 x 4 patches of 128 m, on both backends:
+
+- heights and normals of the streamed terrain equal the whole terrain's to the bit, on patch borders too; the largest step across a border over 2 mm is 0.5 mm (the slope, not a seam);
+- the land drawn patch by patch looks like the land drawn whole (at most 0.009% of pixels differ by more than 2 of 255; the trees of squares end in the same sizes);
+- collisions: rays across a patch border hit within 0.3 mm of the land's height; a window of 2 x 2 patches at the land's corner has 4 height fields and land outside it has no collisions; when the window moves, the old patches are neither drawn nor collide;
+- plants from patches are the whole land's (2599 of them, the same count of trunks), and the picture with them is the same pixel for pixel, also at patch borders;
+- water from patches covers the same squares as `CreateLakeSurfaces` over the whole land (no pixel differs);
+- sky occlusion joined from patches equals the whole land's point for point, also with the crowns of the plants (973 points under crowns, no difference);
+- ground cover on the streamed terrain grows the whole land's tufts (4611, the same transforms), standing on a corner of four patches;
+- a trampled path left behind is there again on return, less what it recovered.
+
 ## Known limits
 
 - One loading thread. Loads are not spread over several threads.
 - No hysteresis yet: walking back and forth over a patch border loads and lets go the same row of patches each time.
+- A streamed terrain's pages are fixed when it is made; a window larger than its pages ends the program with a message.
+- Sky occlusion looks at most one patch far (`reach` up to the patch size).
+- A patch's plants are placed twice when both the drawn plants and their colliders are streamed (the planter runs once per source); it costs loading time, not memory.

@@ -409,13 +409,30 @@ enum MeshKind { kRigid, kSkinned, kInstanced, kMeshKindCount };
 constexpr int kInstanceListCount = 1 + kCascadeCount;
 
 // A height map on the graphics card.
+// One page of a terrain's height array: a terrain of one map has one page.
+struct TerrainPage {
+    glm::dvec3 origin{0.0};  // world position of the first point; y is that of image value 0
+    float height_range = 1.0f;
+    glm::vec2 last_point{0.0f};  // index of the last point that holds land, along x and z
+};
+
+// A terrain's heights (and, for paged terrains, ground layer weights) on the graphics card,
+// as texture arrays with one layer per page (Renderer::CreateTerrainPages).
 struct TerrainData {
-    SDL_GPUTexture* height_texture = nullptr;
+    SDL_GPUTexture* height_texture = nullptr;  // R16 array, one layer per page
     int width = 0;
     int depth = 0;
     float spacing = 1.0f;
-    glm::dvec3 origin{0.0};  // world position of the first point; y is that of image value 0
-    float height_range = 1.0f;
+    std::vector<TerrainPage> pages;
+    // Ground layer weights as arrays (layers 0..3 and 4..7), one layer per page. A terrain
+    // of one map copies its material's two plain weight images into layer 0 when they change.
+    SDL_GPUTexture* low_weights = nullptr;
+    SDL_GPUTexture* high_weights = nullptr;
+    int weight_points = 0;
+    bool paged = false;              // made by CreateTerrainPages
+    int border_points = 0;           // rim of each page outside its weights
+    bool paged_weights = false;      // the pages bring their own weights
+    std::uint32_t copied_weights[2] = {0, 0};  // texture ids copied into the arrays (one map)
 };
 
 // An impostor on the graphics card (Renderer::CreateImpostor).
@@ -787,6 +804,8 @@ struct Renderer::Impl {
     TextureHandle flat_normal_array_texture;
     TextureHandle first_layer_weights;  // all weight on layer 0
     TextureHandle no_weights;
+    TextureHandle first_layer_weights_array;  // the same as one-layer arrays, for terrains
+    TextureHandle no_weights_array;
     // Stand-ins for materials without the respective texture, so that one shader serves all.
     TextureHandle white_texture;
     TextureHandle flat_normal_texture;
@@ -855,6 +874,14 @@ struct Renderer::Impl {
 
     // Copies a square of single bytes into a one-channel texture of that size.
     void UploadR8(SDL_GPUTexture* texture, const std::uint8_t* values, int resolution);
+    // Copies `width` x `height` pixels of `bytes_per_pixel` bytes into one layer of a texture,
+    // submitted at once in a command buffer of its own (outside the frame's).
+    void UploadTextureLayer(SDL_GPUTexture* texture, Uint32 layer, const void* pixels, int width, int height, int bytes_per_pixel);
+    // A terrain's weight arrays for drawing with `material`: a terrain of one map copies the
+    // material's weight images into its arrays when they changed.
+    void PrepareTerrainWeights(TerrainData& terrain, const TerrainMaterial& material);
+    // Fills one page of a terrain's height array (16-bit, between the page's lowest and highest point).
+    void SetTerrainHeights(TerrainData& terrain, int page, const float* heights, const glm::dvec3& first_point);
 
     // Data reaches the GPU through a transfer buffer: CPU-visible memory that a copy pass reads from.
     SDL_GPUTransferBuffer* CreateFilledTransferBuffer(const void* data, Uint32 size);

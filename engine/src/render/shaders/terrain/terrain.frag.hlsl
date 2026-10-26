@@ -25,7 +25,7 @@
 #include "lighting.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
-Texture2D<float> height_texture : register(t0, space2);
+Texture2DArray<float> height_texture : register(t0, space2);
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
 SamplerState height_sampler : register(s0, space2);
 
@@ -41,17 +41,17 @@ SamplerState layer_normal_sampler : register(s2, space2);
 
 // Weights of layers 0 to 3 (red, green, blue, alpha) and 4 to 7.
 [[vk::combinedImageSampler]][[vk::binding(3, 2)]]
-Texture2D<float4> low_weights : register(t3, space2);
+Texture2DArray<float4> low_weights : register(t3, space2);
 [[vk::combinedImageSampler]][[vk::binding(3, 2)]]
 SamplerState low_weight_sampler : register(s3, space2);
 [[vk::combinedImageSampler]][[vk::binding(4, 2)]]
-Texture2D<float4> high_weights : register(t4, space2);
+Texture2DArray<float4> high_weights : register(t4, space2);
 [[vk::combinedImageSampler]][[vk::binding(4, 2)]]
 SamplerState high_weight_sampler : register(s4, space2);
 
 cbuffer TerrainMaterialUniforms : register(b1, space3) {
-    float4 map;             // xy: world x and z of the height map's first point, z: meters between points
-    float4 map_heights;     // y: height difference of image value 1, zw: 1 / number of points along x and z
+    float4 map;             // z: meters between points
+    float4 map_heights;     // x: 1 = every page has its own weights, zw: 1 / number of points along x and z (of a page)
     float4 steep;           // x, y: cosine of the slope where the steep color starts and where it is complete, z: number of layers, w: 1 = layer textures given
     float4 steep_color;     // rgb: color of steep slopes, a: roughness of the whole terrain
     float4 tile_scales[2];  // per layer: 1 / meters after which its texture repeats
@@ -68,6 +68,10 @@ struct FragmentInput {
     float4 color : TEXCOORD1;
     float2 uv : TEXCOORD2;  // position on the height map, in points
     float3 world_position : TEXCOORD3;
+    float fade : TEXCOORD4;
+    float4 motion_clip : TEXCOORD5;
+    float4 previous_clip : TEXCOORD6;
+    nointerpolation float2 page : TEXCOORD7;  // x: the page of the height (and weight) arrays, y: its height of image value 1
 };
 
 // Smooth noise: random values at whole coordinates, blended in between.
@@ -83,15 +87,15 @@ float ValueNoise(float2 p) {
                 lerp(Hash(cell + float2(0.0, 1.0)), Hash(cell + float2(1.0, 1.0)), f.x), f.y);
 }
 
-float HeightAt(float2 point_position) {
-    return height_texture.SampleLevel(height_sampler, (point_position + 0.5) * map_heights.zw, 0.0) * map_heights.y;
+float HeightAt(float2 point_position, float2 page) {
+    return height_texture.SampleLevel(height_sampler, float3((point_position + 0.5) * map_heights.zw, page.x), 0.0) * page.y;
 }
 
 float4 main(FragmentInput input) : SV_Target0 {
     // The direction of the ground, from the heights one point to each side.
-    float3 ground_normal = normalize(float3(HeightAt(input.uv - float2(1.0, 0.0)) - HeightAt(input.uv + float2(1.0, 0.0)),
+    float3 ground_normal = normalize(float3(HeightAt(input.uv - float2(1.0, 0.0), input.page) - HeightAt(input.uv + float2(1.0, 0.0), input.page),
                                             2.0 * map.z,
-                                            HeightAt(input.uv - float2(0.0, 1.0)) - HeightAt(input.uv + float2(0.0, 1.0))));
+                                            HeightAt(input.uv - float2(0.0, 1.0), input.page) - HeightAt(input.uv + float2(0.0, 1.0), input.page)));
     float2 place = input.world_position.xz;
     // Texture reads below happen inside branches that differ from pixel to pixel, so the
     // rate of change that picks the mipmap is worked out here, outside them.
@@ -104,8 +108,10 @@ float4 main(FragmentInput input) : SV_Target0 {
     float far_share = saturate((distance_to_camera - 25.0) / 90.0) * 0.75;
 
     float2 weight_uv = input.uv * weight_map.xy + weight_map.zw;
-    float4 low = low_weights.SampleLevel(low_weight_sampler, weight_uv, 0.0);
-    float4 high = high_weights.SampleLevel(high_weight_sampler, weight_uv, 0.0);
+    // map_heights.x: 1 = every page has its own weights, 0 = one weight image for all.
+    float weight_layer = map_heights.x > 0.5 ? input.page.x : 0.0;
+    float4 low = low_weights.SampleLevel(low_weight_sampler, float3(weight_uv, weight_layer), 0.0);
+    float4 high = high_weights.SampleLevel(high_weight_sampler, float3(weight_uv, weight_layer), 0.0);
     float weights[8] = {low.x, low.y, low.z, low.w, high.x, high.y, high.z, high.w};
     int layer_count = (int)steep.z;
 

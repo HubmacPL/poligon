@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <utility>
 #include <vector>
 
 #include "poligon/core/math.h"
@@ -15,8 +17,10 @@ namespace poligon {
 // and again leaves a path.
 //
 // The grid follows the player in whole cells (Recenter), so values stay where they were
-// on the land; what falls outside is forgotten. Everything is plain arithmetic on the game's
-// own ticks, so replays give the same paths.
+// on the land; what falls outside is forgotten, or, in a streamed world, remembered
+// (SetRememberOutside) and given back when the grid comes back, less what it would have
+// recovered meanwhile. Everything is plain arithmetic on the game's own ticks, so replays
+// give the same paths.
 
 class TrampleMap : public GroundMapSource {
 public:
@@ -32,6 +36,11 @@ public:
     // Lets every cell stand up by `amount` (for example 0.002 per tick: a path fades over
     // about a minute and a half at 60 ticks per second once nobody walks it).
     void Recover(float amount);
+    // Keeps the values of cells that leave the grid and gives them back when they come into
+    // it again (paths stay on land the player walks away from and comes back to).
+    void SetRememberOutside(bool remember);
+    // Cells kept outside the grid.
+    int GetRememberedCount() const { return static_cast<int>(remembered_.size()); }
 
     // 0..1 at a world position (0 outside the grid).
     float GetValue(const glm::dvec2& position) const;
@@ -52,6 +61,12 @@ private:
     float cell_;
     glm::dvec2 origin_{0.0};
     std::vector<float> values_;
+    // Cells outside the grid, by their place in whole cells from where the grid started:
+    // the value and the total recovery up to when it was put away.
+    bool remember_ = false;
+    std::pair<std::int64_t, std::int64_t> origin_cell_{0, 0};
+    double recovered_total_ = 0.0;
+    std::map<std::pair<std::int64_t, std::int64_t>, std::pair<float, double>> remembered_;
     mutable std::vector<std::uint8_t> bytes_;
     mutable std::uint32_t bytes_version_ = 0xFFFFFFFFu;
     std::uint32_t version_ = 0;

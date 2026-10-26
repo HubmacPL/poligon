@@ -384,13 +384,15 @@ struct WaterMaterial {
 
 // A square piece of a terrain to draw: (x, z) is its corner with the smallest
 // coordinates, in world meters. min_height and max_height enclose the land inside it
-// (world heights); they are used for culling.
+// (world heights); they are used for culling. `page` is the page of a paged terrain
+// (CreateTerrainPages) whose heights it shows; 0 for a terrain of one map.
 struct TerrainPatch {
     double x = 0.0;
     double z = 0.0;
     float size = 0.0f;
     float min_height = 0.0f;
     float max_height = 0.0f;
+    int page = 0;
 };
 
 // How a surface looks. This is the metallic-roughness material model of glTF.
@@ -589,6 +591,22 @@ public:
     // by row, `spacing` meters apart. `origin` is the world position of the first point;
     // its y is added to every height. See poligon/world/terrain.h, which is the usual way in.
     TerrainHandle CreateTerrain(const float* heights, int width, int depth, float spacing, const glm::dvec3& origin);
+    // A terrain streamed in pages (poligon/world/streaming.h): `page_count` square pages of
+    // `points` x `points` heights `spacing` meters apart, each with its own ground layer
+    // weights of `weight_points` x `weight_points` (0 = the material's weights are used, as
+    // for a terrain of one map). The weights cover the page without a rim of `border_points`
+    // points on every side (heights kept there only so that the ground's direction at the
+    // page's edge is right). Pages are filled while the program runs (SetTerrainPage),
+    // outside BeginFrame and EndFrame. All pages of a terrain are drawn by one DrawTerrain
+    // call, which costs one draw call per pass however many pages it touches.
+    TerrainHandle CreateTerrainPages(int points, int page_count, float spacing, int weight_points, int border_points = 0);
+    // Fills a page: `heights` holds points x points values, `origin` is the world position of
+    // its first point (its y is added to every height), `weights` two images of
+    // weight_points x weight_points (TerrainMaterial::weights' layout) or nullptr.
+    // `land_points_x` and `land_points_z` (0 = all): how many points along x and z hold land;
+    // the rest (a patch at the world's edge) is never drawn, as beyond a terrain of one map.
+    void SetTerrainPage(TerrainHandle terrain, int page, const float* heights, const glm::dvec3& origin, const Image* weights,
+                        int land_points_x = 0, int land_points_z = 0);
     void DestroyTerrain(TerrainHandle terrain);
     // Draws pieces of a terrain. Each patch is one flat grid of 64 x 64 cells stretched
     // over its square and lifted to the land's height, so a large patch is coarse and a

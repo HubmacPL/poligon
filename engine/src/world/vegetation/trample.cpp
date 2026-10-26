@@ -25,6 +25,19 @@ void TrampleMap::Recenter(const glm::dvec2& center) {
     if (shift_x == 0 && shift_z == 0) {
         return;
     }
+    if (remember_) {
+        // Cells about to leave the grid are put away.
+        for (int z = 0; z < resolution_; ++z) {
+            for (int x = 0; x < resolution_; ++x) {
+                const float value = values_[static_cast<size_t>(z) * static_cast<size_t>(resolution_) + static_cast<size_t>(x)];
+                const int to_x = x - shift_x;
+                const int to_z = z - shift_z;
+                if (value > 0.0f && (to_x < 0 || to_z < 0 || to_x >= resolution_ || to_z >= resolution_)) {
+                    remembered_[{origin_cell_.first + x, origin_cell_.second + z}] = {value, recovered_total_};
+                }
+            }
+        }
+    }
     std::vector<float> moved(values_.size(), 0.0f);
     for (int z = 0; z < resolution_; ++z) {
         const int from_z = z + shift_z;
@@ -41,6 +54,22 @@ void TrampleMap::Recenter(const glm::dvec2& center) {
     }
     values_ = std::move(moved);
     origin_ += glm::dvec2(static_cast<double>(shift_x), static_cast<double>(shift_z)) * cell;
+    origin_cell_.first += shift_x;
+    origin_cell_.second += shift_z;
+    if (remember_ && !remembered_.empty()) {
+        // Cells that came back get their values, less what they recovered meanwhile.
+        for (auto it = remembered_.begin(); it != remembered_.end();) {
+            const std::int64_t x = it->first.first - origin_cell_.first;
+            const std::int64_t z = it->first.second - origin_cell_.second;
+            if (x >= 0 && z >= 0 && x < resolution_ && z < resolution_) {
+                const float value = it->second.first - static_cast<float>(recovered_total_ - it->second.second);
+                values_[static_cast<size_t>(z) * static_cast<size_t>(resolution_) + static_cast<size_t>(x)] = std::max(value, 0.0f);
+                it = remembered_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
     ++version_;
 }
 
@@ -72,9 +101,27 @@ void TrampleMap::Trample(const glm::dvec2& position, float radius, float amount)
     }
 }
 
+void TrampleMap::SetRememberOutside(bool remember) {
+    remember_ = remember;
+    if (!remember) {
+        remembered_.clear();
+    }
+}
+
 void TrampleMap::Recover(float amount) {
     if (amount <= 0.0f) {
         return;
+    }
+    recovered_total_ += static_cast<double>(amount);
+    // Cells put away that have stood up fully meanwhile are forgotten.
+    if (!remembered_.empty()) {
+        for (auto it = remembered_.begin(); it != remembered_.end();) {
+            if (static_cast<double>(it->second.first) <= recovered_total_ - it->second.second) {
+                it = remembered_.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
     bool changed = false;
     for (float& value : values_) {

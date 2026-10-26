@@ -151,21 +151,101 @@ PlantKind MakePlantKind(const LoadedModel& loaded, const PlantSettings& settings
     return kind;
 }
 
-void AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::dvec3& foot,
-                      float turn, float scale) {
+BodyHandle AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::dvec3& foot,
+                            float turn, float scale) {
     BodySettings body;
     body.rotation = glm::angleAxis(turn, glm::vec3(0.0f, 1.0f, 0.0f));
     if (kind.settings.collider == PlantCollider::Trunk) {
         const float half_height = std::min(variant.height * scale * 0.5f, 4.0f);
         body.position = foot + glm::dvec3(0.0f, half_height - 0.5f, 0.0f);
-        physics.AddCylinder(half_height, kind.settings.trunk_radius * scale, body);
+        return physics.AddCylinder(half_height, kind.settings.trunk_radius * scale, body);
     } else if (kind.settings.collider == PlantCollider::Block) {
         // Somewhat smaller than the box around the model, whose corners are mostly air.
         const glm::vec3 half_size{variant.half_width.x * scale * 0.8f, variant.height * scale * 0.45f,
                                   variant.half_width.y * scale * 0.8f};
         body.position = foot + glm::dvec3(0.0f, variant.height * scale * 0.5f, 0.0f);
-        physics.AddBox(half_size, body);
+        return physics.AddBox(half_size, body);
     }
+    return BodyHandle{};
+}
+
+namespace {
+
+struct PlantPatchData : PatchData {
+    std::vector<PlacedPlant> plants;
+};
+
+// The patch's plants, from the planter, over the patch's rectangle of the land.
+std::unique_ptr<PatchData> PlantPatch(LandSource& land, const Planter& planter, PatchCoord patch) {
+    const LandInfo& info = land.GetInfo();
+    const std::shared_ptr<const LandPatch> patch_land = land.GetPatch(patch);
+    const float size = static_cast<float>(info.grid.patch_size);
+    const glm::vec2 low(static_cast<float>(patch.x) * size, static_cast<float>(patch.z) * size);
+    const glm::vec2 high(std::min(low.x + size, info.size_x), std::min(low.y + size, info.size_z));
+    auto data = std::make_unique<PlantPatchData>();
+    planter(*patch_land, low, high, data->plants);
+    return data;
+}
+
+} // namespace
+
+PlantPatchSource::PlantPatchSource(Vegetation& vegetation, LandSource& land, Planter planter)
+    : vegetation_(vegetation), land_(land), planter_(std::move(planter)) {}
+
+std::unique_ptr<PatchData> PlantPatchSource::Load(PatchCoord patch) {
+    return PlantPatch(land_, planter_, patch);
+}
+
+void PlantPatchSource::Attach(PatchCoord, std::unique_ptr<PatchData> data) {
+    for (const PlacedPlant& plant : static_cast<PlantPatchData&>(*data).plants) {
+        const PlantVariant& variant = plant.kind->variants[static_cast<size_t>(plant.variant)];
+        vegetation_.AddInstance(variant.species_id, Transform(plant.foot, glm::angleAxis(plant.turn, glm::vec3(0.0f, 1.0f, 0.0f)),
+                                                              glm::vec3(plant.scale)));
+    }
+}
+
+void PlantPatchSource::Detach(PatchCoord patch) {
+    const LandInfo& info = land_.GetInfo();
+    const glm::dvec2 low = glm::dvec2(info.world_origin.x, info.world_origin.z) +
+                           glm::dvec2(static_cast<double>(patch.x), static_cast<double>(patch.z)) * info.grid.patch_size;
+    vegetation_.RemoveInstancesInRectangle(low, low + glm::dvec2(info.grid.patch_size));
+}
+
+PlantColliderSource::PlantColliderSource(PhysicsWorld& physics, LandSource& land, Planter planter)
+    : physics_(physics), land_(land), planter_(std::move(planter)) {}
+
+std::unique_ptr<PatchData> PlantColliderSource::Load(PatchCoord patch) {
+    return PlantPatch(land_, planter_, patch);
+}
+
+void PlantColliderSource::Attach(PatchCoord patch, std::unique_ptr<PatchData> data) {
+    std::vector<BodyHandle>& bodies = bodies_[patch];
+    for (const PlacedPlant& plant : static_cast<PlantPatchData&>(*data).plants) {
+        const PlantVariant& variant = plant.kind->variants[static_cast<size_t>(plant.variant)];
+        const BodyHandle body = AddPlantCollider(physics_, *plant.kind, variant, plant.foot, plant.turn, plant.scale);
+        if (body.id != 0) {
+            bodies.push_back(body);
+        }
+    }
+}
+
+void PlantColliderSource::Detach(PatchCoord patch) {
+    const auto found = bodies_.find(patch);
+    if (found == bodies_.end()) {
+        return;
+    }
+    for (const BodyHandle body : found->second) {
+        physics_.RemoveBody(body);
+    }
+    bodies_.erase(found);
+}
+
+int PlantColliderSource::GetBodyCount() const {
+    int count = 0;
+    for (const auto& [patch, bodies] : bodies_) {
+        count += static_cast<int>(bodies.size());
+    }
+    return count;
 }
 
 } // namespace poligon

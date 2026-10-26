@@ -85,6 +85,10 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     impl_->flat_normal_array_texture = CreateTextureArray(&flat_normal, 1, plain_data);
     impl_->first_layer_weights = CreateTexture(MakeSolidImage(1, 1, 255, 0, 0, 0), plain_data);
     impl_->no_weights = CreateTexture(MakeSolidImage(1, 1, 0, 0, 0, 0), plain_data);
+    const Image first_layer = MakeSolidImage(1, 1, 255, 0, 0, 0);
+    impl_->first_layer_weights_array = CreateTextureArray(&first_layer, 1, plain_data);
+    const Image nothing = MakeSolidImage(1, 1, 0, 0, 0, 0);
+    impl_->no_weights_array = CreateTextureArray(&nothing, 1, plain_data);
     {
         SDL_GPUTextureCreateInfo info{};
         info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -210,8 +214,10 @@ Renderer::~Renderer() {
             }
         }
         for (const TerrainData& terrain : impl_->terrains) {
-            if (terrain.height_texture != nullptr) {
-                SDL_ReleaseGPUTexture(impl_->device, terrain.height_texture);
+            for (SDL_GPUTexture* texture : {terrain.height_texture, terrain.low_weights, terrain.high_weights}) {
+                if (texture != nullptr) {
+                    SDL_ReleaseGPUTexture(impl_->device, texture);
+                }
             }
         }
         if (impl_->joint_buffer != nullptr) {
@@ -507,6 +513,13 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
             FatalError("Renderer::DrawTerrain: the weights must be plain textures, not texture arrays");
         }
     }
+    TerrainData& data = impl_->terrains[terrain.id - 1];
+    for (int i = 0; i < count; ++i) {
+        if (patches[i].page < 0 || patches[i].page >= static_cast<int>(data.pages.size())) {
+            FatalError("Renderer::DrawTerrain: a patch names a page the terrain does not have");
+        }
+    }
+    impl_->PrepareTerrainWeights(data, material);
     if (material.layer_count < 0 || material.layer_count > kMaxTerrainLayers) {
         FatalError("Renderer::DrawTerrain: layer_count must be between 0 and 8");
     }
@@ -521,7 +534,10 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     batch.count = static_cast<std::uint32_t>(count);
     batch.options = InstanceOptions{};
     for (int i = 0; i < count; ++i) {
-        // Corner, size and height range of the patch, packed into a matrix like any instance.
+        // Corner, size and height range of the patch, packed into a matrix like any instance
+        // (the diagonal and column 3, which culling reads). The free entries say which page
+        // it shows and where that page lies, relative to the camera.
+        const TerrainPage& page = data.pages[static_cast<size_t>(patches[i].page)];
         glm::mat4 transform(1.0f);
         transform[0].x = patches[i].size;
         transform[1].y = glm::max(patches[i].max_height - patches[i].min_height, 0.01f);
@@ -529,6 +545,13 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
         transform[3] = glm::vec4(static_cast<float>(patches[i].x - impl_->origin.x),
                                  static_cast<float>(static_cast<double>(patches[i].min_height) - impl_->origin.y),
                                  static_cast<float>(patches[i].z - impl_->origin.z), 1.0f);
+        transform[0].y = page.last_point.x;
+        transform[0].z = page.last_point.y;
+        transform[1].x = static_cast<float>(patches[i].page);
+        transform[1].z = static_cast<float>(page.origin.y - impl_->origin.y);
+        transform[1].w = page.height_range;
+        transform[2].x = static_cast<float>(page.origin.x - impl_->origin.x);
+        transform[2].y = static_cast<float>(page.origin.z - impl_->origin.z);
         impl_->instance_sources.push_back(transform);
     }
     impl_->instance_batches.push_back(batch);

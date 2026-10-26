@@ -1,9 +1,13 @@
 #pragma once
 
+#include <functional>
+#include <map>
 #include <vector>
 
 #include "poligon/assets/assets.h"
 #include "poligon/physics/physics.h"
+#include "poligon/world/land.h"
+#include "poligon/world/streaming.h"
 #include "poligon/world/vegetation.h"
 
 namespace poligon {
@@ -71,8 +75,60 @@ struct PlantKind {
 PlantKind MakePlantKind(const LoadedModel& model, const PlantSettings& settings, Vegetation& vegetation);
 
 // Adds the body that blocks movement for one placed plant whose foot is at `foot`, turned
-// `turn` radians around the vertical and scaled by `scale`. Nothing for PlantCollider::None.
-void AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::dvec3& foot,
-                      float turn, float scale);
+// `turn` radians around the vertical and scaled by `scale`. Nothing for PlantCollider::None
+// (the handle's id is then 0).
+BodyHandle AddPlantCollider(PhysicsWorld& physics, const PlantKind& kind, const PlantVariant& variant, const glm::dvec3& foot,
+                            float turn, float scale);
+
+// --- Plants of a streamed world (poligon/world/streaming.h, poligon/world/land.h) ---
+
+// One plant a planter puts on a patch.
+struct PlacedPlant {
+    const PlantKind* kind = nullptr;
+    int variant = 0;          // into kind->variants
+    glm::dvec3 foot{0.0};     // world position of its foot
+    float turn = 0.0f;        // radians around the vertical
+    float scale = 1.0f;
+};
+
+// What a game plants on one patch of land: every plant whose place lies in the rectangle
+// [low, high) of map coordinates (meters from the land's first point), placed from `land`
+// (usually by PlacePlantGroupInRectangle). It is called on the loading thread and on the
+// main thread, for the same patch by several sources: it must only read, and give the same
+// plants every time.
+using Planter = std::function<void(const LandPatch& land, glm::vec2 low, glm::vec2 high, std::vector<PlacedPlant>& plants)>;
+
+// The plants of a streamed world as drawn: a Background source. The vegetation's cells must
+// fit the patches (Vegetation::SetCellOrigin at the land's world origin, and a patch size that
+// is a whole number of cells), so that a patch's plants leave with it.
+class PlantPatchSource : public PatchSource {
+public:
+    PlantPatchSource(Vegetation& vegetation, LandSource& land, Planter planter);
+    std::unique_ptr<PatchData> Load(PatchCoord patch) override;
+    void Attach(PatchCoord patch, std::unique_ptr<PatchData> data) override;
+    void Detach(PatchCoord patch) override;
+
+private:
+    Vegetation& vegetation_;
+    LandSource& land_;
+    Planter planter_;
+};
+
+// The bodies of the same plants (trunks, rocks): an Immediate source, since the player and
+// the animals stand and bump into them.
+class PlantColliderSource : public PatchSource {
+public:
+    PlantColliderSource(PhysicsWorld& physics, LandSource& land, Planter planter);
+    std::unique_ptr<PatchData> Load(PatchCoord patch) override;
+    void Attach(PatchCoord patch, std::unique_ptr<PatchData> data) override;
+    void Detach(PatchCoord patch) override;
+    int GetBodyCount() const;
+
+private:
+    PhysicsWorld& physics_;
+    LandSource& land_;
+    Planter planter_;
+    std::map<PatchCoord, std::vector<BodyHandle>> bodies_;
+};
 
 } // namespace poligon

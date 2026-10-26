@@ -90,6 +90,7 @@ struct SpeciesData {
 
 struct Vegetation::Impl {
     float cell_size = 32.0f;
+    glm::dvec2 cell_origin{0.0};  // world x and z of a cell corner
     std::vector<SpeciesData> species;
     // Ordered by cell coordinates, so that cells are always visited in the same order.
     std::map<std::pair<int, int>, Cell> cells;
@@ -151,10 +152,11 @@ void Vegetation::AddInstance(int species, const glm::dvec3& origin, const glm::m
     }
     const glm::dvec3 world_foot = origin + glm::dvec3(local[3]);
     const double cell_size = static_cast<double>(impl_->cell_size);
-    const std::pair<int, int> key{static_cast<int>(std::floor(world_foot.x / cell_size)),
-                                  static_cast<int>(std::floor(world_foot.z / cell_size))};
+    const std::pair<int, int> key{static_cast<int>(std::floor((world_foot.x - impl_->cell_origin.x) / cell_size)),
+                                  static_cast<int>(std::floor((world_foot.z - impl_->cell_origin.y) / cell_size))};
     Cell& cell = impl_->cells[key];
-    cell.corner = glm::dvec3(static_cast<double>(key.first) * cell_size, 0.0, static_cast<double>(key.second) * cell_size);
+    cell.corner = glm::dvec3(impl_->cell_origin.x + static_cast<double>(key.first) * cell_size, 0.0,
+                             impl_->cell_origin.y + static_cast<double>(key.second) * cell_size);
     const glm::mat4 transform = RelativeTo(origin, local, cell.corner);
     const glm::vec2 foot{transform[3].x, transform[3].z};
     cell.min = glm::min(cell.min, foot);
@@ -178,6 +180,27 @@ void Vegetation::AddInstance(int species, const glm::dvec3& origin, const glm::m
 void Vegetation::ClearInstances() {
     impl_->cells.clear();
     impl_->instance_count = 0;
+}
+
+void Vegetation::SetCellOrigin(const glm::dvec2& origin) {
+    if (!impl_->cells.empty()) {
+        FatalError("Vegetation::SetCellOrigin: set the cell origin before adding plants");
+    }
+    impl_->cell_origin = origin;
+}
+
+void Vegetation::RemoveInstancesInRectangle(const glm::dvec2& low, const glm::dvec2& high) {
+    for (auto it = impl_->cells.begin(); it != impl_->cells.end();) {
+        const Cell& cell = it->second;
+        if (cell.corner.x >= low.x && cell.corner.x < high.x && cell.corner.z >= low.y && cell.corner.z < high.y) {
+            for (const CellSpecies& entry : cell.species) {
+                impl_->instance_count -= static_cast<int>(entry.transforms.size());
+            }
+            it = impl_->cells.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 int Vegetation::GetInstanceCount() const {

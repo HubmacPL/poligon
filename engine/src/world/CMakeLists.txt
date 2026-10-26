@@ -6,6 +6,7 @@ add_library(poligon_world STATIC
   streaming/streaming.cpp
   terrain/height_map.cpp
   terrain/sky_occlusion.cpp
+  terrain/land.cpp
   terrain/terrain.cpp
   terrain/generator/fine_scale.cpp
   terrain/generator/large_scale.cpp

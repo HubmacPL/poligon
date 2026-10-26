@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "poligon/core/fatal_error.h"
+#include "poligon/world/land.h"
 
 namespace poligon {
 
@@ -75,6 +76,36 @@ struct GroundCover::Impl {
     float cell_size = 16.0f;
     float density_scale = 1.0f;
     const TerrainMaps* maps = nullptr;
+    const LandSource* land = nullptr;
+    // Cells that could not be grown yet (their land was not held), tried again on Update.
+    bool waiting = false;
+
+    // The maps to read at a world place, and whether there are any: the whole maps, or the
+    // held land patch there (`ready` false when a streamed world has not loaded it yet).
+    const TerrainMaps* MapsAt(double x, double z, bool& ready) const {
+        ready = true;
+        if (land == nullptr) {
+            return maps;
+        }
+        const LandInfo& info = land->GetInfo();
+        const glm::dvec2 map_place(x - info.world_origin.x, z - info.world_origin.z);
+        const PatchCoord patch{static_cast<int>(std::floor(map_place.x / info.grid.patch_size)),
+                               static_cast<int>(std::floor(map_place.y / info.grid.patch_size))};
+        if (patch.x < 0 || patch.z < 0 || patch.x >= info.grid.patch_count_x || patch.z >= info.grid.patch_count_z) {
+            return nullptr;  // beyond the land: no conditions hold, nothing grows
+        }
+        if (last_patch != nullptr && last_patch->patch == patch) {
+            return &last_patch->maps;
+        }
+        std::shared_ptr<const LandPatch> held = land->FindPatch(patch);
+        if (held == nullptr || !terrain->HasPatch(patch)) {
+            ready = false;
+            return nullptr;
+        }
+        last_patch = std::move(held);  // kept alive (and looked up once) while plants near it are placed
+        return &last_patch->maps;
+    }
+    mutable std::shared_ptr<const LandPatch> last_patch;
     glm::dvec2 world_to_map{0.0};
     std::vector<GroundCoverLayer> layers;
     std::vector<int> species_ids;
@@ -95,7 +126,10 @@ struct GroundCover::Impl {
         return glm::clamp((noise - layer.patch_threshold) / glm::max(layer.patch_softness, 0.001f) + 1.0f, 0.0f, 1.0f);
     }
 
-    Cell Build(int column, int row) const {
+    // A cell's plants; `ready` false (and no plants) when a streamed world's land is not
+    // held yet for some of them.
+    Cell Build(int column, int row, bool& ready) const {
+        ready = true;
         Cell cell;
         cell.layers.resize(layers.size());
         // Plants are placed relative to the cell's corner (world positions in double).
@@ -121,7 +155,7 @@ struct GroundCover::Impl {
                 const float scale = random.Between(layer.scale_min, layer.scale_max);
                 const float patch_roll = random.Next();
                 // Drawn only with maps, so that cover without them is placed as before.
-                const float map_roll = maps != nullptr ? random.Next() : 0.0f;
+                const float map_roll = maps != nullptr || land != nullptr ? random.Next() : 0.0f;
                 // Every random number is drawn before any rule, so that a plant rejected by a
                 // rule does not shift the plants after it.
                 if (patch_roll >= PatchShare(layer, x, z)) {
@@ -130,7 +164,16 @@ struct GroundCover::Impl {
                 if (terrain->GetSlopeDegrees(x, z) > layer.max_slope_degrees) {
                     continue;
                 }
-                if (maps != nullptr && map_roll >= layer.conditions.Weight(*maps, glm::vec2(glm::dvec2(x, z) + world_to_map))) {
+                bool land_ready = true;
+                const TerrainMaps* here = MapsAt(x, z, land_ready);
+                if (!land_ready) {
+                    ready = false;
+                    return Cell{};
+                }
+                if (land != nullptr && here == nullptr) {
+                    continue;  // beyond the land
+                }
+                if (here != nullptr && map_roll >= layer.conditions.Weight(*here, glm::vec2(glm::dvec2(x, z) + world_to_map))) {
                     continue;
                 }
                 const float height = static_cast<float>(terrain->GetHeight(x, z));
@@ -200,11 +243,12 @@ void GroundCover::Update(const glm::dvec3& camera_position) {
     const double cell_size = static_cast<double>(impl.cell_size);
     const std::pair<int, int> camera_cell{static_cast<int>(std::floor(camera_position.x / cell_size)),
                                           static_cast<int>(std::floor(camera_position.z / cell_size))};
-    if (impl.has_camera && camera_cell == impl.camera_cell) {
+    if (impl.has_camera && camera_cell == impl.camera_cell && !impl.waiting) {
         return;
     }
     impl.has_camera = true;
     impl.camera_cell = camera_cell;
+    impl.waiting = false;
 
     // The cells whose nearest point lies within the radius of the camera.
     const glm::dvec2 eye(camera_position.x, camera_position.z);
@@ -223,7 +267,13 @@ void GroundCover::Update(const glm::dvec3& camera_position) {
             if (found != impl.cells.end()) {
                 kept.insert(impl.cells.extract(found));
             } else {
-                kept.emplace(key, impl.Build(column, row));
+                bool ready = true;
+                Cell cell = impl.Build(column, row, ready);
+                if (!ready) {
+                    impl.waiting = true;  // its land is still loading: try again next time
+                    continue;
+                }
+                kept.emplace(key, std::move(cell));
                 ++impl.stats.cells_built;
                 changed = true;
             }
@@ -259,7 +309,17 @@ void GroundCover::SetDensityScale(float scale) {
 
 void GroundCover::SetMaps(const TerrainMaps* maps, const glm::dvec2& world_to_map) {
     impl_->maps = maps;
+    impl_->land = nullptr;
     impl_->world_to_map = world_to_map;
+    impl_->cells.clear();
+    impl_->has_camera = false;
+}
+
+void GroundCover::SetLand(const LandSource* land) {
+    impl_->land = land;
+    impl_->maps = nullptr;
+    impl_->last_patch.reset();
+    impl_->world_to_map = land != nullptr ? -glm::dvec2(land->GetInfo().world_origin.x, land->GetInfo().world_origin.z) : glm::dvec2(0.0);
     impl_->cells.clear();
     impl_->has_camera = false;
 }
@@ -281,8 +341,13 @@ float GroundCover::GetDensity(int layer_index, double x, double z) const {
         return 0.0f;
     }
     float share = Impl::PatchShare(layer, x, z);
-    if (impl_->maps != nullptr) {
-        share *= layer.conditions.Weight(*impl_->maps, glm::vec2(glm::dvec2(x, z) + impl_->world_to_map));
+    bool ready = true;
+    const TerrainMaps* maps = impl_->MapsAt(x, z, ready);
+    if (impl_->land != nullptr && maps == nullptr) {
+        return 0.0f;  // beyond the land, or its patch is not held
+    }
+    if (maps != nullptr) {
+        share *= layer.conditions.Weight(*maps, glm::vec2(glm::dvec2(x, z) + impl_->world_to_map));
     }
     return layer.density * share;
 }
