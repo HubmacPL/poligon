@@ -1,5 +1,7 @@
 #include "poligon/world/terrain_generator.h"
 
+#include <cstdlib>
+
 #include "generator_internal.h"
 
 namespace poligon {
@@ -230,6 +232,34 @@ bool IsSet(const TerrainRange& range) {
 }
 
 } // namespace
+
+TerrainRange* FindMapCondition(MapConditions& c, const std::string& word) {
+    return word == "slope"            ? &c.slope_degrees
+           : word == "height"         ? &c.height
+           : word == "moisture"       ? &c.moisture
+           : word == "sediment"       ? &c.sediment
+           : word == "rock"           ? &c.rock
+           : word == "flow"           ? &c.flow
+           : word == "water_distance" ? &c.water_distance
+           : word == "water_depth"    ? &c.water_depth
+                                      : nullptr;
+}
+
+bool ReadTerrainRange(const std::vector<std::string>& values, TerrainRange& range) {
+    if (values.size() != 3) {
+        return false;
+    }
+    char* end = nullptr;
+    float numbers[3];
+    for (int i = 0; i < 3; ++i) {
+        numbers[i] = std::strtof(values[static_cast<size_t>(i)].c_str(), &end);
+        if (*end != '\0') {
+            return false;
+        }
+    }
+    range = {numbers[0], numbers[1], numbers[2]};
+    return numbers[0] <= numbers[1] && numbers[2] >= 0.0f;
+}
 
 float MapConditions::Weight(const TerrainMaps& maps, glm::vec2 place) const {
     float weight = 1.0f;

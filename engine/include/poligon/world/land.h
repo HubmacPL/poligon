@@ -2,11 +2,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include "poligon/assets/assets.h"
 #include "poligon/core/image.h"
 #include "poligon/world/streaming.h"
 #include "poligon/world/terrain.h"
+#include "poligon/world/level.h"
 #include "poligon/world/terrain_generator.h"
 
 namespace poligon {
@@ -81,6 +84,50 @@ public:
 
     // Cuts one patch (what GetPatch keeps); for tools that write patches to files.
     LandPatch CutPatch(PatchCoord patch) const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// --- Cooked land ---
+//
+// A land cooked into files (CookLand), read patch by patch from a cooked folder or an
+// archive (LandFromFiles, through an AssetLibrary):
+//
+//     NAME.pworld        "poligon-world 1", then what LandInfo holds (without world_origin)
+//                        and a number naming the settings it was made from
+//     NAME/X_Z.ppatch    "poligon-patch 1", then one LandPatch (its maps window and weights)
+//
+// The bytes are those of the cut patches, so a patch read from a file equals the patch cut
+// from the whole maps to the bit.
+
+// Writes `land`'s description and every patch into `cooked_folder`. `settings_hash` is kept
+// in the description (CookLevelWorld uses it to know when to cook again).
+bool CookLand(const LandFromMaps& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
+              std::string& error);
+
+// Cooks the streamed world a level names (Level::world) when its files are missing or were
+// made from other settings (the terrain generator's, the level's ground layers, the patch
+// size): generates the land (kept in `terrain_cache`, as LoadOrGenerateTerrain does), makes
+// the ground layer weights from `layers` and cuts it into patches. `cooked` says whether it
+// cooked; false and `error` on failure.
+bool CookLevelWorld(const Level& level, const std::vector<GroundLayer>& layers, const char* cooked_folder, const char* terrain_cache,
+                    bool& cooked, std::string& error);
+
+// Land read from cooked files. The description is read when it is made (IsOpen and
+// GetError say how it went); patches when asked for, from any thread. `world_origin` puts
+// the land into the world. The library must outlive the source.
+class LandFromFiles : public LandSource {
+public:
+    LandFromFiles(const AssetLibrary& library, const std::string& name, const glm::dvec3& world_origin, int kept_patches = 32);
+    ~LandFromFiles() override;
+    bool IsOpen() const;
+    const std::string& GetError() const;
+    const LandInfo& GetInfo() const override;
+    // A patch that cannot be read ends the program with a message (the cooked files are broken).
+    std::shared_ptr<const LandPatch> GetPatch(PatchCoord patch) override;
+    std::shared_ptr<const LandPatch> FindPatch(PatchCoord patch) const override;
 
 private:
     struct Impl;

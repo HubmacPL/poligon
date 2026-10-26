@@ -55,6 +55,15 @@ Sources, each with its own window:
 - **Ground cover** is not a source (it is grown in small cells around the camera anyway): `GroundCover::SetLand(&land)` makes it read each place's maps from the held land patch, and a cell grows only once every patch it touches is held by the land and the terrain; until then it is tried again on every `Update`.
 - **Trample map**: it is game state that follows the player, not loaded data. `TrampleMap::SetRememberOutside(true)` keeps the values of cells that leave its grid and gives them back, less what they would have recovered meanwhile, when the grid comes back.
 
+## Cooked land
+
+A game reads the land cooked (`poligon/world/land.h`): the level names its world (`world worlds/forest`, `world.patch_size`, `world.background_spacing`, see [assets.md](assets.md)), and `CookLevelWorld` (or `asset_cooker --level`) generates the land, makes its ground layer weights from the level's `ground` blocks and writes:
+
+- `NAME.pworld`: the header line `poligon-world 1`, a number naming the settings it was made from (the generator's, the ground layers', the patch size: when they change, it is cooked again), then the `LandInfo` (patches, spacings, size, lakes, the background heights and weights);
+- `NAME/X_Z.ppatch`: the header line `poligon-patch 1`, then one `LandPatch` (its window of the maps and its weights) as raw numbers.
+
+`LandFromFiles(library, name, world_origin)` reads them through an `AssetLibrary`, from the cooked folder or a `POLIPAK1` archive (read file by file, so a released game holds only the patches it uses), on any thread. A patch read back equals the patch cut from the whole maps to the bit (`land_files_test`, from the folder and from the archive). Binary files are written with `poligon/core/binary_io.h`, shared with the asset files.
+
 ## The far background
 
 Beyond the window the land is still there: a streamed `Terrain` draws it from `LandInfo::background` (the whole land's heights a point every 64 m, with ground layer weights at the same points) wherever no patch is held. The coarse heights are brought to 64 cells per patch (8 m for 512 m patches), so that the background's smallest square is exactly one patch; a square with held patches inside is split down to single patches and those are left out, and far squares grow to 2, 4, 8... patches by the same distance rule as the patches' own squares. It is one more `DrawTerrain` call, so one more draw call per pass; the haze and fog of the renderer cover it like any land. `SetBackgroundVisible(false)` turns it off; `TerrainStats::background_patches` counts its squares.

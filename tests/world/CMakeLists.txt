@@ -29,3 +29,7 @@ foreach(backend d3d12 vulkan)
             ${CMAKE_BINARY_DIR}/test_output/far_from_origin_${backend}_far.png --channel-tolerance 12)
   set_tests_properties(far_from_origin_looks_the_same_${backend} PROPERTIES FIXTURES_REQUIRED far_from_origin_${backend})
 endforeach()
+
+add_executable(land_files_test land_files_test.cpp)
+target_link_libraries(land_files_test PRIVATE poligon_engine poligon_build_options)
+add_test(NAME land_files_test COMMAND land_files_test ${CMAKE_BINARY_DIR}/test_output)

@@ -41,11 +41,11 @@ impostor impostors/pine.impostor
 ## Cooking
 
 - `CookAssets(list, list_path, source_folder, cooked_folder)` writes one file per asset, named after it (`trees/pine` becomes `trees/pine.pmodel`, `ground/forest_floor_color` becomes `ground/forest_floor_color.ptex`). An asset is cooked again only when its cooked file is missing or older than the list or any of its sources, or when the cooker itself changed (`kCookVersion` in `cook_version.txt`). A failed asset is reported and the others go on. `forest_scene` cooks on start: 31 assets in 15 s the first time, nothing after that.
-- `asset_cooker LIST SOURCE_FOLDER COOKED_FOLDER [--pack ARCHIVE]` does the same from the command line.
+- `asset_cooker LIST SOURCE_FOLDER COOKED_FOLDER [--level LEVEL [--terrain-cache FOLDER]] [--pack ARCHIVE]` does the same from the command line; `--level` also cooks the streamed world the level names (`CookLevelWorld`, see [streaming.md](streaming.md)): the land is generated (kept in the terrain cache), its ground layer weights made from the level's `ground` blocks, and both cut into patch files `NAME/X_Z.ppatch` with a description `NAME.pworld`. It is cooked again only when the generator's settings, the ground layers or the patch size change.
 - Textures (`.ptex`, `SaveCompressedImage`): block-compressed with stb_dxt (public domain / MIT) with every mipmap, computed as `Renderer::CreateTexture` computes them (coverage-preserving for cut-outs); block-compressed chains end at 4 x 4, because Direct3D 12 cannot copy smaller levels of them. Sizes must be multiples of 4.
 - Models (`.pmodel`): meshes, instances, materials, the skeleton, the animation clips built by ozz-animation and stored as its archive (`AnimationSet::SaveArchive`; a game loads them ready to play, without building, as `LoadedModel::animations`, and `model.animations` stays empty), each material's values (emission included) and four images compressed (color BC1, or BC3 for cut-outs; normal map BC5; occlusion-roughness-metallic BC1; emission BC1), the simpler levels' meshes and the impostor's two pictures (BC3). Normal maps keep x and y only; shaders rebuild z (`mesh.frag.hlsl`, `terrain.frag.hlsl`), which works for uncompressed maps too.
 - Sizes: the 31 assets of `forest_scene` take 225 MB cooked. Compressed ground layers made 2048-pixel layer textures affordable again, and the frame got faster (15.3 to 13.9 ms at the start in high), because the card reads less memory.
-- `PackAssets(cooked_folder, archive)` packs the folder into one file for a released game: `POLIPAK1`, a table of (FNV-1a 64-bit hash of the name, offset, size), then the files. Names are not stored and nothing is encrypted (the author's choice of 2026-10-14: it keeps casual hands out, as theHunter's archives do).
+- `PackAssets(cooked_folder, archive)` packs the folder into one file for a released game: `POLIPAK1`, a table of (FNV-1a 64-bit hash of the name, offset, size), then the files. Names are not stored and nothing is encrypted (the author's choice of 2026-10-14: it keeps casual hands out, as theHunter's archives do). It copies the files one by one, and `AssetLibrary` reads only the table when it opens an archive and each file when it is asked for (since 2026-10-26; before, the whole archive was held in memory, which a streamed world's hundreds of megabytes of patches rule out). Reads may come from several threads at once.
 
 ## Loading by name
 
@@ -82,9 +82,19 @@ terrain.relief 110
 render_settings look.txt     # optional, relative to this file
 player_start lake            # or: player_start X Z TURN (meters on the map, degrees)
 object rocks/boulder 3538 5112 40 2.2    # asset, map x, z, turn, scale
+world worlds/forest          # optional: the land is streamed from this cooked world
+world.patch_size 512
+world.background_spacing 64
+
+ground ground/forest_floor   # a ground layer: its textures NAME_color and NAME_normal
+tile 3                       # meters after which they repeat
+strength 0.35
+moisture 0 0.45 0.15         # conditions on the maps, as in plant rules
+patch 45 0.45
 ```
 
 - `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/world/level.h`). Unknown words and bad values are errors that name the line; lines whose first word another reader takes (for example the plant rules) are kept in `Level::other_lines`.
 - `player_start lake` uses `FindLakeViewpoint` (`poligon/world/terrain_generator.h`): gentle ground 150 to 500 m from the largest lake, as high above it as possible with its middle in view.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` read and write generator settings by name; `terrain_tool generate` uses the same names.
+- Ground layers (`ParseGroundLayers`, `poligon/world/terrain.h`) are blocks like plant rules, at most eight, numbered in the order of the file; the two readers pass over each other's blocks. They choose where each ground texture covers the land (`TerrainLayerRule`); a streamed world bakes their weights into its patches.
 - `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake, three boulders put by hand and 18 plant rules.

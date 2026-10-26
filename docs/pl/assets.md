@@ -41,11 +41,11 @@ impostor impostors/pine.impostor
 ## Wypiekanie
 
 - `CookAssets(list, list_path, source_folder, cooked_folder)` zapisuje jeden plik na asset, nazwany od niego (`trees/pine` staje się `trees/pine.pmodel`, `ground/forest_floor_color` staje się `ground/forest_floor_color.ptex`). Asset jest wypiekany ponownie tylko wtedy, gdy jego plik nie istnieje albo jest starszy od listy lub któregoś źródła, albo gdy zmienił się sam wypiekacz (`kCookVersion` w `cook_version.txt`). Nieudany asset jest zgłaszany, a reszta idzie dalej. `forest_scene` wypieka przy starcie: 31 assetów w 15 s za pierwszym razem, potem nic.
-- `asset_cooker LISTA FOLDER_ŹRÓDEŁ FOLDER_WYPIECZONY [--pack ARCHIWUM]` robi to samo z wiersza poleceń.
+- `asset_cooker LISTA FOLDER_ŹRÓDEŁ FOLDER_WYPIECZONY [--level POZIOM [--terrain-cache FOLDER]] [--pack ARCHIWUM]` robi to samo z wiersza poleceń; `--level` wypieka też strumieniowany świat, który wskazuje poziom (`CookLevelWorld`, patrz [streaming.md](streaming.md)): ląd jest generowany (trzymany w pamięci podręcznej terenu), wagi jego warstw podłoża robione z bloków `ground` poziomu, a całość cięta na pliki łat `NAZWA/X_Z.ppatch` z opisem `NAZWA.pworld`. Wypiekany jest od nowa tylko wtedy, gdy zmienią się ustawienia generatora, warstwy podłoża albo rozmiar łaty.
 - Tekstury (`.ptex`, `SaveCompressedImage`): kompresja blokowa przez stb_dxt (domena publiczna / MIT) z wszystkimi mipmapami, liczonymi tak jak w `Renderer::CreateTexture` (z zachowaniem pokrycia dla wycinanych alfą); łańcuchy skompresowane kończą się na 4 × 4, bo Direct3D 12 nie umie kopiować ich mniejszych poziomów. Rozmiary muszą być wielokrotnością 4.
 - Modele (`.pmodel`): siatki, instancje, materiały, szkielet, klipy animacji zbudowane przez ozz-animation i zapisane jako jego archiwum (`AnimationSet::SaveArchive`; gra wczytuje je gotowe do odtwarzania, bez budowania, jako `LoadedModel::animations`, a `model.animations` zostaje puste), wartości każdego materiału (z emisją) i jego cztery obrazy skompresowane (kolor BC1 albo BC3 dla wycinanych; mapa normalnych BC5; okluzja-szorstkość-metaliczność BC1; emisja BC1), siatki prostszych poziomów i dwa obrazy impostora (BC3). Mapy normalnych trzymają tylko x i y; shadery odtwarzają z (`mesh.frag.hlsl`, `terrain.frag.hlsl`), co działa też dla map nieskompresowanych.
 - Rozmiary: 31 assetów `forest_scene` zajmuje po wypieczeniu 225 MB. Skompresowane warstwy podłoża znów pozwalają na tekstury warstw 2048 pikseli, a klatka przyspieszyła (15,3 do 13,9 ms na starcie w high), bo karta czyta mniej pamięci.
-- `PackAssets(cooked_folder, archive)` pakuje folder w jeden plik dla wydanej gry: `POLIPAK1`, tabela (64-bitowy skrót FNV-1a nazwy, przesunięcie, rozmiar), potem pliki. Nazwy nie są zapisywane i nic nie jest szyfrowane (wybór autora z 2026-10-14: odstrasza przypadkowe ręce, jak archiwa theHunter).
+- `PackAssets(cooked_folder, archive)` pakuje folder w jeden plik dla wydanej gry: `POLIPAK1`, tabela (64-bitowy skrót FNV-1a nazwy, przesunięcie, rozmiar), potem pliki. Nazwy nie są zapisywane i nic nie jest szyfrowane (wybór autora z 2026-10-14: odstrasza przypadkowe ręce, jak archiwa theHunter). Kopiuje pliki jeden po drugim, a `AssetLibrary` przy otwieraniu archiwum czyta tylko tabelę, a każdy plik dopiero, gdy jest potrzebny (od 2026-10-26; wcześniej całe archiwum siedziało w pamięci, co przy setkach megabajtów łat strumieniowanego świata odpada). Odczyty mogą przychodzić z kilku wątków naraz.
 
 ## Wczytywanie po nazwie
 
@@ -82,9 +82,19 @@ terrain.relief 110
 render_settings look.txt     # opcjonalnie, względem tego pliku
 player_start lake            # albo: player_start X Z OBRÓT (metry na mapie, stopnie)
 object rocks/boulder 3538 5112 40 2.2    # asset, x i z na mapie, obrót, skala
+world worlds/forest          # opcjonalnie: ląd jest strumieniowany z tego wypieczonego świata
+world.patch_size 512
+world.background_spacing 64
+
+ground ground/forest_floor   # warstwa podłoża: jej tekstury NAZWA_color i NAZWA_normal
+tile 3                       # co ile metrów się powtarzają
+strength 0.35
+moisture 0 0.45 0.15         # warunki na mapach, jak w regułach sadzenia
+patch 45 0.45
 ```
 
 - `LoadLevel`, `ParseLevel`, `SaveLevel` (`poligon/world/level.h`). Nieznane słowa i złe wartości to błędy z numerem wiersza; wiersze, których pierwsze słowo bierze inny czytelnik (np. reguły sadzenia), trafiają do `Level::other_lines`.
 - `player_start lake` używa `FindLakeViewpoint` (`poligon/world/terrain_generator.h`): łagodny teren 150 do 500 m od największego jeziora, jak najwyżej nad nim, z jego środkiem w widoku.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` czytają i zapisują ustawienia generatora po nazwie; `terrain_tool generate` używa tych samych nazw.
+- Warstwy podłoża (`ParseGroundLayers`, `poligon/world/terrain.h`) to bloki jak reguły sadzenia, najwyżej osiem, numerowane w kolejności pliku; oba czytniki omijają swoje bloki nawzajem. Wybierają, gdzie każda tekstura podłoża pokrywa ląd (`TerrainLayerRule`); strumieniowany świat wypieka ich wagi w swoje łaty.
 - `forest_scene` czyta `tools/forest_scene/forest.level`: domyślny teren, start nad jeziorem, trzy głazy postawione ręcznie i 18 reguł sadzenia.

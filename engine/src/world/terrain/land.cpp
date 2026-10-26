@@ -2,9 +2,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <list>
+#include <string>
 #include <utility>
 
+#include "poligon/core/binary_io.h"
 #include "poligon/core/fatal_error.h"
 #include "poligon/core/worker.h"
 
@@ -31,15 +37,51 @@ HeightMap MakeCoarseHeightMap(const HeightMap& map, int step) {
     return coarse;
 }
 
+namespace {
+
+// The patches a land source keeps, newest or last used first; shared by the threads that ask.
+struct KeptPatches {
+    int capacity = 32;
+    mutable Mutex mutex;
+    mutable std::list<std::shared_ptr<const LandPatch>> patches;
+
+    // The patch if it is kept (it moves to the front: patches in use stay, the oldest unused go first).
+    std::shared_ptr<const LandPatch> Find(PatchCoord patch) const {
+        MutexLock lock(mutex);
+        for (auto it = patches.begin(); it != patches.end(); ++it) {
+            if ((*it)->patch == patch) {
+                patches.splice(patches.begin(), patches, it);
+                return patches.front();
+            }
+        }
+        return nullptr;
+    }
+
+    // Keeps a patch made outside the lock; if another thread kept the same patch meanwhile,
+    // that one is returned (both are equal).
+    std::shared_ptr<const LandPatch> Keep(std::shared_ptr<const LandPatch> made) {
+        MutexLock lock(mutex);
+        for (const std::shared_ptr<const LandPatch>& kept : patches) {
+            if (kept->patch == made->patch) {
+                return kept;
+            }
+        }
+        patches.push_front(made);
+        while (static_cast<int>(patches.size()) > capacity) {
+            patches.pop_back();
+        }
+        return made;
+    }
+};
+
+} // namespace
+
 struct LandFromMaps::Impl {
     const TerrainMaps* maps = nullptr;
     std::vector<TerrainLayerRule> rules;
     std::uint32_t weight_seed = 0;
     LandInfo info;
-    int kept_patches = 32;
-    // The patches cut last, newest first.
-    mutable Mutex mutex;
-    mutable std::list<std::shared_ptr<const LandPatch>> kept;
+    KeptPatches kept;
 };
 
 LandFromMaps::LandFromMaps(const TerrainMaps& maps, double patch_size, const glm::dvec3& world_origin, const TerrainLayerRule* rules,
@@ -60,7 +102,7 @@ LandFromMaps::LandFromMaps(const TerrainMaps& maps, double patch_size, const glm
     impl.maps = &maps;
     impl.rules.assign(rules, rules + rule_count);
     impl.weight_seed = weight_seed;
-    impl.kept_patches = std::max(kept_patches, 1);
+    impl.kept.capacity = std::max(kept_patches, 1);
     LandInfo& info = impl.info;
     info.grid.patch_size = patch_size;
     info.grid.origin = {0.0, 0.0};
@@ -138,35 +180,284 @@ LandPatch LandFromMaps::CutPatch(PatchCoord patch) const {
 }
 
 std::shared_ptr<const LandPatch> LandFromMaps::FindPatch(PatchCoord patch) const {
-    // The patch asked for moves to the front: patches in use stay, the oldest unused go first.
-    MutexLock lock(impl_->mutex);
-    for (auto it = impl_->kept.begin(); it != impl_->kept.end(); ++it) {
-        if ((*it)->patch == patch) {
-            impl_->kept.splice(impl_->kept.begin(), impl_->kept, it);
-            return impl_->kept.front();
-        }
-    }
-    return nullptr;
+    return impl_->kept.Find(patch);
 }
 
 std::shared_ptr<const LandPatch> LandFromMaps::GetPatch(PatchCoord patch) {
-    if (std::shared_ptr<const LandPatch> found = FindPatch(patch)) {
+    if (std::shared_ptr<const LandPatch> found = impl_->kept.Find(patch)) {
         return found;
     }
-    // Cut outside the lock: another thread may cut the same patch meanwhile; both results are
-    // equal, and the first one kept wins.
-    std::shared_ptr<const LandPatch> cut = std::make_shared<const LandPatch>(CutPatch(patch));
-    MutexLock lock(impl_->mutex);
-    for (const std::shared_ptr<const LandPatch>& kept : impl_->kept) {
-        if (kept->patch == patch) {
-            return kept;
+    return impl_->kept.Keep(std::make_shared<const LandPatch>(CutPatch(patch)));
+}
+
+// --- Cooked land ---
+
+namespace {
+
+constexpr const char* kWorldFileHeader = "poligon-world 1\n";
+constexpr const char* kPatchFileHeader = "poligon-patch 1\n";
+
+std::string PatchFileName(const std::string& name, PatchCoord patch) {
+    return name + "/" + std::to_string(patch.x) + "_" + std::to_string(patch.z) + ".ppatch";
+}
+
+void WriteHeightMap(BinaryWriter& writer, const HeightMap& map) {
+    writer.Raw(static_cast<std::int32_t>(map.width));
+    writer.Raw(static_cast<std::int32_t>(map.depth));
+    writer.Raw(map.spacing);
+    writer.Raw(static_cast<std::int32_t>(map.first_x));
+    writer.Raw(static_cast<std::int32_t>(map.first_z));
+    writer.Array(map.heights);
+}
+
+bool ReadHeightMap(BinaryReader& reader, HeightMap& map) {
+    std::int32_t values[4] = {};
+    return reader.Raw(values[0]) && reader.Raw(values[1]) && reader.Raw(map.spacing) && reader.Raw(values[2]) && reader.Raw(values[3]) &&
+           reader.Array(map.heights) && (map.width = values[0], map.depth = values[1], map.first_x = values[2], map.first_z = values[3],
+                                         map.heights.size() == static_cast<size_t>(map.width) * static_cast<size_t>(map.depth));
+}
+
+void WriteImages(BinaryWriter& writer, const Image images[2]) {
+    for (int i = 0; i < 2; ++i) {
+        writer.Raw(static_cast<std::int32_t>(images[i].width));
+        writer.Raw(static_cast<std::int32_t>(images[i].height));
+        writer.Array(images[i].pixels);
+    }
+}
+
+bool ReadImages(BinaryReader& reader, Image images[2]) {
+    for (int i = 0; i < 2; ++i) {
+        std::int32_t width = 0;
+        std::int32_t height = 0;
+        if (!reader.Raw(width) || !reader.Raw(height) || !reader.Array(images[i].pixels) ||
+            images[i].pixels.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4) {
+            return false;
+        }
+        images[i].width = width;
+        images[i].height = height;
+    }
+    return true;
+}
+
+std::vector<std::uint8_t> WritePatch(const LandPatch& patch) {
+    BinaryWriter writer;
+    writer.data.assign(kPatchFileHeader, kPatchFileHeader + std::strlen(kPatchFileHeader));
+    writer.Raw(static_cast<std::int32_t>(patch.patch.x));
+    writer.Raw(static_cast<std::int32_t>(patch.patch.z));
+    const TerrainMaps& maps = patch.maps;
+    WriteHeightMap(writer, maps.height);
+    writer.Raw(static_cast<std::int32_t>(maps.map_width));
+    writer.Raw(static_cast<std::int32_t>(maps.map_depth));
+    writer.Raw(maps.map_spacing);
+    writer.Raw(static_cast<std::int32_t>(maps.map_first_x));
+    writer.Raw(static_cast<std::int32_t>(maps.map_first_z));
+    for (const std::vector<float>* map : {&maps.water_level, &maps.flow, &maps.moisture, &maps.sediment, &maps.rock, &maps.water_distance}) {
+        writer.Array(*map);
+    }
+    writer.Array(maps.lakes);
+    WriteImages(writer, patch.weights);
+    return writer.data;
+}
+
+bool ReadPatch(const std::vector<std::uint8_t>& bytes, LandPatch& patch) {
+    BinaryReader reader(bytes.data(), bytes.size());
+    std::int32_t x = 0;
+    std::int32_t z = 0;
+    std::int32_t map_values[4] = {};
+    TerrainMaps& maps = patch.maps;
+    if (!reader.Header(kPatchFileHeader) || !reader.Raw(x) || !reader.Raw(z) || !ReadHeightMap(reader, maps.height) ||
+        !reader.Raw(map_values[0]) || !reader.Raw(map_values[1]) || !reader.Raw(maps.map_spacing) || !reader.Raw(map_values[2]) ||
+        !reader.Raw(map_values[3])) {
+        return false;
+    }
+    patch.patch = {x, z};
+    maps.map_width = map_values[0];
+    maps.map_depth = map_values[1];
+    maps.map_first_x = map_values[2];
+    maps.map_first_z = map_values[3];
+    for (std::vector<float>* map : {&maps.water_level, &maps.flow, &maps.moisture, &maps.sediment, &maps.rock, &maps.water_distance}) {
+        if (!reader.Array(*map)) {
+            return false;
         }
     }
-    impl_->kept.push_front(cut);
-    while (static_cast<int>(impl_->kept.size()) > impl_->kept_patches) {
-        impl_->kept.pop_back();
+    return reader.Array(maps.lakes) && ReadImages(reader, patch.weights);
+}
+
+std::vector<std::uint8_t> WriteInfo(const LandInfo& info, std::uint64_t settings_hash) {
+    BinaryWriter writer;
+    writer.data.assign(kWorldFileHeader, kWorldFileHeader + std::strlen(kWorldFileHeader));
+    writer.Raw(settings_hash);
+    writer.Raw(info.grid.patch_size);
+    writer.Raw(static_cast<std::int32_t>(info.grid.patch_count_x));
+    writer.Raw(static_cast<std::int32_t>(info.grid.patch_count_z));
+    writer.Raw(info.spacing);
+    writer.Raw(info.map_spacing);
+    writer.Raw(info.size_x);
+    writer.Raw(info.size_z);
+    writer.Array(info.lakes);
+    WriteHeightMap(writer, info.background);
+    WriteImages(writer, info.background_weights);
+    return writer.data;
+}
+
+bool ReadInfo(const std::vector<std::uint8_t>& bytes, LandInfo& info, std::uint64_t& settings_hash) {
+    BinaryReader reader(bytes.data(), bytes.size());
+    std::int32_t count_x = 0;
+    std::int32_t count_z = 0;
+    if (!reader.Header(kWorldFileHeader) || !reader.Raw(settings_hash) || !reader.Raw(info.grid.patch_size) || !reader.Raw(count_x) ||
+        !reader.Raw(count_z) || !reader.Raw(info.spacing) || !reader.Raw(info.map_spacing) || !reader.Raw(info.size_x) ||
+        !reader.Raw(info.size_z) || !reader.Array(info.lakes) || !ReadHeightMap(reader, info.background) ||
+        !ReadImages(reader, info.background_weights)) {
+        return false;
     }
-    return cut;
+    info.grid.patch_count_x = count_x;
+    info.grid.patch_count_z = count_z;
+    info.grid.origin = {0.0, 0.0};
+    return true;
+}
+
+bool WriteBytes(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream file(path, std::ios::binary);
+    file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return static_cast<bool>(file);
+}
+
+// FNV-1a over raw bytes, continuing from `hash`.
+std::uint64_t HashBytes(std::uint64_t hash, const void* data, size_t size) {
+    const auto* bytes = static_cast<const std::uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) {
+        hash = (hash ^ bytes[i]) * 1099511628211ull;
+    }
+    return hash;
+}
+
+} // namespace
+
+bool CookLand(const LandFromMaps& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
+              std::string& error) {
+    const std::filesystem::path folder(cooked_folder);
+    const LandInfo& info = land.GetInfo();
+    for (int z = 0; z < info.grid.patch_count_z; ++z) {
+        for (int x = 0; x < info.grid.patch_count_x; ++x) {
+            const PatchCoord patch{x, z};
+            if (!WriteBytes(folder / PatchFileName(name, patch), WritePatch(land.CutPatch(patch)))) {
+                error = "cannot write " + (folder / PatchFileName(name, patch)).string();
+                return false;
+            }
+        }
+    }
+    // The description last: a world whose description is there is whole.
+    if (!WriteBytes(folder / (name + ".pworld"), WriteInfo(info, settings_hash))) {
+        error = "cannot write " + (folder / (name + ".pworld")).string();
+        return false;
+    }
+    return true;
+}
+
+bool CookLevelWorld(const Level& level, const std::vector<GroundLayer>& layers, const char* cooked_folder, const char* terrain_cache,
+                    bool& cooked, std::string& error) {
+    cooked = false;
+    if (level.world.empty()) {
+        error = "the level names no streamed world";
+        return false;
+    }
+    // Everything the cooked files depend on, in one number.
+    std::uint64_t hash = 1469598103934665603ull;
+    const std::uint64_t generator = HashTerrainGeneratorSettings(level.terrain);
+    const int format = 1;
+    hash = HashBytes(hash, &format, sizeof(format));
+    hash = HashBytes(hash, &generator, sizeof(generator));
+    hash = HashBytes(hash, &level.world_patch_size, sizeof(level.world_patch_size));
+    hash = HashBytes(hash, &level.world_background_spacing, sizeof(level.world_background_spacing));
+    for (const GroundLayer& layer : layers) {
+        hash = HashBytes(hash, &layer.rule, sizeof(layer.rule));
+    }
+    const std::filesystem::path description = std::filesystem::path(cooked_folder) / (level.world + ".pworld");
+    std::vector<std::uint8_t> bytes;
+    {
+        std::ifstream file(description, std::ios::binary);
+        bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+    LandInfo existing;
+    std::uint64_t existing_hash = 0;
+    if (!bytes.empty() && ReadInfo(bytes, existing, existing_hash) && existing_hash == hash) {
+        return true;  // up to date
+    }
+    TerrainMaps maps;
+    bool generated = false;
+    if (!LoadOrGenerateTerrain(level.terrain, terrain_cache, maps, generated, error)) {
+        return false;
+    }
+    std::vector<TerrainLayerRule> rules;
+    for (const GroundLayer& layer : layers) {
+        rules.push_back(layer.rule);
+    }
+    const LandFromMaps land(maps, level.world_patch_size, glm::dvec3(0.0), rules.data(), static_cast<int>(rules.size()), 1u,
+                            level.world_background_spacing);
+    if (!CookLand(land, level.world, hash, cooked_folder, error)) {
+        return false;
+    }
+    cooked = true;
+    return true;
+}
+
+struct LandFromFiles::Impl {
+    const AssetLibrary* library = nullptr;
+    std::string name;
+    LandInfo info;
+    bool open = false;
+    std::string error;
+    KeptPatches kept;
+};
+
+LandFromFiles::LandFromFiles(const AssetLibrary& library, const std::string& name, const glm::dvec3& world_origin, int kept_patches)
+    : impl_(std::make_unique<Impl>()) {
+    Impl& impl = *impl_;
+    impl.library = &library;
+    impl.name = name;
+    impl.kept.capacity = std::max(kept_patches, 1);
+    std::vector<std::uint8_t> bytes;
+    std::uint64_t hash = 0;
+    if (!library.ReadFile(name + ".pworld", bytes)) {
+        impl.error = "no cooked world \"" + name + "\"";
+    } else if (!ReadInfo(bytes, impl.info, hash)) {
+        impl.error = name + ".pworld: not a cooked world, or cut short";
+    } else {
+        impl.info.world_origin = world_origin;
+        impl.open = true;
+    }
+}
+
+LandFromFiles::~LandFromFiles() = default;
+
+bool LandFromFiles::IsOpen() const {
+    return impl_->open;
+}
+
+const std::string& LandFromFiles::GetError() const {
+    return impl_->error;
+}
+
+const LandInfo& LandFromFiles::GetInfo() const {
+    return impl_->info;
+}
+
+std::shared_ptr<const LandPatch> LandFromFiles::FindPatch(PatchCoord patch) const {
+    return impl_->kept.Find(patch);
+}
+
+std::shared_ptr<const LandPatch> LandFromFiles::GetPatch(PatchCoord patch) {
+    if (std::shared_ptr<const LandPatch> found = impl_->kept.Find(patch)) {
+        return found;
+    }
+    std::vector<std::uint8_t> bytes;
+    auto read = std::make_shared<LandPatch>();
+    if (!impl_->library->ReadFile(PatchFileName(impl_->name, patch), bytes) || !ReadPatch(bytes, *read)) {
+        FatalError(("LandFromFiles: cannot read " + PatchFileName(impl_->name, patch)).c_str());
+    }
+    return impl_->kept.Keep(read);
 }
 
 } // namespace poligon

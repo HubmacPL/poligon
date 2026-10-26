@@ -55,6 +55,15 @@ Generator terenu symuluje cały ląd naraz (rzeki i erozja nie są lokalne), wi�
 - **Pokrycie terenu (runo)** nie jest źródłem (i tak rośnie w małych komórkach wokół kamery): `GroundCover::SetLand(&land)` sprawia, że mapy każdego miejsca czyta z trzymanej łaty lądu, a komórka wyrasta dopiero, gdy każda łata, której dotyka, jest trzymana przez ląd i teren; do tego czasu jest próbowana przy każdym `Update`.
 - **Mapa wydeptania** to stan gry idący za graczem, nie wczytywane dane. `TrampleMap::SetRememberOutside(true)` zachowuje wartości komórek, które wychodzą z jej siatki, i oddaje je, pomniejszone o to, co by przez ten czas odrosło, gdy siatka wróci.
 
+## Wypieczony ląd
+
+Gra czyta ląd wypieczony (`poligon/world/land.h`): poziom wskazuje swój świat (`world worlds/forest`, `world.patch_size`, `world.background_spacing`, patrz [assets.md](assets.md)), a `CookLevelWorld` (albo `asset_cooker --level`) generuje ląd, robi jego wagi warstw podłoża z bloków `ground` poziomu i zapisuje:
+
+- `NAZWA.pworld`: wiersz nagłówka `poligon-world 1`, liczbę nazywającą ustawienia, z których powstał (generatora, warstw podłoża, rozmiar łaty: gdy się zmienią, jest wypiekany od nowa), potem `LandInfo` (łaty, odstępy, rozmiar, jeziora, wysokości i wagi tła);
+- `NAZWA/X_Z.ppatch`: wiersz nagłówka `poligon-patch 1`, potem jedna `LandPatch` (jej okno map i wagi) jako surowe liczby.
+
+`LandFromFiles(library, name, world_origin)` czyta je przez `AssetLibrary`, z wypieczonego folderu albo archiwum `POLIPAK1` (czytanego plik po pliku, więc wydana gra trzyma tylko łaty, których używa), w dowolnym wątku. Odczytana łata równa się łacie wyciętej z całych map co do bitu (`land_files_test`, z folderu i z archiwum). Pliki binarne pisze `poligon/core/binary_io.h`, wspólny z plikami assetów.
+
 ## Dalekie tło
 
 Za oknem ląd nadal jest: strumieniowany `Terrain` rysuje go z `LandInfo::background` (wysokości całego lądu co 64 m, z wagami warstw podłoża w tych samych punktach) wszędzie tam, gdzie żadna łata nie jest trzymana. Zgrubne wysokości są doprowadzone do 64 komórek na łatę (8 m przy łatach 512 m), żeby najmniejszy kwadrat tła był dokładnie jedną łatą; kwadrat z trzymanymi łatami w środku jest dzielony aż do pojedynczych łat, a te są pomijane, a dalekie kwadraty rosną do 2, 4, 8... łat według tej samej reguły odległości co kwadraty samych łat. To jedno wywołanie `DrawTerrain` więcej, czyli jedno rysowanie więcej na przebieg; mgiełka i mgła renderera kryją je jak każdy ląd. `SetBackgroundVisible(false)` je wyłącza; `TerrainStats::background_patches` liczy jego kwadraty.

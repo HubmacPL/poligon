@@ -21,6 +21,12 @@ namespace poligon {
 //     # The look: a render settings file, relative to this one.
 //     render_settings forest_render_settings.txt
 //
+//     # A streamed world (poligon/world/streaming.h): the cooked land's name, and how it is
+//     # cut. Without "world" the land is generated and held whole.
+//     world worlds/forest
+//     world.patch_size 512
+//     world.background_spacing 64
+//
 //     # Where the player starts: "lake" (on a slope above the largest lake, looking at it)
 //     # or map x, z in meters and the direction to look in degrees.
 //     player_start lake
@@ -41,6 +47,11 @@ struct Level {
     TerrainGeneratorSettings terrain;
     // Relative to the level file; empty = the game's own look.
     std::string render_settings;
+    // The cooked streamed world (poligon/world/land.h: CookLevelWorld, LandFromFiles); empty
+    // = the land is generated and held whole.
+    std::string world;
+    double world_patch_size = 512.0;
+    float world_background_spacing = 64.0f;
     // true: above the largest lake (FindLakeViewpoint); false: start_position and start_turn.
     bool start_at_lake = true;
     glm::dvec2 start_position{0.0};

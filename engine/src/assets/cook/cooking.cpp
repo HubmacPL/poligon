@@ -326,26 +326,32 @@ bool PackAssets(const char* cooked_folder, const char* archive_path, std::string
     archive.write(magic, 8);
     const std::uint32_t count = static_cast<std::uint32_t>(files.size());
     archive.write(reinterpret_cast<const char*>(&count), 4);
+    // The table from the files' sizes; the files are then copied one by one (a streamed
+    // world's patches add up to hundreds of megabytes).
     std::uint64_t offset = 12 + static_cast<std::uint64_t>(count) * 24;
-    std::vector<std::vector<std::uint8_t>> contents(files.size());
     std::set<std::uint64_t> hashes;
     for (size_t i = 0; i < files.size(); ++i) {
-        if (!ReadWholeFile(files[i].second, contents[i])) {
-            error = "cannot read " + files[i].second.string();
-            return false;
-        }
         const std::uint64_t hash = HashName(files[i].first);
         if (!hashes.insert(hash).second) {
             error = "two names give the same hash: " + files[i].first;
             return false;
         }
-        const std::uint64_t size = contents[i].size();
+        const std::uint64_t size = fs::file_size(files[i].second, ec);
+        if (ec) {
+            error = "cannot read " + files[i].second.string();
+            return false;
+        }
         archive.write(reinterpret_cast<const char*>(&hash), 8);
         archive.write(reinterpret_cast<const char*>(&offset), 8);
         archive.write(reinterpret_cast<const char*>(&size), 8);
         offset += size;
     }
-    for (const std::vector<std::uint8_t>& content : contents) {
+    std::vector<std::uint8_t> content;
+    for (const auto& [name, path] : files) {
+        if (!ReadWholeFile(path, content)) {
+            error = "cannot read " + path.string();
+            return false;
+        }
         archive.write(reinterpret_cast<const char*>(content.data()), static_cast<std::streamsize>(content.size()));
     }
     if (!archive) {

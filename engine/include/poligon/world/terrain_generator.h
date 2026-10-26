@@ -160,6 +160,13 @@ struct MapConditions {
     float Weight(const struct TerrainMaps& maps, glm::vec2 place) const;
 };
 
+// For text files that set conditions (plant rules, ground layers): the range a word names
+// ("slope", "height", "moisture", "sediment", "rock", "flow", "water_distance",
+// "water_depth"), or nullptr for another word; and reading "low high fade" into a range
+// (false for wrong numbers or low above high).
+TerrainRange* FindMapCondition(MapConditions& conditions, const std::string& word);
+bool ReadTerrainRange(const std::vector<std::string>& values, TerrainRange& range);
+
 // Runs the whole simulation. Ends the process with FatalError on invalid settings.
 void GenerateTerrain(const TerrainGeneratorSettings& settings, TerrainMaps& maps);
 

@@ -10,9 +10,10 @@ using namespace asset_format;
 
 struct AssetLibrary::Impl {
     fs::path folder;
-    // For an archive: name hash -> (offset, size), and the whole archive in memory.
+    // For an archive: name hash -> (offset, size). Files are read from it when asked for
+    // (each read opens the file, so reads may come from several threads at once).
     std::map<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>> archive_table;
-    std::vector<std::uint8_t> archive;
+    fs::path archive_path;
     bool is_archive = false;
     std::map<std::string, CompressedImage> images;
     std::map<std::string, TextureHandle> textures;
@@ -29,26 +30,31 @@ bool AssetLibrary::Open(const char* path, std::string& error) {
         impl_->folder = path;
         return true;
     }
-    if (!ReadWholeFile(path, impl_->archive) || impl_->archive.size() < 12 ||
-        std::memcmp(impl_->archive.data(), "POLIPAK1", 8) != 0) {
+    // Only the header and the table are read now.
+    std::ifstream file(path, std::ios::binary);
+    char header[12] = {};
+    if (!file.read(header, 12) || std::memcmp(header, "POLIPAK1", 8) != 0) {
         error = std::string(path) + ": neither a cooked folder nor an archive";
         return false;
     }
+    const std::uint64_t archive_size = fs::file_size(path, ec);
     std::uint32_t count = 0;
-    std::memcpy(&count, impl_->archive.data() + 8, 4);
-    if (12 + static_cast<size_t>(count) * 24 > impl_->archive.size()) {
+    std::memcpy(&count, header + 8, 4);
+    std::vector<std::uint64_t> table(static_cast<size_t>(count) * 3);
+    if (12 + static_cast<std::uint64_t>(count) * 24 > archive_size ||
+        !file.read(reinterpret_cast<char*>(table.data()), static_cast<std::streamsize>(table.size() * sizeof(std::uint64_t)))) {
         error = std::string(path) + ": the archive's table is cut short";
         return false;
     }
     for (std::uint32_t i = 0; i < count; ++i) {
-        std::uint64_t entry[3];
-        std::memcpy(entry, impl_->archive.data() + 12 + static_cast<size_t>(i) * 24, 24);
-        if (entry[1] + entry[2] > impl_->archive.size()) {
+        const std::uint64_t* entry = &table[static_cast<size_t>(i) * 3];
+        if (entry[1] + entry[2] > archive_size) {
             error = std::string(path) + ": a file lies outside the archive";
             return false;
         }
         impl_->archive_table[entry[0]] = {entry[1], entry[2]};
     }
+    impl_->archive_path = path;
     impl_->is_archive = true;
     return true;
 }
@@ -59,9 +65,10 @@ bool AssetLibrary::ReadFile(const std::string& file_name, std::vector<std::uint8
         if (found == impl_->archive_table.end()) {
             return false;
         }
-        const std::uint8_t* begin = impl_->archive.data() + found->second.first;
-        bytes.assign(begin, begin + found->second.second);
-        return true;
+        std::ifstream file(impl_->archive_path, std::ios::binary);
+        bytes.resize(static_cast<size_t>(found->second.second));
+        file.seekg(static_cast<std::streamoff>(found->second.first));
+        return static_cast<bool>(file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())));
     }
     return !impl_->folder.empty() && ReadWholeFile(impl_->folder / file_name, bytes);
 }

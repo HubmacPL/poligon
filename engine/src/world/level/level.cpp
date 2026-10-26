@@ -66,6 +66,21 @@ bool ParseLevel(const std::string& text, Level& level, std::string& error, const
                 return fail("\"render_settings\" takes one file name");
             }
             parsed.render_settings = values[0];
+        } else if (key == "world") {
+            if (values.size() != 1) {
+                return fail("\"world\" takes the name of a cooked world");
+            }
+            parsed.world = values[0];
+        } else if (key == "world.patch_size" || key == "world.background_spacing") {
+            double value = -1.0;
+            if (values.size() != 1 || !ParseNumber(values[0], value) || !(value > 0.0)) {
+                return fail("\"" + key + "\" takes one number above zero");
+            }
+            if (key == "world.patch_size") {
+                parsed.world_patch_size = value;
+            } else {
+                parsed.world_background_spacing = static_cast<float>(value);
+            }
         } else if (key == "player_start") {
             double x = 0.0;
             double z = 0.0;
@@ -126,6 +141,12 @@ bool SaveLevel(const char* path, const Level& level) {
     }
     if (!level.render_settings.empty()) {
         file << "\nrender_settings " << level.render_settings << '\n';
+    }
+    if (!level.world.empty()) {
+        char text[128];
+        std::snprintf(text, sizeof(text), "world.patch_size %.17g\nworld.background_spacing %.9g\n", level.world_patch_size,
+                      static_cast<double>(level.world_background_spacing));
+        file << "\n# The streamed world\nworld " << level.world << '\n' << text;
     }
     file << "\n# Where the player starts\n";
     if (level.start_at_lake) {

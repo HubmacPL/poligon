@@ -44,21 +44,6 @@ float ValueNoise(float x, float z, std::uint32_t seed) {
     return a + (b - a) * tz;
 }
 
-bool ReadRange(const std::vector<std::string>& values, TerrainRange& range) {
-    if (values.size() != 3) {
-        return false;
-    }
-    char* end = nullptr;
-    float numbers[3];
-    for (int i = 0; i < 3; ++i) {
-        numbers[i] = std::strtof(values[static_cast<size_t>(i)].c_str(), &end);
-        if (*end != '\0') {
-            return false;
-        }
-    }
-    range = {numbers[0], numbers[1], numbers[2]};
-    return numbers[0] <= numbers[1] && numbers[2] >= 0.0f;
-}
 
 } // namespace
 
@@ -82,10 +67,21 @@ const std::vector<std::string>& GetPlantRuleWords() {
 
 bool ParsePlantRules(const std::vector<std::pair<int, std::string>>& lines, std::vector<PlantRule>& rules, std::string& error) {
     std::vector<PlantRule> parsed;
+    bool in_ground_layer = false;  // a "ground" block of the same file (poligon/world/terrain.h)
     for (const auto& [line_number, line] : lines) {
         std::istringstream words(line);
         std::string key;
         words >> key;
+        if (key == "ground") {
+            in_ground_layer = true;
+            continue;
+        }
+        if (key == "plant" || key == "cover") {
+            in_ground_layer = false;
+        }
+        if (in_ground_layer) {
+            continue;
+        }
         std::vector<std::string> values;
         for (std::string word; words >> word;) {
             values.push_back(word);
@@ -110,23 +106,14 @@ bool ParsePlantRules(const std::vector<std::pair<int, std::string>>& lines, std:
             return fail("\"" + key + "\" before any plant or cover rule");
         }
         PlantRule& rule = parsed.back();
-        MapConditions& c = rule.conditions;
-        TerrainRange* range = key == "slope"            ? &c.slope_degrees
-                              : key == "height"         ? &c.height
-                              : key == "moisture"       ? &c.moisture
-                              : key == "sediment"       ? &c.sediment
-                              : key == "rock"           ? &c.rock
-                              : key == "flow"           ? &c.flow
-                              : key == "water_distance" ? &c.water_distance
-                              : key == "water_depth"    ? &c.water_depth
-                                                        : nullptr;
+        TerrainRange* range = FindMapCondition(rule.conditions, key);
         char* end = nullptr;
         const auto number = [&](size_t index, float& out) {
             out = std::strtof(values[index].c_str(), &end);
             return *end == '\0';
         };
         if (range != nullptr) {
-            if (!ReadRange(values, *range)) {
+            if (!ReadTerrainRange(values, *range)) {
                 return fail("\"" + key + "\" takes low, high and fade (low not above high)");
             }
         } else if (key == "density" || key == "spacing" || key == "area" || key == "sink") {

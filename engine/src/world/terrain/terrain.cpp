@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <map>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "poligon/core/fatal_error.h"
@@ -532,6 +535,80 @@ void MakeTerrainLayerWeights(const TerrainMaps& maps, const TerrainLayerRule* ru
             }
         }
     }
+}
+
+const std::vector<std::string>& GetGroundLayerWords() {
+    static const std::vector<std::string> words = {"ground", "tile", "strength", "patch", "slope", "height", "moisture", "sediment",
+                                                   "rock", "flow", "water_distance", "water_depth"};
+    return words;
+}
+
+bool ParseGroundLayers(const std::vector<std::pair<int, std::string>>& lines, std::vector<GroundLayer>& layers, std::string& error) {
+    std::vector<GroundLayer> parsed;
+    bool in_plant_rule = false;  // a "plant" or "cover" block of the same file (poligon/world/plant_rules.h)
+    for (const auto& [line_number, line] : lines) {
+        std::istringstream words(line);
+        std::string key;
+        words >> key;
+        std::vector<std::string> values;
+        for (std::string word; words >> word;) {
+            values.push_back(word);
+        }
+        const auto fail = [&, line_number = line_number](const std::string& message) {
+            error = "line " + std::to_string(line_number) + ": " + message;
+            return false;
+        };
+        if (key == "plant" || key == "cover") {
+            in_plant_rule = true;
+            continue;
+        }
+        if (key == "ground") {
+            in_plant_rule = false;
+            if (values.size() != 1) {
+                return fail("\"ground\" takes the name of the layer's textures");
+            }
+            if (parsed.size() >= static_cast<size_t>(kMaxTerrainLayers)) {
+                return fail("at most 8 ground layers");
+            }
+            GroundLayer layer;
+            layer.texture = values[0];
+            layer.line = line_number;
+            parsed.push_back(layer);
+            continue;
+        }
+        if (in_plant_rule) {
+            continue;
+        }
+        if (parsed.empty()) {
+            return fail("\"" + key + "\" before any ground layer");
+        }
+        GroundLayer& layer = parsed.back();
+        char* end = nullptr;
+        const auto number = [&](size_t index, float& out) {
+            out = std::strtof(values[index].c_str(), &end);
+            return *end == '\0';
+        };
+        if (TerrainRange* range = FindMapCondition(layer.rule.conditions, key)) {
+            if (!ReadTerrainRange(values, *range)) {
+                return fail("\"" + key + "\" takes low, high and fade (low not above high)");
+            }
+        } else if (key == "tile" || key == "strength") {
+            float value = 0.0f;
+            if (values.size() != 1 || !number(0, value) || value <= 0.0f) {
+                return fail("\"" + key + "\" takes one number above zero");
+            }
+            (key == "tile" ? layer.tile_size : layer.rule.strength) = value;
+        } else if (key == "patch") {
+            if (values.size() != 2 || !number(0, layer.rule.patch_size) || !number(1, layer.rule.patch_cover) ||
+                layer.rule.patch_cover < 0.0f || layer.rule.patch_cover > 1.0f) {
+                return fail("\"patch\" takes a size in meters and the share of land covered (0 to 1)");
+            }
+        } else {
+            return fail("unknown word \"" + key + "\" in a ground layer");
+        }
+    }
+    layers = std::move(parsed);
+    return true;
 }
 
 namespace {

@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "poligon/world/height_map.h"
 #include "poligon/core/image.h"
@@ -145,5 +148,26 @@ struct TerrainLayerRule {
 // maps, rules and seed give the same images.
 void MakeTerrainLayerWeights(const TerrainMaps& maps, const TerrainLayerRule* rules, int count, std::uint32_t seed,
                              Image weights[2]);
+
+// A ground layer as a level file (poligon/world/level.h) says it, a block of lines:
+//
+//     ground ground/forest_floor     # its textures: the cooked images NAME_color and NAME_normal
+//     tile 3                         # meters after which the texture repeats
+//     strength 0.35                  # multiplies the weight
+//     moisture 0 0.45 0.15           # conditions on the maps, as in plant rules
+//     patch 45 0.45                  # irregular patches: size in meters, share of land covered
+//
+// Layers are numbered in the order of the file (at most eight). Blocks of plant rules in
+// the same lines are passed over, and plant rules pass over ground blocks.
+struct GroundLayer {
+    std::string texture;
+    float tile_size = 3.0f;
+    TerrainLayerRule rule;
+    int line = 0;
+};
+
+// The words that begin ground layer lines, for LoadLevel's other_line_prefixes.
+const std::vector<std::string>& GetGroundLayerWords();
+bool ParseGroundLayers(const std::vector<std::pair<int, std::string>>& lines, std::vector<GroundLayer>& layers, std::string& error);
 
 } // namespace poligon
