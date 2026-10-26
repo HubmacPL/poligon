@@ -17,7 +17,7 @@ SDL_GPUTexture* CreateArrayTexture(SDL_GPUDevice* device, SDL_GPUTextureFormat f
     info.layer_count_or_depth = static_cast<Uint32>(layers);
     info.num_levels = 1;
     info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+    SDL_GPUTexture* texture = CreateTrackedTexture(device, &info);
     if (texture == nullptr) {
         FatalSdlError("cannot create terrain texture array");
     }
@@ -192,7 +192,7 @@ void Renderer::Impl::PrepareTerrainWeights(TerrainData& terrain, const TerrainMa
         }
         SDL_GPUTexture*& target = i == 0 ? terrain.low_weights : terrain.high_weights;
         if (target != nullptr) {
-            SDL_ReleaseGPUTexture(device, target);
+            ReleaseTrackedTexture(device, target);
             target = nullptr;
         }
         terrain.copied_weights[i] = handle.id;
@@ -230,7 +230,7 @@ void Renderer::DestroyTerrain(TerrainHandle terrain) {
     TerrainData& data = impl_->terrains[terrain.id - 1];
     for (SDL_GPUTexture** texture : {&data.height_texture, &data.low_weights, &data.high_weights}) {
         if (*texture != nullptr) {
-            SDL_ReleaseGPUTexture(impl_->device, *texture);
+            ReleaseTrackedTexture(impl_->device, *texture);
             *texture = nullptr;
         }
     }

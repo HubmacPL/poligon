@@ -1,5 +1,7 @@
 #include "poligon/physics/physics.h"
 
+#include <algorithm>
+
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -241,7 +243,10 @@ PhysicsWorld::PhysicsWorld(const PhysicsConfig& config) : impl_(std::make_unique
     }
     AcquireJolt();
     impl_->config = config;
-    impl_->temp_allocator = std::make_unique<JPH::TempAllocatorImpl>(16 * 1024 * 1024);
+    // Scratch memory for one step; contact buffers grow with the number of bodies (16 MB for
+    // the default 16384, as many kilobytes as bodies beyond that).
+    impl_->temp_allocator =
+        std::make_unique<JPH::TempAllocatorImpl>(static_cast<JPH::uint>(std::max(config.max_bodies, 16384)) * 1024u);
     impl_->jobs = std::make_unique<JPH::JobSystemSingleThreaded>(JPH::cMaxPhysicsJobs);
     impl_->system = std::make_unique<JPH::PhysicsSystem>();
     const JPH::uint max_bodies = static_cast<JPH::uint>(config.max_bodies);

@@ -56,7 +56,7 @@ SDL_GPUBuffer* Renderer::Impl::CreateBufferWithData(SDL_GPUBufferUsageFlags usag
     SDL_GPUBufferCreateInfo buffer_info{};
     buffer_info.usage = usage;
     buffer_info.size = size;
-    SDL_GPUBuffer* buffer = SDL_CreateGPUBuffer(device, &buffer_info);
+    SDL_GPUBuffer* buffer = CreateTrackedBuffer(device, &buffer_info);
     if (buffer == nullptr) {
         FatalSdlError("cannot create buffer");
     }

@@ -1,6 +1,13 @@
 #include "poligon/core/platform.h"
 
 #include <SDL3/SDL.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <psapi.h>
+#endif
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
@@ -32,6 +39,16 @@ bool ProcessPlatformEvents() {
 
 void ShowMessageBox(const char* title, const char* message) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, title, message, nullptr);
+}
+
+std::uint64_t GetProcessMemoryBytes() {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) {
+        return static_cast<std::uint64_t>(counters.PrivateUsage);
+    }
+#endif
+    return 0;
 }
 
 } // namespace poligon

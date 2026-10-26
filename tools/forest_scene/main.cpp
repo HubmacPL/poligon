@@ -5,10 +5,11 @@
 // loaded from build/terrain_cache. The models and textures are named in assets.txt (next to
 // this file); their sources are in poligon-assets/source, and they are cooked into
 // poligon-assets/cooked when the program starts, whenever the list or a source changed
-// (poligon/assets/assets.h). The land's settings, the player's start, things put by
-// hand and the rules that plant the forest, the shore and the ground cover are in
-// forest.level (poligon/world/level.h, poligon/world/plant_rules.h). Walking flattens grass into paths
-// (poligon/world/trample.h).
+// (poligon/assets/assets.h). The land's settings, its ground layers, the player's start,
+// things put by hand and the rules that plant the forest, the shore and the ground cover are
+// in forest.level (poligon/world/level.h, poligon/world/plant_rules.h). The land is streamed
+// (poligon/world/streaming.h): cooked into 512 m patches with the other assets, and loaded
+// in a window around the camera. Walking flattens grass into paths (poligon/world/trample.h).
 //
 // Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
 //   X Z         where to stand, in meters from the start (default 0 0): a slope above
@@ -46,6 +47,7 @@
 #include "poligon/assets/cooking.h"
 #include "poligon/core/command_line.h"
 #include "poligon/core/crash_handler.h"
+#include "poligon/core/fatal_error.h"
 #include "poligon/debug/debug_ui.h"
 #include "poligon/debug/free_camera.h"
 #include "poligon/core/game_loop.h"
@@ -55,6 +57,7 @@
 #include "poligon/render/decal.h"
 #include "poligon/render/impostor.h"
 #include "poligon/core/input.h"
+#include "poligon/world/land.h"
 #include "poligon/world/level.h"
 #include "poligon/world/particles.h"
 #include "poligon/assets/model.h"
@@ -65,6 +68,7 @@
 #include "poligon/core/platform.h"
 #include "poligon/render/render_settings.h"
 #include "poligon/world/sky_occlusion.h"
+#include "poligon/world/streaming.h"
 #include "poligon/world/terrain.h"
 #include "poligon/world/trample.h"
 #include "poligon/world/vegetation.h"
@@ -76,8 +80,13 @@ namespace {
 constexpr float kForestHalfSize = 250.0f;  // plants stand within this distance of the start
 // Beyond that, big trees alone continue to this distance; far away they are impostors.
 constexpr float kFarForestHalfSize = 1200.0f;
-// Collisions exist within this distance of the start; fences stand at its edge.
-constexpr float kPlayHalfSize = 500.0f;
+// Windows of the streamed land, in 512 m patches around the camera (radius 4 = 9 x 9) or,
+// for collisions, around the player and the crates. The terrain's pages hold its window.
+constexpr int kTerrainWindow = 4;
+constexpr int kTerrainPages = (2 * kTerrainWindow + 1) * (2 * kTerrainWindow + 1);
+constexpr int kPlantWindow = 3;
+constexpr int kSkyWindow = 2;
+constexpr int kCollisionWindow = 1;
 constexpr float kEyeHeight = 1.7f;
 constexpr float kCrateSize = 0.6f;
 // Object ids for the renderer's motion vectors: crates by physics body, foxes by number.
@@ -244,20 +253,30 @@ public:
     ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const std::filesystem::path& build_folder,
                const std::filesystem::path& asset_list, const std::filesystem::path& level_path, const poligon::Input& input,
                const ForestActions& actions,
-               const float view[4], bool turn_given, const poligon::RenderSettings& settings, const std::string& settings_path)
-        : renderer_(renderer), sources_(assets / "source"), terrain_cache_(build_folder / "terrain_cache"), input_(input),
-          actions_(actions), settings_(settings), settings_path_(settings_path) {
-        OpenAssets(asset_list, assets / "cooked");
+               const float view[4], bool turn_given, const poligon::RenderSettings& settings, const std::string& settings_path,
+               bool synchronous_streaming)
+        : renderer_(renderer), sources_(assets / "source"), cooked_(assets / "cooked"), terrain_cache_(build_folder / "terrain_cache"),
+          input_(input), actions_(actions), settings_(settings), settings_path_(settings_path) {
+        OpenAssets(asset_list, cooked_);
         if (settings.environment.clouds) {
             renderer_.PrepareClouds();
         }
         std::string level_error;
-        if (!poligon::LoadLevel(level_path.string().c_str(), level_, level_error, poligon::GetPlantRuleWords())) {
+        std::vector<std::string> level_words = poligon::GetPlantRuleWords();
+        for (const std::string& word : poligon::GetGroundLayerWords()) {
+            level_words.push_back(word);
+        }
+        if (!poligon::LoadLevel(level_path.string().c_str(), level_, level_error, level_words)) {
             std::printf("forest_scene: %s; using the default land\n", level_error.c_str());
-        } else if (!poligon::ParsePlantRules(level_.other_lines, rules_, level_error)) {
+        } else if (!poligon::ParsePlantRules(level_.other_lines, rules_, level_error) ||
+                   !poligon::ParseGroundLayers(level_.other_lines, ground_layers_, level_error)) {
             std::printf("forest_scene: %s: %s\n", level_path.string().c_str(), level_error.c_str());
         }
+        if (level_.world.empty()) {
+            level_.world = "worlds/forest";
+        }
         renderer_.SetTrampleMap(&trample_);
+        trample_.SetRememberOutside(true);  // paths stay where the player left them
         CreateGround();
         camera_.position = {view[0], Ground(view[0], view[1]) + kEyeHeight, view[1]};
         camera_.yaw_degrees = turn_given ? view[2] : start_yaw_;
@@ -266,6 +285,17 @@ public:
         LoadKinds();
         PlaceLevelObjects();
         PlantForest();
+        GrowGroundCover();
+        // The land around the start, before anything stands on it: collisions now, and the
+        // drawn data too (at once in headless runs, so that pictures do not depend on timing).
+        streamer_->SetSynchronous(synchronous_streaming);
+        const glm::dvec3 start(0.0, Ground(0.0, 0.0), 0.0);
+        const glm::dvec3 standing(view[0], Ground(view[0], view[1]), view[1]);
+        streamer_->RequirePatches({start, standing});
+        streamer_->Update(camera_.position);
+        streamer_->FinishLoading();
+        std::printf("forest_scene: %d land patches, %d plants and rocks, %d lake surfaces held around the start\n",
+                    terrain_->GetPatchCount(), vegetation_.GetInstanceCount(), water_->GetSurfaceCount());
         AddAnimals();
         AddCrates();
 
@@ -277,8 +307,12 @@ public:
     }
 
     int GetLoadedKindCount() const { return loaded_kind_count_; }
-    // Height of the land at a world position.
-    double Ground(double x, double z) const { return terrain_->GetHeight(x, z); }
+    // Height of the land at a world position, from the land's patches themselves (read if
+    // not held), so that what stands on the land never depends on what has been loaded.
+    double Ground(double x, double z) const {
+        const glm::vec2 map_place = ToMap(x, z);
+        return land_->GetInfo().world_origin.y + static_cast<double>(LandAt(x, z)->maps.height.GetHeight(map_place.x, map_place.y));
+    }
     void ShowCollision(bool show) { show_collision_ = show; }
     // How fast the world's own time runs (wind, clouds, water, animals): 1 = real time,
     // 0 = stopped. The player and physics always run in real time. Also in the Simulation window.
@@ -365,6 +399,13 @@ public:
             level.Move(forward, right, 0.0f);
             physics_.SetCharacterInput(walker_, glm::vec3(level.position), input_.WasPressed(actions_.jump));
         }
+        // Collisions around everything that moves, loaded now if missing: by the game state
+        // alone, never by how far the drawn land has loaded.
+        std::vector<glm::dvec3> moving = {physics_.GetCharacterPosition(walker_)};
+        for (const poligon::BodyHandle crate : crates_) {
+            moving.push_back(physics_.GetPosition(crate));
+        }
+        streamer_->RequirePatches(moving);
         const auto physics_start = std::chrono::steady_clock::now();  // statistics only
         physics_.Step(delta);
         physics_milliseconds_sum_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - physics_start).count();
@@ -416,6 +457,8 @@ public:
         clip_planes.near_plane = 0.1f;
         clip_planes.far_plane = 12000.0f;
         const poligon::Camera camera = camera_.ToCamera(clip_planes);
+        // The drawn land follows the camera; what has finished loading is handed over here.
+        streamer_->Update(camera.position);
 
         ApplyQualityToSystems();
         // The scene's look, limited by the graphics quality.
@@ -432,9 +475,7 @@ public:
             poligon::ShowFrameStatsWindow(renderer_);
         }
         terrain_->Draw(camera);
-        for (const poligon::WaterSurface& lake : lakes_) {
-            renderer_.DrawWater(lake.mesh, lake.origin, glm::mat4(1.0f), water_material_);
-        }
+        water_->Draw(renderer_, water_material_);
         // Object ids (crates by body, foxes by number) let temporal anti-aliasing follow them.
         for (const poligon::BodyHandle crate : crates_) {
             poligon::Transform placed = physics_.GetTransform(crate);
@@ -442,9 +483,9 @@ public:
             renderer_.DrawMesh(cube_mesh_, placed, crate_material_, kCrateObjectIds + crate.id);
         }
         if (show_collision_) {
-            // Every body except the ground and the fences, as the box that encloses it:
+            // Every body except the land's height fields, as the box that encloses it:
             // red = never moves, yellow = moves.
-            for (std::uint32_t id = first_shown_body_id_; id <= physics_.GetLastBodyId(); ++id) {
+            for (std::uint32_t id = 1; id <= physics_.GetLastBodyId(); ++id) {
                 const poligon::BodyHandle body{id};
                 if (!physics_.IsBody(body)) {
                     continue;
@@ -452,7 +493,7 @@ public:
                 glm::dvec3 bounds_min;
                 glm::dvec3 bounds_max;
                 physics_.GetBounds(body, bounds_min, bounds_max);
-                if (glm::distance((bounds_min + bounds_max) * 0.5, camera.position) > 60.0) {
+                if (glm::distance((bounds_min + bounds_max) * 0.5, camera.position) > 60.0 || bounds_max.x - bounds_min.x > 100.0) {
                     continue;
                 }
                 const poligon::Color color = physics_.IsDynamic(body) ? poligon::Color{1.0f, 0.9f, 0.1f, 1.0f}
@@ -561,68 +602,77 @@ private:
         }
     }
 
-    // Where the player starts: as the level says, above the largest lake or at a given
-    // place. Sets start_yaw_ and what is known of the lake. Positions are meters on the map.
-    glm::vec2 ChooseStart() {
+    // Where the player starts: as the level says, above the largest lake (found when the
+    // land was cooked) or at a given place. Sets start_yaw_ and what is known of the lake.
+    // Positions are meters on the map.
+    glm::vec2 ChooseStart(const poligon::LandInfo& info) {
         if (!level_.start_at_lake) {
             start_yaw_ = level_.start_turn_degrees;
-            return level_.start_position;
+            return glm::vec2(level_.start_position);
         }
-        poligon::LakeViewpoint viewpoint;
-        if (!poligon::FindLakeViewpoint(maps_, kEyeHeight, viewpoint)) {
+        if (!info.has_lake_viewpoint) {
             std::printf("forest_scene: no place above a lake; starting in the middle of the land\n");
-            return viewpoint.position;
+            return {info.size_x * 0.5f, info.size_z * 0.5f};
         }
+        const poligon::LakeViewpoint& viewpoint = info.lake_viewpoint;
         start_yaw_ = viewpoint.yaw_degrees;
-        start_lake_level_ = maps_.lakes[static_cast<size_t>(viewpoint.lake)].level;
+        start_lake_level_ = info.lakes[static_cast<size_t>(viewpoint.lake)].level;
         lake_direction_ = viewpoint.direction;
         lake_distance_ = viewpoint.distance;
         return viewpoint.position;
     }
 
-    // Whether there is lake water (or its very edge) at a world position.
-    bool IsWater(float x, float z) const {
-        const float map_x = x + map_offset_.x;
-        const float map_z = z + map_offset_.y;
-        return maps_.GetWaterDepth(map_x, map_z) > 0.0f || maps_.Sample(maps_.water_distance, map_x, map_z) < 1.5f;
+    // World x, z to map coordinates, and the land patch holding a world place (read if not held).
+    glm::vec2 ToMap(double x, double z) const {
+        const glm::dvec3& origin = land_->GetInfo().world_origin;
+        return glm::vec2(static_cast<float>(x - origin.x), static_cast<float>(z - origin.z));
+    }
+    std::shared_ptr<const poligon::LandPatch> LandAt(double x, double z) const {
+        const poligon::LandInfo& info = land_->GetInfo();
+        const glm::vec2 map_place = ToMap(x, z);
+        const poligon::PatchCoord patch{
+            std::clamp(static_cast<int>(std::floor(map_place.x / info.grid.patch_size)), 0, info.grid.patch_count_x - 1),
+            std::clamp(static_cast<int>(std::floor(map_place.y / info.grid.patch_size)), 0, info.grid.patch_count_z - 1)};
+        return land_->GetPatch(patch);
     }
 
-    // The land: generated by the engine (poligon/world/terrain_generator.h) on the first run, then
-    // loaded from the cache. Its ground textures follow the generator's maps. The world's
-    // origin is put at the player's start, at the land's height there.
+    // The land: generated by the engine (poligon/world/terrain_generator.h) and cooked into
+    // patches on the first run (poligon/world/land.h), then streamed from the cooked files.
+    // Its ground textures follow the level's ground layers. The world's origin is put at the
+    // player's start, at the land's height there.
     void CreateGround() {
-        const poligon::TerrainGeneratorSettings& generator = level_.terrain;
         std::string error;
-        bool generated = false;
+        bool cooked = false;
         const auto started = std::chrono::steady_clock::now();
-        if (!poligon::LoadOrGenerateTerrain(generator, terrain_cache_.string().c_str(), maps_, generated, error)) {
-            std::printf("forest_scene: %s (the land is used without being kept)\n", error.c_str());
+        if (!poligon::CookLevelWorld(level_, ground_layers_, cooked_.string().c_str(), terrain_cache_.string().c_str(), cooked, error)) {
+            poligon::FatalError(("forest_scene: " + error).c_str());
         }
-        std::printf("forest_scene: land %s in %.1f s\n", generated ? "generated" : "loaded from the cache",
+        std::printf("forest_scene: land %s in %.1f s\n", cooked ? "generated and cooked into patches" : "cooked already",
                     std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
-        const poligon::HeightMap& map = maps_.height;
-        const glm::vec2 start = ChooseStart();
+        // The land's description first, to find the start and its height.
+        poligon::LandFromFiles probe(library_, level_.world, glm::dvec3(0.0));
+        if (!probe.IsOpen()) {
+            poligon::FatalError(("forest_scene: " + probe.GetError()).c_str());
+        }
+        const glm::vec2 start = ChooseStart(probe.GetInfo());
+        const double patch_size = probe.GetInfo().grid.patch_size;
+        const poligon::PatchCoord start_patch{static_cast<int>(start.x / patch_size), static_cast<int>(start.y / patch_size)};
+        const double start_height = probe.GetPatch(start_patch)->maps.height.GetHeight(start.x, start.y);
         map_offset_ = start;
+        const glm::dvec3 origin(-start.x, -start_height, -start.y);
+        world_height_offset_ = origin.y;
+        land_ = std::make_unique<poligon::LandFromFiles>(library_, level_.world, origin);
+        const poligon::LandInfo& info = land_->GetInfo();
+        vegetation_.SetCellOrigin({origin.x, origin.z});  // cells must fit the patches
+
+        // Ground layers (cooked, block-compressed), as the level names them.
         poligon::TerrainConfig config;
         config.detail = kTerrainDetail;
-        config.origin = {-start.x, -map.GetHeight(start.x, start.y), -start.y};
-        world_height_offset_ = config.origin.y;
-
-        // Ground layers (cooked, block-compressed) and where each covers the land, from the
-        // generator's maps.
-        struct LayerSource {
-            const char* name;
-            float tile_size;
-        };
-        const LayerSource sources[] = {{"forest_floor", 3.0f}, {"litter", 2.5f}, {"grass", 3.0f}, {"mud", 3.0f},
-                                       {"sand", 2.5f},         {"stones", 2.0f}, {"rock", 6.0f}};
-        constexpr int kLayers = 7;
         std::vector<poligon::CompressedImage> colors;
         std::vector<poligon::CompressedImage> normals;
-        for (int i = 0; i < kLayers; ++i) {
-            const std::string name = std::string("ground/") + sources[i].name;
-            const poligon::CompressedImage* color = library_.LoadImage(name + "_color", error);
-            const poligon::CompressedImage* normal = color != nullptr ? library_.LoadImage(name + "_normal", error) : nullptr;
+        for (size_t i = 0; i < ground_layers_.size(); ++i) {
+            const poligon::CompressedImage* color = library_.LoadImage(ground_layers_[i].texture + "_color", error);
+            const poligon::CompressedImage* normal = color != nullptr ? library_.LoadImage(ground_layers_[i].texture + "_normal", error) : nullptr;
             if (color == nullptr || normal == nullptr) {
                 std::printf("forest_scene: %s; the ground is drawn without textures\n", error.c_str());
                 colors.clear();
@@ -630,89 +680,34 @@ private:
             }
             colors.push_back(*color);
             normals.push_back(*normal);
-            config.material.tile_sizes[i] = sources[i].tile_size;
+            config.material.tile_sizes[i] = ground_layers_[i].tile_size;
         }
         if (!colors.empty()) {
-            config.material.colors = renderer_.CreateTextureArray(colors.data(), kLayers);
-            config.material.normals = renderer_.CreateTextureArray(normals.data(), kLayers);
-            config.material.layer_count = kLayers;
+            config.material.colors = renderer_.CreateTextureArray(colors.data(), static_cast<int>(colors.size()));
+            config.material.normals = renderer_.CreateTextureArray(normals.data(), static_cast<int>(normals.size()));
+            config.material.layer_count = static_cast<int>(colors.size());
         }
-        config.material.steep_start_degrees = 90.0f;  // the rock layer covers steep ground
+        config.material.steep_start_degrees = 90.0f;  // a rock layer covers steep ground
+        terrain_ = std::make_unique<poligon::Terrain>(renderer_, info, config, kTerrainPages);
 
-        poligon::TerrainLayerRule rules[kLayers];
-        // 0: mossy forest floor, wherever nothing else fits.
-        rules[0].strength = 0.35f;
-        // 1: dry litter in patches on drier ground.
-        rules[1].conditions.moisture = {0.0f, 0.45f, 0.15f};
-        rules[1].patch_size = 45.0f;
-        rules[1].patch_cover = 0.45f;
-        // 2: grass in clearings on gentle, moderately moist ground.
-        rules[2].conditions.slope_degrees = {0.0f, 18.0f, 6.0f};
-        rules[2].conditions.moisture = {0.3f, 0.85f, 0.15f};
-        rules[2].patch_size = 120.0f;
-        rules[2].patch_cover = 0.4f;
-        // 3: mud where water gathers: wet ground, the bottoms of drainage lines, a band along
-        // the shore.
-        rules[3].conditions.moisture = {0.82f, 1.0f, 0.1f};
-        rules[3].conditions.water_depth = {0.0f, 0.05f, 0.05f};
-        rules[3].strength = 1.2f;
-        // 4: sand and gravel on the shore line and in shallow water.
-        rules[4].conditions.water_distance = {0.0f, 2.0f, 2.0f};
-        rules[4].conditions.water_depth = {0.0f, 0.5f, 0.4f};
-        rules[4].strength = 1.6f;
-        // 5: small stones on the lake bed and in stream beds.
-        rules[5].conditions.water_depth = {0.6f, 1000.0f, 0.4f};
-        rules[5].strength = 2.0f;
-        // 6: rock on steep ground and where the generator found bare rock.
-        rules[6].conditions.slope_degrees = {32.0f, 90.0f, 8.0f};
-        rules[6].strength = 2.0f;
-        poligon::Image weights[2];
-        const auto weights_started = std::chrono::steady_clock::now();
-        poligon::MakeTerrainLayerWeights(maps_, rules, kLayers, 1u, weights);
-        config.material.weights[0] = renderer_.CreateTexture(weights[0], [] {
-            poligon::TextureOptions options;
-            options.is_color = false;
-            options.generate_mipmaps = false;
-            return options;
-        }());
-        config.material.weights[1] = renderer_.CreateTexture(weights[1], [] {
-            poligon::TextureOptions options;
-            options.is_color = false;
-            options.generate_mipmaps = false;
-            return options;
-        }());
-        std::printf("forest_scene: ground layer weights in %.1f s; %d lakes; start at %.0f, %.0f on the map, %.0f m above "
-                    "the largest lake, %.0f m from its middle, which lies at turn %.0f\n",
-                    std::chrono::duration<double>(std::chrono::steady_clock::now() - weights_started).count(),
-                    static_cast<int>(maps_.lakes.size()), static_cast<double>(start.x), static_cast<double>(start.y),
-                    static_cast<double>(map.GetHeight(start.x, start.y) - start_lake_level_), static_cast<double>(lake_distance_),
-                    static_cast<double>(start_yaw_));
-        terrain_ = std::make_unique<poligon::Terrain>(renderer_, map, config);
-        lakes_ = poligon::CreateLakeSurfaces(renderer_, maps_, config.origin);
-        std::printf("forest_scene: land %.0f x %.0f m, a point every %.0f m\n", static_cast<double>(map.GetSizeX()),
-                    static_cast<double>(map.GetSizeZ()), static_cast<double>(map.spacing));
-
-        // Collisions: the square of land around the start, as large as fits on the map.
-        const int half_points = static_cast<int>(kPlayHalfSize / map.spacing);
-        const int center_x = static_cast<int>(start.x / map.spacing);
-        const int center_z = static_cast<int>(start.y / map.spacing);
-        const int size = 2 * half_points + 1;
-        const int first_x = std::clamp(center_x - half_points, 0, map.width - size);
-        const int first_z = std::clamp(center_z - half_points, 0, map.depth - size);
-        const poligon::HeightMap window = poligon::CropHeightMap(map, first_x, first_z, size, size);
-        physics_.AddHeightField(window.heights.data(), size, map.spacing,
-                                config.origin + glm::dvec3(static_cast<double>(first_x) * map.spacing, 0.0,
-                                                           static_cast<double>(first_z) * map.spacing));
-        // Four fences keep the player on the part of the land that has collisions.
-        const float fence = kPlayHalfSize - 5.0f;
-        for (int side = 0; side < 4; ++side) {
-            const bool along_x = side < 2;
-            const float sign = side % 2 == 0 ? 1.0f : -1.0f;
-            poligon::BodySettings settings;
-            settings.position = along_x ? glm::vec3(sign * fence, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, sign * fence);
-            physics_.AddBox(along_x ? glm::vec3(0.5f, 300.0f, fence) : glm::vec3(fence, 300.0f, 0.5f), settings);
-        }
-        first_shown_body_id_ = physics_.GetLastBodyId() + 1;
+        // What is streamed, each with its own window: the land drawn and its water around the
+        // camera, the land's collisions around the player and the crates.
+        poligon::StreamingGridSettings grid = info.grid;
+        grid.origin = {origin.x, origin.z};
+        grid_ = std::make_unique<poligon::StreamingGrid>(grid);
+        terrain_source_ = std::make_unique<poligon::TerrainPatchSource>(*terrain_, *land_);
+        terrain_collisions_ = std::make_unique<poligon::TerrainPhysicsSource>(physics_, *land_);
+        water_ = std::make_unique<poligon::WaterPatchSource>(renderer_, *land_);
+        streamer_ = std::make_unique<poligon::WorldStreamer>(*grid_);
+        streamer_->AddSource(*terrain_source_, kTerrainWindow, poligon::StreamingMode::Background);
+        streamer_->AddSource(*water_, kTerrainWindow, poligon::StreamingMode::Background);
+        streamer_->AddSource(*terrain_collisions_, kCollisionWindow, poligon::StreamingMode::Immediate);
+        std::printf("forest_scene: land %.0f x %.0f m in %d x %d patches of %.0f m, %zu lakes; start at %.0f, %.0f on the map, "
+                    "%.0f m above the largest lake, %.0f m from its middle, which lies at turn %.0f\n",
+                    static_cast<double>(info.size_x), static_cast<double>(info.size_z), info.grid.patch_count_x,
+                    info.grid.patch_count_z, info.grid.patch_size, info.lakes.size(), static_cast<double>(start.x),
+                    static_cast<double>(start.y), start_height - static_cast<double>(start_lake_level_),
+                    static_cast<double>(lake_distance_), static_cast<double>(start_yaw_));
     }
 
     // One kind from its cooked model and its settings as a plant (poligon/world/plants.h).
@@ -972,26 +967,6 @@ private:
                                               glm::angleAxis(facing, glm::vec3(0.0f, 1.0f, 0.0f)), glm::vec3(fox_scale_));
     }
 
-    // Puts one plant where a rule placed it (map coordinates; its foot at `placement.height`
-    // on the map, pushed into the ground by `sink` of its height).
-    void PlaceAt(const Kind& kind, const poligon::PlantPlacement& placement, float sink) {
-        const poligon::PlantVariant& variant = kind.plants.variants[static_cast<size_t>(placement.variant)];
-        const double x = static_cast<double>(placement.position.x) - map_offset_.x;
-        const double z = static_cast<double>(placement.position.y) - map_offset_.y;
-        const glm::dvec3 foot(x, static_cast<double>(placement.height - variant.height * placement.scale * sink) + world_height_offset_, z);
-        vegetation_.AddInstance(variant.species_id, poligon::Transform(foot, glm::angleAxis(placement.turn, glm::vec3(0.0f, 1.0f, 0.0f)),
-                                                                       glm::vec3(placement.scale)));
-        // What blocks the way gets a body in the physics world, where the player can walk.
-        if (std::fabs(x) < kPlayHalfSize && std::fabs(z) < kPlayHalfSize) {
-            poligon::AddPlantCollider(physics_, kind.plants, variant, foot, placement.turn, placement.scale);
-        }
-        // Tall plants' crowns hide part of the sky from the ground below them.
-        if (variant.height * placement.scale > 6.0f) {
-            crowns_.push_back({{x, z}, (variant.half_width.x + variant.half_width.y) * 0.5f * placement.scale * 0.9f});
-        }
-        ++placed_count_;
-    }
-
     // Whether a large thing may stand at a world position: not in the small clearing at the
     // start, and not in the clearing that opens from the start towards the lake.
     bool KeepsTheViewOpen(float x, float z) const {
@@ -1009,16 +984,18 @@ private:
         return true;
     }
 
-    // Plants everything the level's "plant" rules describe, group by group, around the start.
+    // Plants everything the level's "plant" rules describe, group by group, around the start:
+    // a planter that the streamed sources call for each patch (drawn plants, their
+    // collisions, and the crowns that hide the sky).
     void PlantForest() {
         std::vector<std::string> group_names;
-        std::vector<std::vector<const poligon::PlantRule*>> groups;
         for (size_t i = 0; i < rules_.size(); ++i) {
             const poligon::PlantRule& rule = rules_[i];
             if (rule.is_cover) {
                 continue;
             }
-            if (FindKind(rule.kind) == nullptr) {
+            const Kind* kind = FindKind(rule.kind);
+            if (kind == nullptr) {
                 std::printf("forest_scene: a rule plants \"%s\", which is not loaded\n", rule.kind.c_str());
                 continue;
             }
@@ -1026,43 +1003,48 @@ private:
             const auto found = std::find(group_names.begin(), group_names.end(), name);
             if (found == group_names.end()) {
                 group_names.push_back(name);
-                groups.push_back({&rule});
-            } else {
-                groups[static_cast<size_t>(found - group_names.begin())].push_back(&rule);
+                plant_groups_.emplace_back();
             }
+            PlantGroup& group = plant_groups_[static_cast<size_t>(std::find(group_names.begin(), group_names.end(), name) - group_names.begin())];
+            group.rules.push_back(&rule);
+            group.kinds.push_back(kind);
+            group.variant_counts.push_back(static_cast<int>(kind->plants.variants.size()));
         }
-        for (const std::vector<const poligon::PlantRule*>& group : groups) {
-            std::vector<const Kind*> kinds;
-            std::vector<int> variant_counts;
-            for (const poligon::PlantRule* rule : group) {
-                kinds.push_back(FindKind(rule->kind));
-                variant_counts.push_back(static_cast<int>(kinds.back()->plants.variants.size()));
+        // Called on the loading thread too: it only reads (the groups, the kinds, the start).
+        planter_ = [this](const poligon::LandPatch& land, glm::vec2 low, glm::vec2 high, std::vector<poligon::PlacedPlant>& plants) {
+            for (const PlantGroup& group : plant_groups_) {
+                const auto keep = [&](int rule, glm::vec2 place) {
+                    return group.kinds[static_cast<size_t>(rule)]->is_small ||
+                           KeepsTheViewOpen(place.x - map_offset_.x, place.y - map_offset_.y);
+                };
+                for (const auto& [rule, placement] :
+                     poligon::PlacePlantGroupInRectangle(land.maps, group.rules, map_offset_, 1500.0f, low, high, group.variant_counts, keep)) {
+                    const Kind& kind = *group.kinds[static_cast<size_t>(rule)];
+                    const poligon::PlantVariant& variant = kind.plants.variants[static_cast<size_t>(placement.variant)];
+                    // The foot at the ground (or water) there, pushed into it by `sink` of the plant's height.
+                    const float sink = group.rules[static_cast<size_t>(rule)]->sink;
+                    poligon::PlacedPlant plant;
+                    plant.kind = &kind.plants;
+                    plant.variant = placement.variant;
+                    plant.foot = glm::dvec3(static_cast<double>(placement.position.x) - map_offset_.x,
+                                            static_cast<double>(placement.height - variant.height * placement.scale * sink) + world_height_offset_,
+                                            static_cast<double>(placement.position.y) - map_offset_.y);
+                    plant.turn = placement.turn;
+                    plant.scale = placement.scale;
+                    plants.push_back(plant);
+                }
             }
-            const auto keep = [&](int rule, glm::vec2 place) {
-                return kinds[static_cast<size_t>(rule)]->is_small ||
-                       KeepsTheViewOpen(place.x - map_offset_.x, place.y - map_offset_.y);
-            };
-            const auto placements = poligon::PlacePlantGroup(maps_, group, map_offset_, 1500.0f, variant_counts, keep);
-            for (const auto& [rule, placement] : placements) {
-                PlaceAt(*kinds[static_cast<size_t>(rule)], placement, group[static_cast<size_t>(rule)]->sink);
-            }
-        }
-        std::printf("forest_scene: %d things placed by %zu rules\n", placed_count_, rules_.size());
-        BuildSkyOcclusion();
-        GrowGroundCover();
-    }
-
-    // How much of the sky each place sees: the land around it (out to 160 m) and the crowns
-    // of the trees above it, over 2.4 km around the start.
-    void BuildSkyOcclusion() {
-        const auto started = std::chrono::steady_clock::now();
-        sky_occlusion_ = poligon::MakeTerrainSkyOcclusion(*terrain_, {0.0f, 0.0f}, 2400.0f, 4.0f);
-        for (const Crown& crown : crowns_) {
-            poligon::AddCanopy(sky_occlusion_, crown.position, crown.radius, 0.55f);
-        }
-        renderer_.SetSkyOcclusion(&sky_occlusion_);
-        std::printf("forest_scene: sky occlusion of the land and %zu crowns in %.1f s\n", crowns_.size(),
-                    std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+        };
+        plants_ = std::make_unique<poligon::PlantPatchSource>(vegetation_, *land_, planter_);
+        plant_colliders_ = std::make_unique<poligon::PlantColliderSource>(physics_, *land_, planter_);
+        // How much of the sky each place sees: the land around it (out to 160 m) and the
+        // crowns of the trees above it.
+        sky_ = std::make_unique<poligon::SkyOcclusionPatchSource>(*land_, kSkyWindow);
+        sky_->SetCanopy(planter_);
+        renderer_.SetSkyOcclusion(sky_.get());
+        streamer_->AddSource(*plants_, kPlantWindow, poligon::StreamingMode::Background);
+        streamer_->AddSource(*sky_, kSkyWindow, poligon::StreamingMode::Background);
+        streamer_->AddSource(*plant_colliders_, kCollisionWindow, poligon::StreamingMode::Immediate);
     }
 
     // Grass, ferns, nettles, low shrubs and stones are not planted: they grow on the fly
@@ -1074,7 +1056,7 @@ private:
         // every_nth: use only every n-th variant of the kind (each variant is a draw call per
         // pass). shadow_limit: shadows of the layer stop here at the latest; grass shadows
         // matter only at the player's feet.
-        ground_cover_->SetMaps(&maps_, map_offset_);
+        ground_cover_->SetLand(land_.get());
         // One layer per variant of a rule's kind, sharing the rule's density between them. A
         // kind's levels are cut at the radius, so that plants fade out before their cell goes.
         // Dense cover (more than a plant per square meter, grass) casts shadows only at the
@@ -1130,12 +1112,13 @@ private:
     const poligon::Input& input_;
     ForestActions actions_;
 
+    std::filesystem::path cooked_;
     std::filesystem::path terrain_cache_;
-    // Cooked models and textures, loaded by name, and the level.
+    // Cooked models and textures, loaded by name, and the level with its ground layers.
     poligon::AssetLibrary library_;
     poligon::Level level_;
-    // The generated land and its maps; map position = world position + map_offset_.
-    poligon::TerrainMaps maps_;
+    std::vector<poligon::GroundLayer> ground_layers_;
+    // Map position = world position + map_offset_.
     glm::vec2 map_offset_{0.0f};
     // World height = map height + world_height_offset_.
     double world_height_offset_ = 0.0;
@@ -1145,8 +1128,7 @@ private:
     glm::vec2 lake_direction_{0.0f};
     float lake_distance_ = 0.0f;
     std::unique_ptr<poligon::Terrain> terrain_;
-    // The lakes' water surfaces and how they look (the defaults: clear lake water).
-    std::vector<poligon::WaterSurface> lakes_;
+    // How the lakes' water looks (the defaults: clear lake water).
     poligon::WaterMaterial water_material_;
     // The player's prints on bare ground, and the trail they walked in on: 40 m to the start.
     void SetUpTracesAndWeather() {
@@ -1176,7 +1158,8 @@ private:
     // Bare ground keeps prints: where the ground cover grows fewer than 4 grass plants per
     // square meter (half of what the short grass alone grows on open ground), not in water.
     bool TakesPrints(double x, double z) const {
-        if (maps_.GetWaterDepth(static_cast<float>(x + map_offset_.x), static_cast<float>(z + map_offset_.y)) > 0.0f) {
+        const glm::vec2 map_place = ToMap(x, z);
+        if (LandAt(x, z)->maps.GetWaterDepth(map_place.x, map_place.y) > 0.0f) {
             return false;
         }
         float grass = 0.0f;
@@ -1240,18 +1223,10 @@ private:
     // The level's plant rules, and where plants have been walked flat.
     std::vector<poligon::PlantRule> rules_;
     poligon::TrampleMap trample_{128.0f, 256};
-    // Crowns of tall plants (x, z, radius) and the sky occlusion made from them and the land.
-    struct Crown {
-        glm::dvec2 position;
-        float radius;
-    };
-    std::vector<Crown> crowns_;
-    poligon::SkyOcclusionMap sky_occlusion_;
     int loaded_kind_count_ = 0;
     // All plants, rocks and stumps: placed once, drawn by distance.
     poligon::Vegetation vegetation_;
     std::unique_ptr<poligon::GroundCover> ground_cover_;
-    int placed_count_ = 0;
     float detail_scale_ = 1.0f;
     float shadow_scale_ = 1.0f;
     poligon::GraphicsQuality applied_quality_;
@@ -1271,13 +1246,16 @@ private:
     int cpu_frames_ = 0;
 
     // Ground, trunks, rocks, crates and the walking player.
-    poligon::PhysicsWorld physics_;
+    // Trunks and rocks of 3 x 3 patches around the player and each crate: room for many bodies.
+    poligon::PhysicsWorld physics_{[] {
+        poligon::PhysicsConfig config;
+        config.max_bodies = 65536;
+        return config;
+    }()};
     poligon::CharacterHandle walker_;
     std::vector<poligon::BodyHandle> crates_;
     poligon::MeshHandle cube_mesh_;
     poligon::Material crate_material_;
-    // Bodies below this id are the ground and the fences, which the collision view leaves out.
-    std::uint32_t first_shown_body_id_ = 1;
     bool show_collision_ = false;
 
     // Traces and weather (SetUpTracesAndWeather).
@@ -1296,6 +1274,25 @@ private:
     bool flying_ = false;
     bool show_windows_ = true;
     bool fullscreen_toggle_pending_ = false;
+
+    // The streamed land (CreateGround) and what is loaded from it by patches. The streamer is
+    // declared last, so that it (and its loading thread) goes before the sources it uses.
+    struct PlantGroup {
+        std::vector<const poligon::PlantRule*> rules;
+        std::vector<const Kind*> kinds;
+        std::vector<int> variant_counts;
+    };
+    std::vector<PlantGroup> plant_groups_;
+    poligon::Planter planter_;
+    std::unique_ptr<poligon::LandFromFiles> land_;
+    std::unique_ptr<poligon::StreamingGrid> grid_;
+    std::unique_ptr<poligon::TerrainPatchSource> terrain_source_;
+    std::unique_ptr<poligon::TerrainPhysicsSource> terrain_collisions_;
+    std::unique_ptr<poligon::WaterPatchSource> water_;
+    std::unique_ptr<poligon::PlantPatchSource> plants_;
+    std::unique_ptr<poligon::PlantColliderSource> plant_colliders_;
+    std::unique_ptr<poligon::SkyOcclusionPatchSource> sky_;
+    std::unique_ptr<poligon::WorldStreamer> streamer_;
 };
 
 // The look the forest starts with: late afternoon, a warm and fairly low sun, so that
@@ -1501,7 +1498,7 @@ int main(int argc, char** argv) {
         std::filesystem::absolute(argv[0], path_error).parent_path().parent_path().parent_path();
     const std::filesystem::path scene_folder = build_folder.parent_path() / "tools" / "forest_scene";
     ForestGame game(renderer, assets, build_folder, scene_folder / "assets.txt", scene_folder / "forest.level", input, actions, view,
-                    options.positional.size() >= 3, settings, settings_path);
+                    options.positional.size() >= 3, settings, settings_path, options.headless);
     game.ShowCollision(options.positional.size() == 5);
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s; quality %s, %d x %d\n", load_seconds,
@@ -1543,6 +1540,9 @@ int main(int argc, char** argv) {
     std::printf("physics step on average: %.3f ms\n", static_cast<double>(game.GetAveragePhysicsMilliseconds()));
     std::printf("instances: %d submitted, %d in view, %d in shadow cascades, %d draw calls\n", stats.instances_submitted,
                 stats.instances_drawn, stats.shadow_instances, stats.instance_draw_calls);
+    std::printf("memory: graphics card %.1f MB in textures and %.1f MB in buffers, process %.1f MB\n",
+                static_cast<double>(stats.texture_bytes) / 1048576.0, static_cast<double>(stats.buffer_bytes) / 1048576.0,
+                static_cast<double>(poligon::GetProcessMemoryBytes()) / 1048576.0);
     if (!options.dump_frame_path.empty()) {
         if (result.frame_count == 0 || !renderer.SaveFrameToPng(options.dump_frame_path.c_str())) {
             std::fprintf(stderr, "forest_scene: cannot write %s\n", options.dump_frame_path.c_str());

@@ -27,7 +27,7 @@ SDL_GPUTexture* Renderer::Impl::CreateTarget(SDL_GPUTextureFormat format, SDL_GP
     }
     SDL_SetFloatProperty(properties, SDL_PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_DEPTH_FLOAT, clear_depth);
     info.props = properties;
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+    SDL_GPUTexture* texture = CreateTrackedTexture(device, &info);
     SDL_DestroyProperties(properties);
     if (texture == nullptr) {
         const std::string message = std::string("cannot create ") + what;
@@ -146,7 +146,7 @@ void Renderer::Impl::CreateFixedTargets() {
         info.layer_count_or_depth = 6;
         info.num_levels = static_cast<Uint32>(levels);
         info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-        SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+        SDL_GPUTexture* texture = CreateTrackedTexture(device, &info);
         if (texture == nullptr) {
             const std::string message = std::string("cannot create ") + what;
             FatalSdlError(message.c_str());
@@ -165,12 +165,12 @@ void Renderer::Impl::ReleaseSizedTargets() {
                                 &motion_target};
     for (SDL_GPUTexture** texture : sized) {
         if (*texture != nullptr) {
-            SDL_ReleaseGPUTexture(device, *texture);
+            ReleaseTrackedTexture(device, *texture);
             *texture = nullptr;
         }
     }
     for (const BloomLevel& level : bloom_levels) {
-        SDL_ReleaseGPUTexture(device, level.texture);
+        ReleaseTrackedTexture(device, level.texture);
     }
     bloom_levels.clear();
 }

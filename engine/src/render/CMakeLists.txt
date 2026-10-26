@@ -32,6 +32,7 @@ add_library(poligon_render STATIC
   resources/particles.cpp
   resources/terrain.cpp
   resources/textures.cpp
+  resources/gpu_memory.cpp
   resources/uploads.cpp
   settings/graphics_quality.cpp
   settings/render_settings.cpp

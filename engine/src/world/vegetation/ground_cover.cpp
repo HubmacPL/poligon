@@ -76,7 +76,7 @@ struct GroundCover::Impl {
     float cell_size = 16.0f;
     float density_scale = 1.0f;
     const TerrainMaps* maps = nullptr;
-    const LandSource* land = nullptr;
+    LandSource* land = nullptr;
     // Cells that could not be grown yet (their land was not held), tried again on Update.
     bool waiting = false;
 
@@ -97,11 +97,12 @@ struct GroundCover::Impl {
         if (last_patch != nullptr && last_patch->patch == patch) {
             return &last_patch->maps;
         }
-        std::shared_ptr<const LandPatch> held = land->FindPatch(patch);
-        if (held == nullptr || !terrain->HasPatch(patch)) {
-            ready = false;
+        if (!terrain->HasPatch(patch)) {
+            ready = false;  // the land there is still loading
             return nullptr;
         }
+        // Read again if the land source let it go meanwhile (it keeps only the last few).
+        std::shared_ptr<const LandPatch> held = land->GetPatch(patch);
         last_patch = std::move(held);  // kept alive (and looked up once) while plants near it are placed
         return &last_patch->maps;
     }
@@ -315,7 +316,7 @@ void GroundCover::SetMaps(const TerrainMaps* maps, const glm::dvec2& world_to_ma
     impl_->has_camera = false;
 }
 
-void GroundCover::SetLand(const LandSource* land) {
+void GroundCover::SetLand(LandSource* land) {
     impl_->land = land;
     impl_->maps = nullptr;
     impl_->last_patch.reset();

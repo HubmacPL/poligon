@@ -24,7 +24,7 @@ TextureHandle Renderer::CreateTexture(const Image& image, const TextureOptions& 
     info.layer_count_or_depth = 1;
     info.num_levels = level_count;
     info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(impl_->device, &info);
+    SDL_GPUTexture* texture = CreateTrackedTexture(impl_->device, &info);
     if (texture == nullptr) {
         FatalSdlError("cannot create texture");
     }
@@ -154,7 +154,7 @@ TextureHandle Renderer::CreateTextureArray(const CompressedImage* images, int co
     info.layer_count_or_depth = static_cast<Uint32>(count);
     info.num_levels = static_cast<Uint32>(images[0].levels.size());
     info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(impl_->device, &info);
+    SDL_GPUTexture* texture = CreateTrackedTexture(impl_->device, &info);
     if (texture == nullptr) {
         FatalSdlError("cannot create compressed texture");
     }
@@ -223,7 +223,7 @@ TextureHandle Renderer::CreateTextureArray(const Image* images, int count, const
     info.layer_count_or_depth = static_cast<Uint32>(count);
     info.num_levels = level_count;
     info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(impl_->device, &info);
+    SDL_GPUTexture* texture = CreateTrackedTexture(impl_->device, &info);
     if (texture == nullptr) {
         FatalSdlError("cannot create texture array");
     }
@@ -281,7 +281,7 @@ void Renderer::DestroyTexture(TextureHandle texture) {
     if (texture.id == 0 || texture.id > impl_->textures.size() || impl_->textures[texture.id - 1] == nullptr) {
         FatalError("Renderer::DestroyTexture: invalid or already destroyed texture handle");
     }
-    SDL_ReleaseGPUTexture(impl_->device, impl_->textures[texture.id - 1]);
+    ReleaseTrackedTexture(impl_->device, impl_->textures[texture.id - 1]);
     impl_->textures[texture.id - 1] = nullptr;
 }
 

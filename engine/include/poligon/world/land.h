@@ -55,7 +55,13 @@ struct LandInfo {
     // Its ground layer weights at the same points (TerrainMaterial::weights' layout), or
     // empty images when the land has no layer rules.
     Image background_weights[2];
+    // A place to look at the largest lake from (FindLakeViewpoint at an eye height of
+    // kLandViewpointEyeHeight), found when the land is made, since a game holds only patches.
+    bool has_lake_viewpoint = false;
+    LakeViewpoint lake_viewpoint;
 };
+
+constexpr float kLandViewpointEyeHeight = 1.7f;
 
 // Hands out patches of land. GetPatch may be called from several threads at once.
 class LandSource {

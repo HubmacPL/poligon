@@ -12,13 +12,13 @@ void UploadDynamicBuffer(SDL_GPUDevice* device, SDL_GPUCommandBuffer* commands, 
     }
     if (size > target.capacity) {
         if (target.buffer != nullptr) {
-            SDL_ReleaseGPUBuffer(device, target.buffer);
+            ReleaseTrackedBuffer(device, target.buffer);
         }
         target.capacity = size < 65536 ? 65536 : size * 2;
         SDL_GPUBufferCreateInfo buffer_info{};
         buffer_info.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
         buffer_info.size = target.capacity;
-        target.buffer = SDL_CreateGPUBuffer(device, &buffer_info);
+        target.buffer = CreateTrackedBuffer(device, &buffer_info);
         if (target.buffer == nullptr) {
             FatalSdlError("cannot create storage buffer");
         }
@@ -56,7 +56,7 @@ void UploadDynamicBuffer(SDL_GPUDevice* device, SDL_GPUCommandBuffer* commands, 
 
 void ReleaseDynamicBuffer(SDL_GPUDevice* device, DynamicBuffer& target) {
     if (target.buffer != nullptr) {
-        SDL_ReleaseGPUBuffer(device, target.buffer);
+        ReleaseTrackedBuffer(device, target.buffer);
     }
     if (target.transfer != nullptr) {
         SDL_ReleaseGPUTransferBuffer(device, target.transfer);

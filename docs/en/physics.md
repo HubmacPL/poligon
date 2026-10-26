@@ -55,6 +55,7 @@ Header: `poligon/physics/physics.h`. Example: `examples/physics/physics`. Test: 
 ## Known limits
 
 - No joints (hinges, ropes), no ragdolls, no vehicles, no soft bodies yet; Jolt has them all.
+- `PhysicsConfig::max_bodies` (16 384 by default) is fixed when the world is made; the scratch memory of a step grows with it (1 KB per body, at least 16 MB). A streamed world's collisions (poligon/world/streaming.h) can need more: `forest_scene` uses 65 536.
 - No contact events yet ("this touched that"); a game can ask with rays and positions only.
 - A dynamic body cannot have a triangle mesh as its shape.
 - Collision shapes are not drawn as wireframes. `forest_scene` (key B) draws each body's bounding box as a solid colored box instead.

@@ -27,7 +27,7 @@ void Renderer::Impl::RenderSkyLightPass(FrameContext& frame) {
         info.height = 1;
         info.layer_count_or_depth = 1;
         info.num_levels = 1;
-        dummy_volume = SDL_CreateGPUTexture(device, &info);
+        dummy_volume = CreateTrackedTexture(device, &info);
         if (dummy_volume == nullptr) {
             FatalSdlError("cannot create a stand-in volume");
         }

@@ -15,7 +15,7 @@ SDL_GPUTexture* Renderer::Impl::CreateVolume(int size, const std::vector<std::ui
     info.height = static_cast<Uint32>(size);
     info.layer_count_or_depth = static_cast<Uint32>(size);
     info.num_levels = 1;
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &info);
+    SDL_GPUTexture* texture = CreateTrackedTexture(device, &info);
     if (texture == nullptr) {
         FatalSdlError("cannot create cloud noise volume");
     }
@@ -55,7 +55,7 @@ void Renderer::Impl::CreateCloudTextures() {
     info.height = 256;
     info.layer_count_or_depth = 1;
     info.num_levels = 1;
-    cloud_weather = SDL_CreateGPUTexture(device, &info);
+    cloud_weather = CreateTrackedTexture(device, &info);
     if (cloud_weather == nullptr) {
         FatalSdlError("cannot create cloud weather map");
     }

@@ -11,6 +11,58 @@ terrain.basin_count 3
 # On a slope above the largest lake, looking at it.
 player_start lake
 
+# The land is streamed (docs/en/streaming.md): cooked into 512 m patches on the first run,
+# with the whole land every 64 m for the far background.
+world worlds/forest
+world.patch_size 512
+world.background_spacing 64
+
+# --- Ground layers, chosen by the generator's maps (format: docs/en/assets.md). Rock
+# covers steep ground, so the terrain's steep color is not used. ---
+# Mossy forest floor, wherever nothing else fits.
+ground ground/forest_floor
+tile 3
+strength 0.35
+
+# Dry litter in patches on drier ground.
+ground ground/litter
+tile 2.5
+moisture 0 0.45 0.15
+patch 45 0.45
+
+# Grass in clearings on gentle, moderately moist ground.
+ground ground/grass
+tile 3
+slope 0 18 6
+moisture 0.3 0.85 0.15
+patch 120 0.4
+
+# Mud where water gathers: wet ground, the bottoms of drainage lines, a band along the shore.
+ground ground/mud
+tile 3
+moisture 0.82 1 0.1
+water_depth 0 0.05 0.05
+strength 1.2
+
+# Sand and gravel on the shore line and in shallow water.
+ground ground/sand
+tile 2.5
+water_distance 0 2 2
+water_depth 0 0.5 0.4
+strength 1.6
+
+# Small stones on the lake bed and in stream beds.
+ground ground/stones
+tile 2
+water_depth 0.6 1000 0.4
+strength 2
+
+# Rock on steep ground.
+ground ground/rock
+tile 6
+slope 32 90 8
+strength 2
+
 # Things put by hand, in meters on the map: a few big boulders at the edge of the clearing
 # above the lake.
 object rocks/boulder 3538 5112 40 2.2

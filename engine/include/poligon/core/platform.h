@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace poligon {
 
 // Handles pending operating system events (window messages).
@@ -12,5 +14,9 @@ bool ProcessPlatformEvents();
 // program that may run headless or in a test must never call this, because nobody would
 // be there to click.
 void ShowMessageBox(const char* title, const char* message);
+
+// Memory the program has asked the system for and holds (Windows: the private bytes of the
+// process, from GetProcessMemoryInfo), in bytes. 0 where it cannot be found out.
+std::uint64_t GetProcessMemoryBytes();
 
 } // namespace poligon

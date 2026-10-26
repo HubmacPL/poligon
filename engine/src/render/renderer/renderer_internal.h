@@ -409,6 +409,15 @@ enum MeshKind { kRigid, kSkinned, kInstanced, kMeshKindCount };
 constexpr int kInstanceListCount = 1 + kCascadeCount;
 
 // A height map on the graphics card.
+// Textures and buffers through these are counted (gpu_memory.cpp, FrameStats::texture_bytes):
+// the same as SDL_CreateGPUTexture and friends otherwise.
+SDL_GPUTexture* CreateTrackedTexture(SDL_GPUDevice* device, const SDL_GPUTextureCreateInfo* info);
+void ReleaseTrackedTexture(SDL_GPUDevice* device, SDL_GPUTexture* texture);
+SDL_GPUBuffer* CreateTrackedBuffer(SDL_GPUDevice* device, const SDL_GPUBufferCreateInfo* info);
+void ReleaseTrackedBuffer(SDL_GPUDevice* device, SDL_GPUBuffer* buffer);
+std::uint64_t GetTrackedTextureBytes();
+std::uint64_t GetTrackedBufferBytes();
+
 // One page of a terrain's height array: a terrain of one map has one page.
 struct TerrainPage {
     glm::dvec3 origin{0.0};  // world position of the first point; y is that of image value 0

@@ -18,8 +18,9 @@ add_library(poligon_core STATIC
 target_include_directories(poligon_core PUBLIC ${POLIGON_INCLUDE_DIR})
 target_include_directories(poligon_core SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 # dbghelp is a Windows system library: turns addresses into function names for crash reports.
+# psapi (Windows) reports the process's memory (GetProcessMemoryBytes).
 # ImGui: platform.cpp hands window events to the debug windows when they exist.
-target_link_libraries(poligon_core PRIVATE poligon_build_options SDL3::SDL3 dbghelp imgui::imgui)
+target_link_libraries(poligon_core PRIVATE poligon_build_options SDL3::SDL3 dbghelp psapi imgui::imgui)
 # GLM is PUBLIC: game code uses it directly (poligon/core/math.h). Its configuration must be
 # identical in every file of a program, so it is set here and nowhere else:
 #   DEPTH_ZERO_TO_ONE  projection matrices produce depth 0..1, as Direct3D 12 and Vulkan expect

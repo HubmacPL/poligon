@@ -55,6 +55,7 @@ Wzorcem jest `game/src/toy_world.cpp`:
 ## Znane ograniczenia
 
 - Jeszcze bez połączeń (zawiasy, liny), bezwładnych ciał, pojazdów i ciał miękkich; Jolt ma je wszystkie.
+- `PhysicsConfig::max_bodies` (domyślnie 16 384) jest ustalane przy tworzeniu świata; pamięć robocza kroku rośnie razem z nim (1 KB na ciało, co najmniej 16 MB). Kolizje strumieniowanego świata (poligon/world/streaming.h) mogą potrzebować więcej: `forest_scene` używa 65 536.
 - Jeszcze bez zdarzeń zderzeń („to dotknęło tamtego”); gra może pytać tylko promieniami i o pozycje.
 - Bryła dynamiczna nie może mieć kształtu z siatki trójkątów.
 - Kształty kolizyjne nie są rysowane drucianą siatką. `forest_scene` (klawisz B) rysuje zamiast tego pudełko otaczające każdej bryły jako pełne kolorowe pudło.

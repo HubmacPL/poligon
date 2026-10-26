@@ -227,9 +227,9 @@ void Renderer::BakeImpostor(const ImpostorPart* parts, int count, int frames_per
     impostor.normal.pixels.assign(pixels + byte_count, pixels + byte_count * 2);
     SDL_UnmapGPUTransferBuffer(impl.device, transfer);
     SDL_ReleaseGPUTransferBuffer(impl.device, transfer);
-    SDL_ReleaseGPUTexture(impl.device, color_target);
-    SDL_ReleaseGPUTexture(impl.device, normal_target);
-    SDL_ReleaseGPUTexture(impl.device, depth_target);
+    ReleaseTrackedTexture(impl.device, color_target);
+    ReleaseTrackedTexture(impl.device, normal_target);
+    ReleaseTrackedTexture(impl.device, depth_target);
     SDL_ReleaseGPUGraphicsPipeline(impl.device, pipelines[0]);
     SDL_ReleaseGPUGraphicsPipeline(impl.device, pipelines[1]);
 

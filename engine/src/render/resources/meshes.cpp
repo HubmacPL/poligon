@@ -103,10 +103,10 @@ void Renderer::DestroyMesh(MeshHandle mesh) {
         FatalError("Renderer::DestroyMesh: invalid or already destroyed mesh handle");
     }
     Mesh& entry = impl_->meshes[mesh.id - 1];
-    SDL_ReleaseGPUBuffer(impl_->device, entry.vertex_buffer);
-    SDL_ReleaseGPUBuffer(impl_->device, entry.index_buffer);
+    ReleaseTrackedBuffer(impl_->device, entry.vertex_buffer);
+    ReleaseTrackedBuffer(impl_->device, entry.index_buffer);
     if (entry.skin_buffer != nullptr) {
-        SDL_ReleaseGPUBuffer(impl_->device, entry.skin_buffer);
+        ReleaseTrackedBuffer(impl_->device, entry.skin_buffer);
     }
     entry = Mesh{};
 }

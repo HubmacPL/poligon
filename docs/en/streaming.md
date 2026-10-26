@@ -52,7 +52,7 @@ Sources, each with its own window:
 - **Streamed terrain**: `Terrain(renderer, land_info, config, pages)` holds up to `pages` patches; each is a page of a texture array on the graphics card (`Renderer::CreateTerrainPages`, `SetTerrainPage`), with a rim of one point so that the ground's direction at the edge is right, and its own ground layer weights. Each patch is its own tree of squares (the patch size must be 64, 128, 256, 512... height points); all held patches go out in one `DrawTerrain` call, one draw call per pass. `GetHeight`, `GetNormal` and `GetSlopeDegrees` read the held patch, or the background where none is held.
 - **Plants**: the game gives a `Planter`, a function that puts the plants of a rectangle of the land (usually `PlacePlantGroupInRectangle` with the level's rules). It is called on the loading thread and by several sources for the same patch, so it must only read. The `Vegetation`'s cells must fit the patches: `SetCellOrigin(land origin)` and a patch size that is a whole number of cells; `RemoveInstancesInRectangle` then takes exactly a patch's plants.
 - **Sky occlusion**: each patch's tile is worked out from the patch and its eight neighbors (so `reach` must not be longer than a patch) and the crowns the planter puts on and around it; the held tiles are joined into one map, built again only after a change.
-- **Ground cover** is not a source (it is grown in small cells around the camera anyway): `GroundCover::SetLand(&land)` makes it read each place's maps from the held land patch, and a cell grows only once every patch it touches is held by the land and the terrain; until then it is tried again on every `Update`.
+- **Ground cover** is not a source (it is grown in small cells around the camera anyway): `GroundCover::SetLand(&land)` makes it read each place's maps from the land patch there, and a cell grows only once every patch it touches is held by the terrain; until then it is tried again on every `Update` (a patch the land source has let go of meanwhile is read again).
 - **Trample map**: it is game state that follows the player, not loaded data. `TrampleMap::SetRememberOutside(true)` keeps the values of cells that leave its grid and gives them back, less what they would have recovered meanwhile, when the grid comes back.
 
 ## Cooked land
@@ -81,6 +81,24 @@ What `terrain_streaming_test` checks, on 512 m of generated land cut into 4 x 4 
 - ground cover on the streamed terrain grows the whole land's tufts (4611, the same transforms), standing on a corner of four patches;
 - a trampled path left behind is there again on return, less what it recovered;
 - with a window of 2 x 2 patches, the rest of the land is drawn from the background (16 m points there): 12 squares, and 0.07% of the pixels of a wide view from above differ from the whole land by more than 16 of 255.
+
+## forest_scene on streaming
+
+Since 2026-10-26 `forest_scene` streams its 6 x 6 km land: the level names `worlds/forest` (12 x 12 patches of 512 m), which is cooked into `poligon-assets/cooked` on the first run (about 10 s on top of generating the land); the ground layers moved from code into the level file. Windows: terrain and water 9 x 9 patches around the camera, plants 7 x 7, sky occlusion 5 x 5, collisions of the land and of trunks and rocks 3 x 3 around the player and each crate (`RequirePatches` before every tick). Heights for what stands on the land (animals, crates, prints) are read from the land patches, never from the drawn terrain. Headless runs load synchronously, so their pictures do not depend on timing; a replay of the same recording gives the same state to the bit.
+
+Measured on the GTX 980 at 1920 x 1080, high, the four fixed views (before: the land held whole):
+
+| | before | after |
+|---|---|---|
+| graphics card, textures (renderer's own count) | 614 MB | 491 MB |
+| graphics card, buffers | 30-31 MB | 30-31 MB |
+| process memory (private bytes) | 1750-1960 MB | 1390-1660 MB |
+| frame, medium | 6.2-8.8 ms | 6.5-9.4 ms |
+| frame, high | 8.7-13.3 ms | 9.0-13.7 ms |
+| processor per frame | 2.6-5.0 ms | 2.7-5.0 ms |
+| physics step | 0.048-0.055 ms | 0.061-0.071 ms |
+
+The pictures of the four views match the land held whole except on 0.2 to 3% of pixels by more than 12 of 255, on sunlit leaves and grass blades: the sky occlusion grid now starts at patch corners, a meter away from where it started before, and crowns' and grass blades' thin edges show it. The physics step grew because collisions now cover 3 x 3 patches around the player (2.4 km², about 13 000 trunks and rocks) instead of a fixed square of 1 km around the start; `forest_scene` makes its physics world with room for 65 536 bodies.
 
 ## Known limits
 

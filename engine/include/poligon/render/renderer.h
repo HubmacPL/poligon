@@ -504,6 +504,11 @@ struct FrameStats {
     // Draws of each level by DrawMesh and DrawSkinnedMesh with a MeshLodGroup (index =
     // level); an object fading between two levels counts in both.
     int mesh_lod_draws[kMaxMeshLods] = {};
+    // Memory of the textures and buffers renderers of this program hold on the graphics card,
+    // as the renderer counts what it asks for (exact for its own resources, without what the
+    // driver adds; SDL GPU does not report the card's memory).
+    std::uint64_t texture_bytes = 0;
+    std::uint64_t buffer_bytes = 0;
 };
 
 // Where the four shadow cascades end, as distances in front of the camera (see

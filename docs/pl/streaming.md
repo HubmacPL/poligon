@@ -52,7 +52,7 @@ Generator terenu symuluje cały ląd naraz (rzeki i erozja nie są lokalne), wi�
 - **Strumieniowany teren**: `Terrain(renderer, land_info, config, pages)` trzyma do `pages` łat; każda jest stroną tablicy tekstur na karcie (`Renderer::CreateTerrainPages`, `SetTerrainPage`), z obwódką jednego punktu, żeby kierunek podłoża na krawędzi był dobry, i z własnymi wagami warstw podłoża. Każda łata to własne drzewo kwadratów (rozmiar łaty musi wynosić 64, 128, 256, 512... punktów wysokości); wszystkie trzymane łaty idą w jednym wywołaniu `DrawTerrain`, jedno rysowanie na przebieg. `GetHeight`, `GetNormal` i `GetSlopeDegrees` czytają trzymaną łatę, a tam, gdzie jej nie ma, tło.
 - **Rośliny**: gra daje `Planter`, funkcję, która stawia rośliny prostokąta lądu (zwykle `PlacePlantGroupInRectangle` z regułami poziomu). Jest wołana w wątku wczytującym i przez kilka źródeł dla tej samej łaty, więc wolno jej tylko czytać. Komórki `Vegetation` muszą pasować do łat: `SetCellOrigin(początek lądu)` i rozmiar łaty będący całą liczbą komórek; `RemoveInstancesInRectangle` zabiera wtedy dokładnie rośliny łaty.
 - **Zasłonięcie nieba**: kafelek łaty liczy się z łaty i jej ośmiu sąsiadów (więc `reach` nie może być dłuższy niż łata) i z koron, które planter stawia na niej i wokół niej; trzymane kafelki są łączone w jedną mapę, budowaną od nowa tylko po zmianie.
-- **Pokrycie terenu (runo)** nie jest źródłem (i tak rośnie w małych komórkach wokół kamery): `GroundCover::SetLand(&land)` sprawia, że mapy każdego miejsca czyta z trzymanej łaty lądu, a komórka wyrasta dopiero, gdy każda łata, której dotyka, jest trzymana przez ląd i teren; do tego czasu jest próbowana przy każdym `Update`.
+- **Pokrycie terenu (runo)** nie jest źródłem (i tak rośnie w małych komórkach wokół kamery): `GroundCover::SetLand(&land)` sprawia, że mapy każdego miejsca czyta z łaty lądu w tym miejscu, a komórka wyrasta dopiero, gdy każdą łatę, której dotyka, trzyma teren; do tego czasu jest próbowana przy każdym `Update` (łata, którą źródło lądu w międzyczasie zwolniło, jest czytana ponownie).
 - **Mapa wydeptania** to stan gry idący za graczem, nie wczytywane dane. `TrampleMap::SetRememberOutside(true)` zachowuje wartości komórek, które wychodzą z jej siatki, i oddaje je, pomniejszone o to, co by przez ten czas odrosło, gdy siatka wróci.
 
 ## Wypieczony ląd
@@ -81,6 +81,24 @@ Co sprawdza `terrain_streaming_test` na 512 m wygenerowanego lądu pociętego na
 - runo na strumieniowanym terenie wyrasta takie jak na całym lądzie (4611 kęp, te same przekształcenia), stojąc na rogu czterech łat;
 - wydeptana i opuszczona ścieżka jest po powrocie znowu na miejscu, pomniejszona o to, co odrosło;
 - przy oknie 2 x 2 łat reszta lądu jest rysowana z tła (tu punkty co 16 m): 12 kwadratów, a 0,07% pikseli szerokiego widoku z góry różni się od całego lądu o więcej niż 16 na 255.
+
+## forest_scene na strumieniowaniu
+
+Od 2026-10-26 `forest_scene` strumieniuje swój ląd 6 x 6 km: poziom wskazuje `worlds/forest` (12 x 12 łat po 512 m), wypiekany do `poligon-assets/cooked` przy pierwszym uruchomieniu (około 10 s poza generowaniem lądu); warstwy podłoża przeszły z kodu do pliku poziomu. Okna: teren i woda 9 x 9 łat wokół kamery, rośliny 7 x 7, zasłonięcie nieba 5 x 5, kolizje lądu oraz pni i kamieni 3 x 3 wokół gracza i każdej skrzyni (`RequirePatches` przed każdym tickiem). Wysokości dla tego, co stoi na lądzie (zwierzęta, skrzynie, ślady), są czytane z łat lądu, nigdy z rysowanego terenu. Przebiegi bez okna wczytują synchronicznie, więc ich obrazy nie zależą od czasu; powtórka tego samego nagrania daje ten sam stan co do bitu.
+
+Zmierzone na GTX 980 w 1920 x 1080, high, w czterech stałych widokach (przed: ląd trzymany w całości):
+
+| | przed | po |
+|---|---|---|
+| karta, tekstury (własne liczniki renderera) | 614 MB | 491 MB |
+| karta, bufory | 30-31 MB | 30-31 MB |
+| pamięć procesu (private bytes) | 1750-1960 MB | 1390-1660 MB |
+| klatka, medium | 6,2-8,8 ms | 6,5-9,4 ms |
+| klatka, high | 8,7-13,3 ms | 9,0-13,7 ms |
+| procesor na klatkę | 2,6-5,0 ms | 2,7-5,0 ms |
+| krok fizyki | 0,048-0,055 ms | 0,061-0,071 ms |
+
+Obrazy czterech widoków zgadzają się z lądem trzymanym w całości poza 0,2 do 3% pikseli różniących się o więcej niż 12 na 255, na nasłonecznionych liściach i źdźbłach: siatka zasłonięcia nieba zaczyna się teraz w rogach łat, metr od miejsca, w którym zaczynała się wcześniej, a cienkie krawędzie koron i źdźbeł to pokazują. Krok fizyki urósł, bo kolizje obejmują teraz 3 x 3 łaty wokół gracza (2,4 km², około 13 000 pni i kamieni) zamiast stałego kwadratu 1 km wokół startu; `forest_scene` tworzy świat fizyki z miejscem na 65 536 ciał.
 
 ## Znane ograniczenia
 

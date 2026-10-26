@@ -98,7 +98,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
         info.height = 1;
         info.layer_count_or_depth = 1;
         info.num_levels = 1;
-        impl_->no_trample_texture = SDL_CreateGPUTexture(impl_->device, &info);
+        impl_->no_trample_texture = CreateTrackedTexture(impl_->device, &info);
         if (impl_->no_trample_texture == nullptr) {
             FatalSdlError("cannot create trample texture");
         }
@@ -143,16 +143,16 @@ Renderer::~Renderer() {
         }
         for (const Mesh& mesh : impl_->meshes) {
             if (mesh.vertex_buffer != nullptr) {
-                SDL_ReleaseGPUBuffer(impl_->device, mesh.vertex_buffer);
-                SDL_ReleaseGPUBuffer(impl_->device, mesh.index_buffer);
+                ReleaseTrackedBuffer(impl_->device, mesh.vertex_buffer);
+                ReleaseTrackedBuffer(impl_->device, mesh.index_buffer);
                 if (mesh.skin_buffer != nullptr) {
-                    SDL_ReleaseGPUBuffer(impl_->device, mesh.skin_buffer);
+                    ReleaseTrackedBuffer(impl_->device, mesh.skin_buffer);
                 }
             }
         }
         for (SDL_GPUTexture* texture : impl_->textures) {
             if (texture != nullptr) {
-                SDL_ReleaseGPUTexture(impl_->device, texture);
+                ReleaseTrackedTexture(impl_->device, texture);
             }
         }
         impl_->ReleaseOverlay();
@@ -179,10 +179,10 @@ Renderer::~Renderer() {
                                         impl_->cloud_weather, impl_->cloud_target, impl_->cloud_history[0], impl_->cloud_history[1], impl_->cloud_shadow_target,
                                         impl_->sky_capture, impl_->sky_radiance, impl_->dummy_volume,
                                         impl_->sky_occlusion_texture}) {
-            SDL_ReleaseGPUTexture(impl_->device, texture);
+            ReleaseTrackedTexture(impl_->device, texture);
         }
         for (const BloomLevel& level : impl_->bloom_levels) {
-            SDL_ReleaseGPUTexture(impl_->device, level.texture);
+            ReleaseTrackedTexture(impl_->device, level.texture);
         }
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kSceneAfterDepthPass][kRigid][0]);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipelines[kSceneAfterDepthPass][kRigid][1]);
@@ -196,7 +196,7 @@ Renderer::~Renderer() {
             }
         }
         if (impl_->instance_buffer != nullptr) {
-            SDL_ReleaseGPUBuffer(impl_->device, impl_->instance_buffer);
+            ReleaseTrackedBuffer(impl_->device, impl_->instance_buffer);
         }
         for (SDL_GPUTransferBuffer* transfer : {impl_->instance_transfer, impl_->joint_transfer}) {
             if (transfer != nullptr) {
@@ -216,25 +216,25 @@ Renderer::~Renderer() {
         for (const TerrainData& terrain : impl_->terrains) {
             for (SDL_GPUTexture* texture : {terrain.height_texture, terrain.low_weights, terrain.high_weights}) {
                 if (texture != nullptr) {
-                    SDL_ReleaseGPUTexture(impl_->device, texture);
+                    ReleaseTrackedTexture(impl_->device, texture);
                 }
             }
         }
         if (impl_->joint_buffer != nullptr) {
-            SDL_ReleaseGPUBuffer(impl_->device, impl_->joint_buffer);
+            ReleaseTrackedBuffer(impl_->device, impl_->joint_buffer);
         }
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->mesh_pipeline_double_sided);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->shadow_pipeline);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->sky_pipeline);
         SDL_ReleaseGPUGraphicsPipeline(impl_->device, impl_->tonemap_pipeline);
-        SDL_ReleaseGPUTexture(impl_->device, impl_->shadow_atlas);
-        SDL_ReleaseGPUTexture(impl_->device, impl_->output_target);
-        SDL_ReleaseGPUTexture(impl_->device, impl_->scene_depth);
+        ReleaseTrackedTexture(impl_->device, impl_->shadow_atlas);
+        ReleaseTrackedTexture(impl_->device, impl_->output_target);
+        ReleaseTrackedTexture(impl_->device, impl_->scene_depth);
         if (impl_->scene_resolved != nullptr) {
-            SDL_ReleaseGPUTexture(impl_->device, impl_->scene_resolved);
+            ReleaseTrackedTexture(impl_->device, impl_->scene_resolved);
         }
-        SDL_ReleaseGPUTexture(impl_->device, impl_->scene_color);
+        ReleaseTrackedTexture(impl_->device, impl_->scene_color);
         if (impl_->window != nullptr) {
             SDL_ReleaseWindowFromGPUDevice(impl_->device, impl_->window);
             SDL_DestroyWindow(impl_->window);
@@ -272,7 +272,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
         const GroundMap& map = impl_->sky_map;
         if (impl_->sky_occlusion_texture == nullptr || impl_->sky_occlusion_resolution != map.resolution) {
             if (impl_->sky_occlusion_texture != nullptr) {
-                SDL_ReleaseGPUTexture(impl_->device, impl_->sky_occlusion_texture);
+                ReleaseTrackedTexture(impl_->device, impl_->sky_occlusion_texture);
             }
             SDL_GPUTextureCreateInfo info{};
             info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -282,7 +282,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
             info.height = static_cast<Uint32>(map.resolution);
             info.layer_count_or_depth = 1;
             info.num_levels = 1;
-            impl_->sky_occlusion_texture = SDL_CreateGPUTexture(impl_->device, &info);
+            impl_->sky_occlusion_texture = CreateTrackedTexture(impl_->device, &info);
             if (impl_->sky_occlusion_texture == nullptr) {
                 FatalSdlError("cannot create sky occlusion texture");
             }
@@ -305,7 +305,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
         const GroundMap& map = trample;
         if (impl_->trample_texture == nullptr || impl_->trample_resolution != map.resolution) {
             if (impl_->trample_texture != nullptr) {
-                SDL_ReleaseGPUTexture(impl_->device, impl_->trample_texture);
+                ReleaseTrackedTexture(impl_->device, impl_->trample_texture);
             }
             SDL_GPUTextureCreateInfo info{};
             info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -315,7 +315,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
             info.height = static_cast<Uint32>(map.resolution);
             info.layer_count_or_depth = 1;
             info.num_levels = 1;
-            impl_->trample_texture = SDL_CreateGPUTexture(impl_->device, &info);
+            impl_->trample_texture = CreateTrackedTexture(impl_->device, &info);
             if (impl_->trample_texture == nullptr) {
                 FatalSdlError("cannot create trample texture");
             }
@@ -1038,7 +1038,10 @@ glm::vec4 ComputeShadowCascadeEnds(float near_plane, float shadow_distance) {
 }
 
 FrameStats Renderer::GetFrameStats() const {
-    return impl_->stats;
+    FrameStats stats = impl_->stats;
+    stats.texture_bytes = GetTrackedTextureBytes();
+    stats.buffer_bytes = GetTrackedBufferBytes();
+    return stats;
 }
 
 const char* Renderer::GetBackendName() const {

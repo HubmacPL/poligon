@@ -97,4 +97,4 @@ patch 45 0.45
 - `player_start lake` uses `FindLakeViewpoint` (`poligon/world/terrain_generator.h`): gentle ground 150 to 500 m from the largest lake, as high above it as possible with its middle in view.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` read and write generator settings by name; `terrain_tool generate` uses the same names.
 - Ground layers (`ParseGroundLayers`, `poligon/world/terrain.h`) are blocks like plant rules, at most eight, numbered in the order of the file; the two readers pass over each other's blocks. They choose where each ground texture covers the land (`TerrainLayerRule`); a streamed world bakes their weights into its patches.
-- `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake, three boulders put by hand and 18 plant rules.
+- `forest_scene` reads `tools/forest_scene/forest.level`: the default land, the start above the lake, three boulders put by hand, 7 ground layers, 18 plant rules, and the streamed world it is cooked into (`worlds/forest`).

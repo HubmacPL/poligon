@@ -97,4 +97,4 @@ patch 45 0.45
 - `player_start lake` używa `FindLakeViewpoint` (`poligon/world/terrain_generator.h`): łagodny teren 150 do 500 m od największego jeziora, jak najwyżej nad nim, z jego środkiem w widoku.
 - `SetTerrainGeneratorSetting` / `GetTerrainGeneratorSettings` czytają i zapisują ustawienia generatora po nazwie; `terrain_tool generate` używa tych samych nazw.
 - Warstwy podłoża (`ParseGroundLayers`, `poligon/world/terrain.h`) to bloki jak reguły sadzenia, najwyżej osiem, numerowane w kolejności pliku; oba czytniki omijają swoje bloki nawzajem. Wybierają, gdzie każda tekstura podłoża pokrywa ląd (`TerrainLayerRule`); strumieniowany świat wypieka ich wagi w swoje łaty.
-- `forest_scene` czyta `tools/forest_scene/forest.level`: domyślny teren, start nad jeziorem, trzy głazy postawione ręcznie i 18 reguł sadzenia.
+- `forest_scene` czyta `tools/forest_scene/forest.level`: domyślny teren, start nad jeziorem, trzy głazy postawione ręcznie, 7 warstw podłoża, 18 reguł sadzenia i strumieniowany świat, w który jest wypiekany (`worlds/forest`).

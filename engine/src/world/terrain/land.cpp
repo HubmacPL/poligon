@@ -115,6 +115,7 @@ LandFromMaps::LandFromMaps(const TerrainMaps& maps, double patch_size, const glm
     info.map_spacing = maps.map_spacing;
     info.lakes = maps.lakes;
     info.background = MakeCoarseHeightMap(height, step);
+    info.has_lake_viewpoint = FindLakeViewpoint(maps, kLandViewpointEyeHeight, info.lake_viewpoint);
     if (rule_count > 0) {
         // The whole land's weights, at the background's points (the last ones repeat the edge).
         Image whole[2];
@@ -297,6 +298,8 @@ std::vector<std::uint8_t> WriteInfo(const LandInfo& info, std::uint64_t settings
     writer.Array(info.lakes);
     WriteHeightMap(writer, info.background);
     WriteImages(writer, info.background_weights);
+    writer.Raw(static_cast<std::uint8_t>(info.has_lake_viewpoint ? 1 : 0));
+    writer.Raw(info.lake_viewpoint);
     return writer.data;
 }
 
@@ -310,6 +313,11 @@ bool ReadInfo(const std::vector<std::uint8_t>& bytes, LandInfo& info, std::uint6
         !ReadImages(reader, info.background_weights)) {
         return false;
     }
+    std::uint8_t has_viewpoint = 0;
+    if (!reader.Raw(has_viewpoint) || !reader.Raw(info.lake_viewpoint)) {
+        return false;
+    }
+    info.has_lake_viewpoint = has_viewpoint != 0;
     info.grid.patch_count_x = count_x;
     info.grid.patch_count_z = count_z;
     info.grid.origin = {0.0, 0.0};
@@ -366,7 +374,7 @@ bool CookLevelWorld(const Level& level, const std::vector<GroundLayer>& layers, 
     // Everything the cooked files depend on, in one number.
     std::uint64_t hash = 1469598103934665603ull;
     const std::uint64_t generator = HashTerrainGeneratorSettings(level.terrain);
-    const int format = 1;
+    const int format = 2;  // 2: the lake viewpoint
     hash = HashBytes(hash, &format, sizeof(format));
     hash = HashBytes(hash, &generator, sizeof(generator));
     hash = HashBytes(hash, &level.world_patch_size, sizeof(level.world_patch_size));
