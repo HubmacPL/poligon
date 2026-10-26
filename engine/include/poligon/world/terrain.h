@@ -86,6 +86,11 @@ public:
     // `weights` two images over the patch's map points (TerrainMaterial::weights' layout),
     // or nullptr. Outside BeginFrame and EndFrame.
     void SetPatch(PatchCoord patch, const HeightMap& heights, const Image* weights);
+    // The same with the patch's ground given either as weights or as layer indices with
+    // their weights (TerrainPatchGround, TerrainMaterial's two modes), over the patch's map
+    // points. All patches of a terrain must use the same mode. The patch files of a cooked
+    // land (poligon/world/land.h) hold weights only, so layer indices come from the caller.
+    void SetPatch(PatchCoord patch, const HeightMap& heights, const TerrainPatchGround& ground);
     void RemovePatch(PatchCoord patch);
     bool HasPatch(PatchCoord patch) const;
     int GetPatchCount() const;
@@ -166,7 +171,8 @@ void MakeTerrainLayerWeights(const TerrainMaps& maps, const TerrainLayerRule* ru
 //     moisture 0 0.45 0.15           # conditions on the maps, as in plant rules
 //     patch 45 0.45                  # irregular patches: size in meters, share of land covered
 //
-// Layers are numbered in the order of the file (at most eight). Blocks of plant rules in
+// Layers are numbered in the order of the file (at most eight: the weight images' layers).
+// Blocks of plant rules in
 // the same lines are passed over, and plant rules pass over ground blocks.
 struct GroundLayer {
     std::string texture;

@@ -323,6 +323,15 @@ void Terrain::SetBackgroundVisible(bool visible) {
 }
 
 void Terrain::SetPatch(PatchCoord patch, const HeightMap& heights, const Image* weights) {
+    TerrainPatchGround ground;
+    if (weights != nullptr) {
+        ground.low_weights = &weights[0];
+        ground.high_weights = &weights[1];
+    }
+    SetPatch(patch, heights, ground);
+}
+
+void Terrain::SetPatch(PatchCoord patch, const HeightMap& heights, const TerrainPatchGround& ground) {
     Impl& impl = *impl_;
     if (!impl.streamed) {
         FatalError("Terrain::SetPatch: only a streamed terrain takes patches");
@@ -365,7 +374,7 @@ void Terrain::SetPatch(PatchCoord patch, const HeightMap& heights, const Image* 
     held.levels = BuildLevels(page_map, 1, 1, 1 + land_x, 1 + land_z, impl.patch_level + 1);
     const glm::dvec3 page_origin = impl.config.origin + glm::dvec3(static_cast<double>(first_x) * spacing, 0.0,
                                                                  static_cast<double>(first_z) * spacing);
-    impl.renderer->SetTerrainPage(impl.handle, held.page, page.data(), page_origin, weights, land_x + 2, land_z + 2);
+    impl.renderer->SetTerrainPage(impl.handle, held.page, page.data(), page_origin, ground, land_x + 2, land_z + 2);
     impl.free_pages.pop_back();
     impl.held[patch] = std::move(held);
 }
@@ -524,13 +533,13 @@ float PatchNoise(float x, float z, std::uint32_t seed) {
 
 void MakeTerrainLayerWeights(const TerrainMaps& maps, const TerrainLayerRule* rules, int count, std::uint32_t seed,
                              Image weights[2]) {
-    if (count < 1 || count > kMaxTerrainLayers || rules == nullptr || maps.map_width < 2 || maps.map_depth < 2) {
+    if (count < 1 || count > kMaxTerrainWeightLayers || rules == nullptr || maps.map_width < 2 || maps.map_depth < 2) {
         FatalError("MakeTerrainLayerWeights: needs maps and between 1 and 8 rules");
     }
     for (int image = 0; image < 2; ++image) {
         weights[image] = MakeSolidImage(maps.map_width, maps.map_depth, 0, 0, 0, 0);
     }
-    float values[kMaxTerrainLayers] = {};
+    float values[kMaxTerrainWeightLayers] = {};
     for (int z = 0; z < maps.map_depth; ++z) {
         for (int x = 0; x < maps.map_width; ++x) {
             const size_t i = static_cast<size_t>(z) * static_cast<size_t>(maps.map_width) + static_cast<size_t>(x);
@@ -596,7 +605,7 @@ bool ParseGroundLayers(const std::vector<std::pair<int, std::string>>& lines, st
             if (values.size() != 1) {
                 return fail("\"ground\" takes the name of the layer's textures");
             }
-            if (parsed.size() >= static_cast<size_t>(kMaxTerrainLayers)) {
+            if (parsed.size() >= static_cast<size_t>(kMaxTerrainWeightLayers)) {
                 return fail("at most 8 ground layers");
             }
             GroundLayer layer;

@@ -1,6 +1,8 @@
-// Example: land from a height map, drawn with levels of detail, with physics on it.
-// Usage: example_terrain OUTPUT.png
+// Example: land from a height map, drawn with levels of detail, with physics on it, then
+// colored by ground layers named by number at each map point (the layer index mode).
+// Usage: example_terrain OUTPUT.png   (also writes OUTPUT_indices.png)
 #include <cstdio>
+#include <string>
 
 #include "poligon/world/height_map.h"
 #include "poligon/physics/physics.h"
@@ -73,5 +75,47 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::printf("saved %s\n", argv[1]);
+
+    // Ground layers by number (TerrainMaterial::layer_indices), for more than the eight layers
+    // weights can hold or for maps made elsewhere as "material number per point". Here 12
+    // layers of plain color, one per 8 m of height; each point names the layer of its
+    // height band and the next one up, weighted by where it lies in the band.
+    constexpr int kLayers = 12;
+    poligon::Image colors[kLayers];
+    for (int layer = 0; layer < kLayers; ++layer) {
+        colors[layer] = poligon::MakeSolidImage(4, 4, static_cast<std::uint8_t>(40 + layer * 18), static_cast<std::uint8_t>(200 - layer * 12),
+                                                static_cast<std::uint8_t>(60 + layer * 8));
+    }
+    poligon::Image indices = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
+    poligon::Image weights = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
+    for (size_t i = 0; i < map.heights.size(); ++i) {
+        const float band = glm::clamp(map.heights[i] / 8.0f, 0.0f, static_cast<float>(kLayers - 1));
+        const int below = static_cast<int>(band);
+        const float up = band - static_cast<float>(below);
+        indices.pixels[i * 4] = static_cast<std::uint8_t>(below);  // red: a layer's number
+        indices.pixels[i * 4 + 1] = static_cast<std::uint8_t>(glm::min(below + 1, kLayers - 1));
+        weights.pixels[i * 4] = static_cast<std::uint8_t>((1.0f - up) * 255.0f);  // red: how much of it
+        weights.pixels[i * 4 + 1] = static_cast<std::uint8_t>(up * 255.0f);
+    }
+    poligon::TextureOptions data;  // numbers and weights, not colors: no sRGB, no mipmaps
+    data.is_color = false;
+    data.generate_mipmaps = false;
+    poligon::TerrainMaterial material = terrain_config.material;
+    material.colors = renderer.CreateTextureArray(colors, kLayers);
+    material.layer_count = kLayers;
+    material.layer_indices = renderer.CreateTexture(indices, data);
+    material.layer_weights = renderer.CreateTexture(weights, data);
+    terrain.SetMaterial(material);
+
+    renderer.BeginFrame(camera, sun, environment);
+    terrain.Draw(camera);
+    renderer.EndFrame();
+    std::string indexed_path = argv[1];
+    indexed_path.insert(indexed_path.size() >= 4 ? indexed_path.size() - 4 : indexed_path.size(), "_indices");
+    if (!renderer.SaveFrameToPng(indexed_path.c_str())) {
+        std::fprintf(stderr, "cannot write %s\n", indexed_path.c_str());
+        return 1;
+    }
+    std::printf("saved %s\n", indexed_path.c_str());
     return 0;
 }

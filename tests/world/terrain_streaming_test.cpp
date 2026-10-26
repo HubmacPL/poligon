@@ -175,6 +175,54 @@ int main(int argc, char** argv) {
         Expect(share < 0.5, "the land drawn patch by patch looks like the land drawn whole");
     }
 
+    // A patch given its ground as layer indices (Terrain::SetPatch with TerrainPatchGround)
+    // looks like the same patch given as weights: here layer 1 on the patch's west half and
+    // layer 0 on its east half, layer 0 named in another channel.
+    {
+        const poligon::PatchCoord coord{1, 1};
+        const std::shared_ptr<const poligon::LandPatch> patch = land.GetPatch(coord);
+        const int points = patch->weights[0].width;
+        poligon::Image weights[2] = {poligon::MakeSolidImage(points, points, 0, 0, 0, 0), poligon::MakeSolidImage(points, points, 0, 0, 0, 0)};
+        poligon::Image indices = poligon::MakeSolidImage(points, points, 0, 0, 0, 0);
+        poligon::Image amounts = poligon::MakeSolidImage(points, points, 0, 0, 0, 0);
+        for (int z = 0; z < points; ++z) {
+            for (int x = 0; x < points; ++x) {
+                const size_t pixel = static_cast<size_t>(z * points + x) * 4;
+                const bool west = x < points / 2;
+                weights[0].pixels[pixel + (west ? 1 : 0)] = 255;
+                indices.pixels[pixel] = west ? 1 : 5;
+                indices.pixels[pixel + 3] = 0;
+                amounts.pixels[pixel + (west ? 0 : 3)] = 255;
+            }
+        }
+        poligon::Terrain by_weights(renderer, info, terrain_config, 4);
+        poligon::Terrain by_indices(renderer, info, terrain_config, 4);
+        by_weights.SetBackgroundVisible(false);
+        by_indices.SetBackgroundVisible(false);
+        by_weights.SetPatch(coord, patch->maps.height, weights);
+        poligon::TerrainPatchGround ground;
+        ground.layer_indices = &indices;
+        ground.layer_weights = &amounts;
+        by_indices.SetPatch(coord, patch->maps.height, ground);
+        const poligon::Image weights_picture = Draw(renderer, by_weights, above);
+        const poligon::Image indices_picture = Draw(renderer, by_indices, above);
+        int differ = 0;
+        int west_pixels = 0;
+        int east_pixels = 0;
+        for (size_t i = 0; i < weights_picture.pixels.size(); i += 4) {
+            differ += std::abs(static_cast<int>(weights_picture.pixels[i + 1]) - static_cast<int>(indices_picture.pixels[i + 1])) > 2 ? 1 : 0;
+            const int red = indices_picture.pixels[i];
+            const int green = indices_picture.pixels[i + 1];
+            west_pixels += red > green + 10 ? 1 : 0;
+            east_pixels += green > red + 10 ? 1 : 0;
+        }
+        const double share = 100.0 * differ / (weights_picture.width * weights_picture.height);
+        std::printf("  patch by layer indices: %d pixels of layer 1, %d of layer 0, %.3f%% differ from weights\n", west_pixels,
+                    east_pixels, share);
+        Expect(west_pixels > 1000 && east_pixels > 1000, "a patch's layer indices put each layer where they say");
+        Expect(share < 0.5, "a patch given layer indices looks as the same patch given weights");
+    }
+
     // A window of 3 x 3 patches around a corner patch: only those are drawn and collide.
     {
         poligon::PhysicsWorld physics;

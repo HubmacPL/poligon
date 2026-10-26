@@ -120,7 +120,7 @@ LandFromMaps::LandFromMaps(const TerrainMaps& maps, double patch_size, const glm
     const double map_points = patch_size / static_cast<double>(maps.map_spacing);
     if (height.IsEmpty() || patch_size <= 0.0 || map_points != std::floor(map_points) ||
         patch_size / static_cast<double>(height.spacing) != std::floor(patch_size / static_cast<double>(height.spacing)) ||
-        rule_count < 0 || rule_count > kMaxTerrainLayers || (rule_count > 0 && rules == nullptr)) {
+        rule_count < 0 || rule_count > kMaxTerrainWeightLayers || (rule_count > 0 && rules == nullptr)) {
         FatalError("LandFromMaps: needs maps, a patch size that is a whole number of height and map points, and 0 to 8 rules");
     }
     const int step = static_cast<int>(std::lround(background_spacing / height.spacing));

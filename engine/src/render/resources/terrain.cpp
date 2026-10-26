@@ -152,6 +152,16 @@ TerrainHandle Renderer::CreateTerrainPages(int points, int page_count, float spa
 
 void Renderer::SetTerrainPage(TerrainHandle terrain, int page, const float* heights, const glm::dvec3& origin, const Image* weights,
                               int land_points_x, int land_points_z) {
+    TerrainPatchGround ground;
+    if (weights != nullptr) {
+        ground.low_weights = &weights[0];
+        ground.high_weights = &weights[1];
+    }
+    SetTerrainPage(terrain, page, heights, origin, ground, land_points_x, land_points_z);
+}
+
+void Renderer::SetTerrainPage(TerrainHandle terrain, int page, const float* heights, const glm::dvec3& origin,
+                              const TerrainPatchGround& ground, int land_points_x, int land_points_z) {
     if (impl_->in_frame) {
         FatalError("Renderer::SetTerrainPage: do not fill pages between BeginFrame and EndFrame");
     }
@@ -166,27 +176,48 @@ void Renderer::SetTerrainPage(TerrainHandle terrain, int page, const float* heig
     TerrainPage& filled = data.pages[static_cast<size_t>(page)];
     filled.last_point = {static_cast<float>((land_points_x > 0 ? glm::min(land_points_x, data.width) : data.width) - 1),
                          static_cast<float>((land_points_z > 0 ? glm::min(land_points_z, data.depth) : data.depth) - 1)};
-    if (data.paged_weights && weights != nullptr) {
-        for (int i = 0; i < 2; ++i) {
-            const Image& image = weights[i];
-            if (image.width != data.weight_points || image.height != data.weight_points ||
-                image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4) {
-                FatalError("Renderer::SetTerrainPage: the weight images must be weight_points x weight_points");
-            }
-            impl_->UploadTextureLayer(i == 0 ? data.low_weights : data.high_weights, static_cast<Uint32>(page), image.pixels.data(),
-                                      image.width, image.height, 4);
+    const bool has_weights = ground.low_weights != nullptr || ground.high_weights != nullptr;
+    const bool has_indices = ground.layer_indices != nullptr || ground.layer_weights != nullptr;
+    if (!has_weights && !has_indices) {
+        return;
+    }
+    if (has_weights && has_indices) {
+        FatalError("Renderer::SetTerrainPage: give a page either weights or layer indices, not both");
+    }
+    // In the layer index mode the same two arrays hold the indices and their weights.
+    const Image* low = has_indices ? ground.layer_indices : ground.low_weights;
+    const Image* high = has_indices ? ground.layer_weights : ground.high_weights;
+    if (low == nullptr || high == nullptr) {
+        FatalError("Renderer::SetTerrainPage: the ground needs both of its images");
+    }
+    if (data.page_ground_set && data.page_indices != has_indices) {
+        FatalError("Renderer::SetTerrainPage: all pages of a terrain must give their ground the same way");
+    }
+    data.page_ground_set = true;
+    data.page_indices = has_indices;
+    if (!data.paged_weights) {
+        return;
+    }
+    for (int i = 0; i < 2; ++i) {
+        const Image& image = i == 0 ? *low : *high;
+        if (image.width != data.weight_points || image.height != data.weight_points ||
+            image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4) {
+            FatalError("Renderer::SetTerrainPage: the ground images must be weight_points x weight_points");
         }
+        impl_->UploadTextureLayer(i == 0 ? data.low_weights : data.high_weights, static_cast<Uint32>(page), image.pixels.data(),
+                                  image.width, image.height, 4);
     }
 }
 
-// A terrain of one map keeps its material's weight images as one-layer arrays, copied on the
-// graphics card when the material names other images.
+// A terrain of one map keeps its material's weight images (or layer indices and their
+// weights) as one-layer arrays, copied on the graphics card when the material names other images.
 void Renderer::Impl::PrepareTerrainWeights(TerrainData& terrain, const TerrainMaterial& material) {
     if (terrain.paged_weights) {
         return;
     }
+    const bool indices = material.layer_indices.id != 0;
     for (int i = 0; i < 2; ++i) {
-        const TextureHandle handle = material.weights[i];
+        const TextureHandle handle = indices ? (i == 0 ? material.layer_indices : material.layer_weights) : material.weights[i];
         if (handle.id == terrain.copied_weights[i]) {
             continue;
         }

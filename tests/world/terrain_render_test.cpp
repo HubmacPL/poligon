@@ -1,8 +1,10 @@
 // Checks terrain drawing: that land appears where the height map has it and nowhere else,
 // that steep slopes get the steep color, that ground layers cover the land as their weight
 // images say, that heights can be asked for, and that patches are fine near the camera and
-// coarse far from it.
+// coarse far from it. Ground layers come from weights or, in the second mode, from layer
+// numbers at each map point.
 // Usage: terrain_render_test d3d12|vulkan
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -157,6 +159,113 @@ int main(int argc, char** argv) {
         }
         Expect(west[1] > 240 && west[0] < 10 && west[2] < 10, "layer 0 covers the land its weight gives it");
         Expect(east[2] > 240 && east[0] < 10 && east[1] < 10, "layer 1 covers the other half");
+        terrain.SetMaterial(terrain_config.material);
+    }
+
+    // Layer indices: 32 layers, each map point naming its layers by number. The low land in
+    // the west holds bands of layers 9, 17 and 31, and a band where every point is half
+    // layer 0 and half layer 1; the high land in the east is layer 2 north of z = -0.5 and
+    // layer 3 south of it, layer 3 kept in another channel than layer 2.
+    {
+        poligon::Image colors[poligon::kMaxTerrainLayers];
+        poligon::Image normals[poligon::kMaxTerrainLayers];
+        for (int layer = 0; layer < poligon::kMaxTerrainLayers; ++layer) {
+            colors[layer] = poligon::MakeSolidImage(8, 8, 60, 60, 60);
+            normals[layer] = poligon::MakeSolidImage(8, 8, 128, 128, 255);
+        }
+        // Pairs that meet are of equal brightness (in linear light), so that neither wins
+        // the height blending and both show where they share a spot.
+        colors[0] = poligon::MakeSolidImage(8, 8, 255, 0, 0);
+        colors[1] = poligon::MakeSolidImage(8, 8, 0, 188, 0);
+        colors[2] = poligon::MakeSolidImage(8, 8, 0, 0, 255);
+        colors[3] = poligon::MakeSolidImage(8, 8, 162, 0, 0);
+        colors[9] = poligon::MakeSolidImage(8, 8, 255, 255, 0);
+        colors[17] = poligon::MakeSolidImage(8, 8, 0, 255, 255);
+        colors[31] = poligon::MakeSolidImage(8, 8, 255, 0, 255);
+        poligon::TextureOptions data;
+        data.is_color = false;
+        poligon::TerrainMaterial material = terrain_config.material;
+        material.colors = renderer.CreateTextureArray(colors, poligon::kMaxTerrainLayers);
+        material.normals = renderer.CreateTextureArray(normals, poligon::kMaxTerrainLayers, data);
+        material.layer_count = poligon::kMaxTerrainLayers;
+        poligon::Image indices = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
+        poligon::Image amounts = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
+        for (int iz = 0; iz < map.depth; ++iz) {
+            for (int ix = 0; ix < map.width; ++ix) {
+                const float x = static_cast<float>(ix) - 128.0f;
+                const float z = static_cast<float>(iz) - 128.0f;
+                std::uint8_t* index = &indices.pixels[static_cast<size_t>(iz * map.width + ix) * 4];
+                std::uint8_t* amount = &amounts.pixels[static_cast<size_t>(iz * map.width + ix) * 4];
+                amount[0] = 255;
+                if (x > 0.0f) {
+                    if (z < 0.0f) {
+                        index[0] = 2;
+                    } else {
+                        index[0] = 7;  // weight 0: not shown
+                        amount[0] = 0;
+                        index[2] = 3;
+                        amount[2] = 200;
+                    }
+                } else if (z < -52.0f) {
+                    index[0] = 9;
+                } else if (z < -22.0f) {
+                    index[0] = 17;
+                } else if (z < 8.0f) {
+                    index[0] = 31;
+                } else if (z < 45.0f) {
+                    index[1] = 1;
+                    amount[0] = 128;
+                    amount[1] = 128;
+                }
+            }
+        }
+        data.generate_mipmaps = false;
+        material.layer_indices = renderer.CreateTexture(indices, data);
+        material.layer_weights = renderer.CreateTexture(amounts, data);
+        // Weights are ignored when indices are given.
+        material.weights[0] = renderer.CreateTexture(poligon::MakeSolidImage(4, 4, 0, 255, 0, 0), data);
+        terrain.SetMaterial(material);
+        renderer.BeginFrame(camera, light);
+        terrain.Draw(camera);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        const std::uint8_t* band9 = PixelAt(frame, -50.0f, -70.0f);
+        const std::uint8_t* band17 = PixelAt(frame, -50.0f, -37.0f);
+        const std::uint8_t* band31 = PixelAt(frame, -50.0f, -7.0f);
+        const std::uint8_t* half = PixelAt(frame, -50.0f, 25.0f);
+        const std::uint8_t* north = PixelAt(frame, 50.0f, -10.0f);
+        const std::uint8_t* south = PixelAt(frame, 50.0f, 10.0f);
+        std::printf("  indices: 9 %d %d %d, 17 %d %d %d, 31 %d %d %d, half 0 / 1 %d %d %d, 2 %d %d %d, 3 %d %d %d\n", band9[0],
+                    band9[1], band9[2], band17[0], band17[1], band17[2], band31[0], band31[1], band31[2], half[0], half[1], half[2],
+                    north[0], north[1], north[2], south[0], south[1], south[2]);
+        Expect(band9[0] > 240 && band9[1] > 240 && band9[2] < 15, "a point of layer 9 shows layer 9's texture");
+        Expect(band17[0] < 15 && band17[1] > 240 && band17[2] > 240, "a point of layer 17 shows layer 17's texture");
+        Expect(band31[0] > 240 && band31[1] < 15 && band31[2] > 240, "a point of layer 31 shows layer 31's texture");
+        Expect(half[0] > 100 && half[1] > 80 && half[2] < 15, "half layer 0 and half layer 1 shows both colors mixed");
+        Expect(north[2] > 240 && north[0] < 15 && south[0] > 150 && south[2] < 15, "layers 2 and 3 cover their sides");
+        // Across the border (map points 1 m apart, the middle at z = -0.5), seen from 10 m
+        // above (a pixel is 4.5 cm): the colors change over several pixels, both showing
+        // half-way.
+        poligon::Camera near_border = camera;
+        near_border.position = {50.0, 130.0, 0.0};
+        near_border.target = {50.0, 120.0, 0.0};
+        renderer.BeginFrame(near_border, light);
+        terrain.Draw(near_border);
+        renderer.EndFrame();
+        renderer.CaptureFrame(frame);
+        int mixed_pixels = 0;
+        int largest_jump = 0;
+        for (int row = 1; row < kSize; ++row) {
+            const std::uint8_t* pixel = &frame.pixels[static_cast<size_t>(row * kSize + kSize / 2) * 4];
+            const std::uint8_t* above_pixel = pixel - kSize * 4;
+            mixed_pixels += pixel[0] > 40 && pixel[2] > 40 ? 1 : 0;
+            largest_jump = std::max(largest_jump, std::abs(static_cast<int>(pixel[2]) - static_cast<int>(above_pixel[2])));
+        }
+        std::printf("  border of layers 2 and 3: %d pixels show both, largest step between pixels %d\n", mixed_pixels, largest_jump);
+        Expect(mixed_pixels >= 2, "half-way between points of layers 2 and 3 both show");
+        // The short step of the height blending makes the change quick (about 130 of 255 per
+        // pixel); a hard seam would jump the whole way in one pixel.
+        Expect(largest_jump < 200, "the border between layers 2 and 3 has no hard seam");
         terrain.SetMaterial(terrain_config.material);
     }
 

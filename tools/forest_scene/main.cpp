@@ -14,13 +14,15 @@
 // 512 m patches with the other assets, and loaded in a window around the camera. Walking
 // flattens grass into paths (poligon/world/trample.h).
 //
-// Usage: forest_scene [X Z TURN TILT [collision] [lights]] [standard Poligon options]
+// Usage: forest_scene [X Z TURN TILT [collision] [lights] [noocclusion] [groundindices]] [standard Poligon options]
 //   X Z         where to stand, in meters from the start (default 0 0): a slope above
 //               the largest lake, chosen so that the lake is in view
 //   TURN TILT   where to look, in degrees (default: towards the lake, slightly down)
 //   collision   the word itself: start with the collision shapes shown
 //   lights      the word itself: 16 point lights around the camera (to measure what they cost)
 //   noocclusion the word itself: draw what hills hide too (to measure what leaving it out saves)
+//   groundindices the word itself: give the land's ground as layer indices instead of weights
+//               (TerrainMaterial's second mode, the same look; to measure what it costs)
 //   --render-settings FILE   the look to start with, as saved from the settings window
 //   --record FILE, --replay FILE   write or play back the input (docs/en/input.md)
 //
@@ -254,14 +256,61 @@ std::filesystem::path FindAssetsFolder(const char* program_path) {
     return {};
 }
 
+// The land's patches with their ground given as layer indices instead of weights (the word
+// groundindices): at each point the four strongest of its eight weights. The same ground,
+// drawn in the layer index mode, to measure what that mode costs.
+class IndexedTerrainPatchSource : public poligon::PatchSource {
+public:
+    IndexedTerrainPatchSource(poligon::Terrain& terrain, poligon::LandSource& land) : terrain_(terrain), land_(land) {}
+
+    std::unique_ptr<poligon::PatchData> Load(poligon::PatchCoord patch) override {
+        auto data = std::make_unique<Ground>();
+        data->land = land_.GetPatch(patch);
+        const poligon::Image* weights = data->land->weights;
+        const int width = weights[0].width;
+        const int height = weights[0].height;
+        data->indices = poligon::MakeSolidImage(width, height, 0, 0, 0, 0);
+        data->amounts = poligon::MakeSolidImage(width, height, 0, 0, 0, 0);
+        for (size_t point = 0; point < static_cast<size_t>(width) * static_cast<size_t>(height); ++point) {
+            int layers[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+            const auto weight_of = [&](int layer) { return weights[layer / 4].pixels[point * 4 + static_cast<size_t>(layer % 4)]; };
+            std::stable_sort(layers, layers + 8, [&](int a, int b) { return weight_of(a) > weight_of(b); });
+            for (int channel = 0; channel < 4; ++channel) {
+                data->indices.pixels[point * 4 + static_cast<size_t>(channel)] = static_cast<std::uint8_t>(layers[channel]);
+                data->amounts.pixels[point * 4 + static_cast<size_t>(channel)] = weight_of(layers[channel]);
+            }
+        }
+        return data;
+    }
+
+    void Attach(poligon::PatchCoord patch, std::unique_ptr<poligon::PatchData> data) override {
+        const Ground& ground = static_cast<Ground&>(*data);
+        poligon::TerrainPatchGround given;
+        given.layer_indices = &ground.indices;
+        given.layer_weights = &ground.amounts;
+        terrain_.SetPatch(patch, ground.land->maps.height, given);
+    }
+
+    void Detach(poligon::PatchCoord patch) override { terrain_.RemovePatch(patch); }
+
+private:
+    struct Ground : poligon::PatchData {
+        std::shared_ptr<const poligon::LandPatch> land;
+        poligon::Image indices;
+        poligon::Image amounts;
+    };
+    poligon::Terrain& terrain_;
+    poligon::LandSource& land_;
+};
+
 class ForestGame : public poligon::Game {
 public:
     ForestGame(poligon::Renderer& renderer, const std::filesystem::path& assets, const std::filesystem::path& build_folder,
                const std::filesystem::path& asset_list, const std::filesystem::path& level_path, const poligon::Input& input,
                const ForestActions& actions,
                const float view[4], bool turn_given, const poligon::RenderSettings& settings, const std::string& settings_path,
-               bool synchronous_streaming)
-        : renderer_(renderer), sources_(assets / "source"), cooked_(assets / "cooked"), terrain_cache_(build_folder / "terrain_cache"),
+               bool synchronous_streaming, bool ground_indices)
+        : ground_indices_(ground_indices), renderer_(renderer), sources_(assets / "source"), cooked_(assets / "cooked"), terrain_cache_(build_folder / "terrain_cache"),
           input_(input), actions_(actions), settings_(settings), settings_path_(settings_path) {
         OpenAssets(asset_list, cooked_);
         if (settings.environment.clouds) {
@@ -750,7 +799,11 @@ private:
         poligon::StreamingGridSettings grid = info.grid;
         grid.origin = {origin.x, origin.z};
         grid_ = std::make_unique<poligon::StreamingGrid>(grid);
-        terrain_source_ = std::make_unique<poligon::TerrainPatchSource>(*terrain_, *land_);
+        if (ground_indices_) {
+            terrain_source_ = std::make_unique<IndexedTerrainPatchSource>(*terrain_, *land_);
+        } else {
+            terrain_source_ = std::make_unique<poligon::TerrainPatchSource>(*terrain_, *land_);
+        }
         terrain_collisions_ = std::make_unique<poligon::TerrainPhysicsSource>(physics_, *land_);
         water_ = std::make_unique<poligon::WaterPatchSource>(renderer_, *land_);
         streamer_ = std::make_unique<poligon::WorldStreamer>(*grid_);
@@ -1165,6 +1218,7 @@ private:
         }
     }
 
+    bool ground_indices_ = false;  // the land's ground as layer indices (the word groundindices)
     poligon::Renderer& renderer_;
     std::filesystem::path sources_;
     // No sources: the cooked archive is used as it is (a released copy).
@@ -1349,7 +1403,7 @@ private:
     poligon::Planter planter_;
     std::unique_ptr<poligon::LandFromFiles> land_;
     std::unique_ptr<poligon::StreamingGrid> grid_;
-    std::unique_ptr<poligon::TerrainPatchSource> terrain_source_;
+    std::unique_ptr<poligon::PatchSource> terrain_source_;
     std::unique_ptr<poligon::TerrainPhysicsSource> terrain_collisions_;
     std::unique_ptr<poligon::WaterPatchSource> water_;
     std::unique_ptr<poligon::PlantPatchSource> plants_;
@@ -1472,8 +1526,9 @@ int main(int argc, char** argv) {
     float view[4] = {0.0f, 0.0f, 0.0f, -6.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
         for (size_t i = 4; i < options.positional.size(); ++i) {
-            if (options.positional[i] != "collision" && options.positional[i] != "lights" && options.positional[i] != "noocclusion") {
-                error = "expected at most X Z TURN TILT and the words collision, lights and noocclusion";
+            if (options.positional[i] != "collision" && options.positional[i] != "lights" && options.positional[i] != "noocclusion" &&
+                options.positional[i] != "groundindices") {
+                error = "expected at most X Z TURN TILT and the words collision, lights, noocclusion and groundindices";
             }
         }
         for (size_t i = 0; i < options.positional.size() && i < 4 && error.empty(); ++i) {
@@ -1572,8 +1627,6 @@ int main(int argc, char** argv) {
     if (std::filesystem::is_regular_file(program_folder / "forest.level", path_error)) {
         scene_folder = program_folder;
     }
-    ForestGame game(renderer, assets, build_folder, scene_folder / "assets.txt", scene_folder / "forest.level", input, actions, view,
-                    options.positional.size() >= 3, settings, settings_path, options.headless);
     const auto has_word = [&options](const char* word) {
         for (size_t i = 4; i < options.positional.size(); ++i) {
             if (options.positional[i] == word) {
@@ -1582,6 +1635,8 @@ int main(int argc, char** argv) {
         }
         return false;
     };
+    ForestGame game(renderer, assets, build_folder, scene_folder / "assets.txt", scene_folder / "forest.level", input, actions, view,
+                    options.positional.size() >= 3, settings, settings_path, options.headless, has_word("groundindices"));
     game.ShowCollision(has_word("collision"));
     game.ShowTestLights(has_word("lights"));
     game.UseTerrainOcclusion(!has_word("noocclusion"));

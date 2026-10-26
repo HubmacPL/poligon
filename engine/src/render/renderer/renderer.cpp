@@ -528,7 +528,8 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     if (count < 0 || (count > 0 && patches == nullptr)) {
         FatalError("Renderer::DrawTerrain: needs the patches to draw");
     }
-    for (const TextureHandle texture : {material.colors, material.normals, material.weights[0], material.weights[1]}) {
+    for (const TextureHandle texture :
+         {material.colors, material.normals, material.weights[0], material.weights[1], material.layer_indices, material.layer_weights}) {
         if (texture.id > impl_->textures.size() || (texture.id != 0 && impl_->textures[texture.id - 1] == nullptr)) {
             FatalError("Renderer::DrawTerrain: invalid or destroyed texture handle");
         }
@@ -538,10 +539,15 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
             FatalError("Renderer::DrawTerrain: the layer textures must be texture arrays with at least layer_count images");
         }
     }
-    for (const TextureHandle texture : {material.weights[0], material.weights[1]}) {
+    for (const TextureHandle texture : {material.weights[0], material.weights[1], material.layer_indices, material.layer_weights}) {
         if (texture.id != 0 && impl_->texture_layers[texture.id - 1] != 0) {
-            FatalError("Renderer::DrawTerrain: the weights must be plain textures, not texture arrays");
+            FatalError("Renderer::DrawTerrain: the weights and layer indices must be plain textures, not texture arrays");
         }
+    }
+    if ((material.layer_indices.id != 0) != (material.layer_weights.id != 0) ||
+        (material.layer_indices.id != 0 &&
+         impl_->texture_sizes[material.layer_indices.id - 1] != impl_->texture_sizes[material.layer_weights.id - 1])) {
+        FatalError("Renderer::DrawTerrain: layer_indices and layer_weights must both be set, and of the same size");
     }
     TerrainData& data = impl_->terrains[terrain.id - 1];
     for (int i = 0; i < count; ++i) {
@@ -551,7 +557,7 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     }
     impl_->PrepareTerrainWeights(data, material);
     if (material.layer_count < 0 || material.layer_count > kMaxTerrainLayers) {
-        FatalError("Renderer::DrawTerrain: layer_count must be between 0 and 8");
+        FatalError("Renderer::DrawTerrain: layer_count must be between 0 and 32");
     }
     if (count == 0) {
         return;

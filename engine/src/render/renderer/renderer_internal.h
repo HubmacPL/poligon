@@ -212,11 +212,11 @@ struct TerrainMaterialUniforms {
     glm::vec4 map_heights;
     glm::vec4 steep;
     glm::vec4 steep_color;
-    glm::vec4 tile_scales[2];
+    glm::vec4 tile_scales[kMaxTerrainLayers / 4];
     glm::vec4 weight_map;
     // Per layer: where the texture's repeat stands at the camera (xy for the layer's own
     // size, zw for seven times larger), so that camera-relative positions tile as world ones.
-    glm::vec4 tile_phases[8];
+    glm::vec4 tile_phases[kMaxTerrainLayers];
     glm::vec4 noise_shift;  // xy: camera-relative x and z to the terrain's own (for its mottling)
 };
 
@@ -500,14 +500,17 @@ struct TerrainData {
     int depth = 0;
     float spacing = 1.0f;
     std::vector<TerrainPage> pages;
-    // Ground layer weights as arrays (layers 0..3 and 4..7), one layer per page. A terrain
-    // of one map copies its material's two plain weight images into layer 0 when they change.
+    // Ground layer weights as arrays (layers 0..3 and 4..7), one layer per page; in the layer
+    // index mode the layer indices and their weights. A terrain of one map copies its
+    // material's two plain images into layer 0 when they change.
     SDL_GPUTexture* low_weights = nullptr;
     SDL_GPUTexture* high_weights = nullptr;
     int weight_points = 0;
     bool paged = false;              // made by CreateTerrainPages
     int border_points = 0;           // rim of each page outside its weights
     bool paged_weights = false;      // the pages bring their own weights
+    bool page_indices = false;       // ...as layer indices (TerrainPatchGround::layer_indices)
+    bool page_ground_set = false;    // a page was given ground, which fixed page_indices
     std::uint32_t copied_weights[2] = {0, 0};  // texture ids copied into the arrays (one map)
 };
 

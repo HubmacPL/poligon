@@ -216,9 +216,11 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
         const TerrainMaterial& look = batch.terrain_material;
         TerrainMaterialUniforms material_uniforms;
         material_uniforms.map = vertex_uniforms.map;
-        // x: 1 = each page has its own weights (read the page's layer), 0 = one weight image for all.
-        material_uniforms.map_heights = glm::vec4(terrain.paged_weights ? 1.0f : 0.0f, 0.0f, 1.0f / static_cast<float>(terrain.width),
-                                                  1.0f / static_cast<float>(terrain.depth));
+        // x: 1 = each page has its own weights (read the page's layer), 0 = one weight image for
+        // all; y: 1 = the weights are layer indices and their weights (TerrainMaterial::layer_indices).
+        const bool layer_indices = terrain.paged_weights && terrain.page_ground_set ? terrain.page_indices : look.layer_indices.id != 0;
+        material_uniforms.map_heights = glm::vec4(terrain.paged_weights ? 1.0f : 0.0f, layer_indices ? 1.0f : 0.0f,
+                                                  1.0f / static_cast<float>(terrain.width), 1.0f / static_cast<float>(terrain.depth));
         const bool textured = look.colors.id != 0 && look.layer_count > 0;
         material_uniforms.steep = glm::vec4(std::cos(glm::radians(look.steep_start_degrees)),
                                             std::cos(glm::radians(look.steep_end_degrees)),
@@ -244,6 +246,7 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
         // the map's (or page's) first and last points.
         const glm::vec2 weight_size =
             terrain.paged_weights ? glm::vec2(static_cast<float>(terrain.weight_points))
+                                  : layer_indices ? texture_sizes[look.layer_indices.id - 1]
                                   : (look.weights[0].id != 0 ? texture_sizes[look.weights[0].id - 1] : glm::vec2(1.0f));
         // A page's weights leave out its rim of border points.
         const float border = static_cast<float>(terrain.border_points);

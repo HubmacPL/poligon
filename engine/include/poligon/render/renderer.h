@@ -400,35 +400,67 @@ struct TerrainHandle {
     std::uint32_t id = 0;
 };
 
-// Most ground textures a terrain can mix.
-constexpr int kMaxTerrainLayers = 8;
+// Most ground textures a terrain can mix (TerrainMaterial::layer_count).
+constexpr int kMaxTerrainLayers = 32;
+// Of those, how many the weight images can cover (TerrainMaterial::weights: layers 0 to 7).
+constexpr int kMaxTerrainWeightLayers = 8;
 
-// How a terrain looks: up to eight ground textures (layers), each covering the land as two
-// weight images say, and a plain color on slopes too steep for anything to grow.
+// How a terrain looks: up to 32 ground textures (layers), each covering the land where the
+// material's maps say, and a plain color on slopes too steep for anything to grow.
 //
 // The layers' textures are two texture arrays of equal-sized images
-// (Renderer::CreateTextureArray): image i of `colors` and of `normals` is layer i. The
-// weights come from `weights`: two images (is_color = false) stretched over the whole height
-// map, the first corner pixel on its first point, the last on its last; red, green, blue and
-// alpha of the first hold the weights of layers 0 to 3, of the second layers 4 to 7.
-// MakeTerrainLayerWeights (poligon/world/terrain.h) makes them from the generator's maps and
-// rules. Where layers meet, the brighter (higher) texture wins over a short distance, as
-// stones poke out of sand.
+// (Renderer::CreateTextureArray): image i of `colors` and of `normals` is layer i. Which layer
+// lies where comes in one of two ways, both stretched over the whole height map (the first
+// corner pixel on its first point, the last on its last):
 //
-// Without weights layer 0 covers everything; without textures the ground is white.
+// - Weights (the default): `weights` are two images (is_color = false) whose red, green, blue
+//   and alpha hold the weights of layers 0 to 3 (first image) and 4 to 7 (second). Blended
+//   smoothly between pixels. MakeTerrainLayerWeights (poligon/world/terrain.h) makes them
+//   from the generator's maps and rules. Choose it for up to eight layers.
+// - Layer indices: `layer_indices` and `layer_weights` are two images (is_color = false) of the
+//   same size; at each pixel the four channels of `layer_indices` are the numbers of four
+//   layers (bytes 0 to 31), and the same channels of `layer_weights` how much of each shows
+//   (scaled in the shader to add up to 1). Choose it for more than eight layers, or for maps
+//   made elsewhere that store ground as "material number per point". Neighboring pixels may
+//   name other layers, or the same ones in other channels: the four pixels around a spot
+//   are merged by layer and the four strongest layers drawn, so borders stay smooth. Used
+//   whenever `layer_indices` is set; `weights` are then ignored.
+//
+// Where layers meet, the brighter (higher) texture wins over a short distance, as stones poke
+// out of sand. A streamed terrain (Renderer::CreateTerrainPages) takes the same two kinds of
+// maps per page (Renderer::SetTerrainPage) instead of from the material.
+//
+// Without weights or indices layer 0 covers everything; without textures the ground is white.
 struct TerrainMaterial {
     TextureHandle colors;
     TextureHandle normals;  // created with TextureOptions::is_color = false
     int layer_count = 0;
     // Meters after which each layer's texture repeats.
-    float tile_sizes[kMaxTerrainLayers] = {3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f};
+    float tile_sizes[kMaxTerrainLayers] = {3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f,
+                                           3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f,
+                                           3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f};
     TextureHandle weights[2];
+    // The layer index mode (see above): both set, or neither.
+    TextureHandle layer_indices;
+    TextureHandle layer_weights;
     Color steep_color{0.42f, 0.34f, 0.22f, 1.0f};
     // The steep color starts to show at the first slope and is all there is at the second;
     // a start of 90 turns it off (when a rock layer covers steep ground instead).
     float steep_start_degrees = 30.0f;
     float steep_end_degrees = 42.0f;
     float roughness = 0.95f;
+};
+
+// The ground layers of one patch of a streamed terrain (Renderer::SetTerrainPage,
+// Terrain::SetPatch), over the patch's weight points: either two weight images
+// (TerrainMaterial::weights' layout) or layer indices with their weights
+// (TerrainMaterial::layer_indices' layout). Leave the pointers of the other way nullptr; all
+// four nullptr: the page keeps no ground of its own.
+struct TerrainPatchGround {
+    const Image* low_weights = nullptr;   // layers 0 to 3
+    const Image* high_weights = nullptr;  // layers 4 to 7
+    const Image* layer_indices = nullptr;
+    const Image* layer_weights = nullptr;
 };
 
 // How a water surface looks (Renderer::DrawWater). The defaults are clear lake water.
@@ -703,6 +735,11 @@ public:
     // the rest (a patch at the world's edge) is never drawn, as beyond a terrain of one map.
     void SetTerrainPage(TerrainHandle terrain, int page, const float* heights, const glm::dvec3& origin, const Image* weights,
                         int land_points_x = 0, int land_points_z = 0);
+    // The same with the page's ground given in either of TerrainMaterial's two ways (see
+    // TerrainPatchGround). All pages of a terrain must use the same way; a page given layer
+    // indices is drawn in that mode whatever the material says.
+    void SetTerrainPage(TerrainHandle terrain, int page, const float* heights, const glm::dvec3& origin,
+                        const TerrainPatchGround& ground, int land_points_x = 0, int land_points_z = 0);
     void DestroyTerrain(TerrainHandle terrain);
     // Draws pieces of a terrain. Each patch is one flat grid of 64 x 64 cells stretched
     // over its square and lifted to the land's height, so a large patch is coarse and a
