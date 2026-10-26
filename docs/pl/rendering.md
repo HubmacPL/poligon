@@ -63,6 +63,7 @@ Nagłówek: `poligon/render/graphics_quality.h`. Przykład: `examples/render/gra
 | obraz chmur (część rysowanego rozmiaru) | 0,25 | 0,25 | 0,25 | 0,5 |
 | szczegół roślin, zasięg ich cieni | x0,6, x0,5 | x0,8, x0,75 | x1, x1 | x1,5, x1,5 |
 | poziomy szczegółów siatek (`mesh_detail`) | x0,6 | x0,8 | x1 | x1,5 |
+| pomijanie zasłoniętego przez głębię | wył. | wył. | wł. | wł. |
 | gęstość i promień pokrywy ziemi | x0,35, x0,6 | x0,65, x0,8 | x1, x1 | x1,5, x1,3 |
 | szczegół terenu | x0,6 | x0,8 | x1 | x1,5 |
 
@@ -188,6 +189,18 @@ Nagłówki: `poligon/assets/model.h` (dane modelu, wysyłanie na kartę, rysowan
 - `Renderer::SetWindowMode(WindowMode::Windowed, szerokość, wysokość)` pokazuje grę w oknie tego rozmiaru; `WindowMode::Fullscreen` przełącza monitor dokładnie na tę rozdzielczość i pokazuje tylko grę (wyłączny pełny ekran, nie okno bez ramki). Zwraca false i niczego nie zmienia, gdy monitor nie ma takiego trybu. Wywołuje się ją między klatkami; następna klatka jest rysowana w nowym rozmiarze, bo każdy obraz zależny od rozmiaru powstaje od nowa (wygładzanie czasowe zaczyna od zera). Bez okna zmienia się tylko rozmiar obrazu i tak sprawdzają to testy.
 - Okno można zmieniać myszą i maksymalizować. `BeginFrame` porównuje rozmiar okna w pikselach z rozmiarem obrazu i gdy się różnią, wywołuje `Renderer::Resize(szerokość, wysokość)`, które tworzy od nowa każdy obraz zależny od rozmiaru; wygładzanie czasowe i chmury zaczynają historię od zera, proporcje kamery idą za nową szerokością i wysokością, a okna debugowe same biorą nowy rozmiar. Zminimalizowane okno zostawia ostatni rozmiar. `Resize` może też wywołać gra między klatkami (bez okna to jedyna droga). Test: część o zmianie rozmiaru w `tests/render/effects_render_test.cpp` (scena narysowana po `Resize` zgadza się, z dokładnością do 2 na 255, z narysowaną przez renderer utworzony od razu w tym rozmiarze); przykład: `examples/render/window_mode`.
 - W `forest_scene` F11 przełącza między oknem 1280 × 720 a pełnym ekranem 1920 × 1080. Przykład: `examples/render/window_mode`; test: część o oknie w `tests/render/effects_render_test.cpp`.
+
+## Pomijanie zasłoniętego przez głębię
+
+`Environment::occlusion_culling` (`quality.occlusion_culling`, włączone w high i ultra; `culling.occlusion` w pliku ustawień włącza je dla sceny) pomija w obrazie instancje, siatki i impostory, które zasłania sama scena: hierarchiczny test głębi (w rodzaju HZB) na procesorze, z głębi wcześniejszej klatki.
+
+- Na karcie graficznej (`passes/occlusion_pass.cpp`, `occlusion_depth.frag.hlsl`): po przebiegu głębi jej obraz jest zmniejszany do 128 x 72 pikseli, każdy z najdalszą głębią swojego bloku, i kopiowany do bufora, który procesor może przeczytać; krążą trzy kopie.
+- Na procesorze (`renderer/occlusion.cpp`): na początku klatki czytana jest najnowsza kopia klatki co najmniej dwa wysłania wstecz (nigdy klatki rysowanej; fence każdego wysłania jest zachowywany, ponumerowany, a procesor czeka tylko, gdy karta jest tak daleko w tyle). Każdy jej piksel wraca na swoje miejsce w świecie i jest oglądany kamerą tej klatki (reprojekcja; gdzie kilka trafia w jeden piksel, liczy się najdalszy, gdzie żaden nie trafia, nic nie wiadomo), potem każdy piksel bierze najdalszego z sąsiadów 3 x 3, co ściąga krawędzie tego, co zasłania, do środka. Kula wokół instancji, siatki (jej pudełka) albo impostora jest pomijana, gdy jej najbliższa głębia leży za tamtą we wszystkich pikselach, które obejmuje jej kwadrat. Teren nigdy nie jest pomijany (to on zasłania); cienie bez zmian. Liczone w `FrameStats::occlusion_culled`. Po skoku kamery o ponad 25 m i w dwóch pierwszych klatkach nic nie jest pomijane. Przebieg głębi działa zawsze, gdy jest włączone; cele renderowania nie są tak pomijane.
+- Deterministyczne: to, co klatka pomija, zależy tylko od klatek przed nią, rysowanych tak samo.
+- Bez compute shaderów, z wyboru: przebieg compute mógłby sprawdzać każdą instancję na karcie i rysować pośrednio, ale pośrednie rysowanie w SDL GPU oznaczałoby przeniesienie na nie wszystkich partii; test na procesorze kosztuje około 0,1 ms na kilkanaście tysięcy instancji.
+- Zysk na GTX 980 w 1920 x 1080 (800 klatek, z wobec bez): high szybsze o 0,2 do 0,3 ms w czterech mierzonych widokach i dwóch widokach z grzbietem przed kamerą; medium wolniejsze o 0 do 0,1 ms (mniej rzeczy w oddali do zasłonięcia, a zmniejszanie i kopiowanie kosztuje mniej więcej tyle, ile oszczędza), stąd włączone dopiero od high. W widoku `forest` pomija 3436 z 12428 instancji w widoku.
+- Obrazy: te same widoki z i bez, 1280 x 720 high, różnią się w 0 do 30 pikseli (cienkie rośliny na krawędzi tego, co zasłania; `image_compare` przepuszcza je ze zwykłą tolerancją).
+- Test: `tests/render/occlusion_render_test.cpp` (za ścianą siatka i pięć skrzynek z instancji są pomijane od trzeciej klatki, 6 na klatkę, skrzynka obok ściany i przed nią nie, w dwóch pierwszych klatkach nic, z wyłączonym nic, a obraz jest taki sam jak bez pomijania do ostatniego kanału; oba backendy).
 
 ## Światła punktowe i reflektory
 

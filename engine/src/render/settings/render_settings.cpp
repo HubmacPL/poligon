@@ -34,6 +34,9 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Bool("sky.light", environment.sky_light);
     visitor.Float("sky.light_intensity", environment.sky_light_intensity, 0.0f, 4.0f);
 
+    visitor.Section("culling");
+    visitor.Bool("culling.occlusion", environment.occlusion_culling);
+
     visitor.Section("shadows");
     visitor.Bool("shadows.on", environment.shadows);
     visitor.Float("shadows.distance", environment.shadow_distance, 5.0f, 300.0f);
@@ -133,6 +136,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Bool("quality.volumetric_fog", quality.volumetric_fog);
     visitor.Bool("quality.bloom", quality.bloom);
     visitor.Bool("quality.temporal_aa", quality.temporal_aa);
+    visitor.Bool("quality.occlusion_culling", quality.occlusion_culling);
     visitor.Float("quality.shadow_distance_scale", quality.shadow_distance_scale, 0.2f, 3.0f);
     float ao_samples = static_cast<float>(quality.ambient_occlusion_samples);
     visitor.Float("quality.ambient_occlusion_samples", ao_samples, 4.0f, 64.0f);

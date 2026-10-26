@@ -136,9 +136,10 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
 Renderer::~Renderer() {
     if (impl_->device != nullptr) {
         SDL_WaitForGPUIdle(impl_->device);
-        for (SDL_GPUFence* fence : impl_->frames_in_flight) {
+        for (const auto& [submission, fence] : impl_->submitted) {
             SDL_ReleaseGPUFence(impl_->device, fence);
         }
+        impl_->ReleaseOcclusion();
         // Render targets' images (their pictures are also in `textures`: released here, not there).
         for (RenderTargetData& target : impl_->render_targets) {
             if (target.alive) {
@@ -892,15 +893,29 @@ void Renderer::EndFrame() {
     frame.scene_image = impl.msaa_samples > 1 ? impl.scene_resolved : impl.scene_color;  // replaced by TAA's result
     frame.white = impl.textures[impl.white_texture.id - 1];
 
-    // --- Culling: leave out meshes that lie entirely outside the camera's view. ---
+    // --- Culling: leave out meshes that lie entirely outside the camera's view, or behind
+    // what an earlier frame's depth shows (with occlusion culling). ---
+    impl.PrepareCoverage(frame.unshifted_view_projection);
+    int occluded_meshes = 0;
     impl.visible_commands.clear();
     for (std::uint32_t i = 0; i < impl.draw_commands.size(); ++i) {
         const DrawCommand& command = impl.draw_commands[i];
         if (!IsBoxOutside(view_projection * command.transform, command.bounds_min, command.bounds_max, true)) {
+            if (impl.occlusion.ready) {
+                const glm::vec3 center(command.transform * glm::vec4((command.bounds_min + command.bounds_max) * 0.5f, 1.0f));
+                const float scale = std::sqrt(std::max({glm::dot(command.transform[0], command.transform[0]),
+                                                        glm::dot(command.transform[1], command.transform[1]),
+                                                        glm::dot(command.transform[2], command.transform[2])}));
+                if (impl.IsOccluded(center, glm::length(command.bounds_max - command.bounds_min) * 0.5f * scale)) {
+                    ++occluded_meshes;
+                    continue;
+                }
+            }
             impl.visible_commands.push_back(i);
         }
     }
     impl.stats = FrameStats{};
+    impl.stats.occlusion_culled = occluded_meshes;
     std::copy(std::begin(impl.mesh_lod_draws), std::end(impl.mesh_lod_draws), std::begin(impl.stats.mesh_lod_draws));
     impl.PrepareLights(frame.unshifted_view_projection);
     impl.UploadLights(commands);
@@ -925,6 +940,7 @@ void Renderer::EndFrame() {
     impl.RenderAtmospherePass(frame);
     impl.RenderSkyLightPass(frame);
     impl.RenderDepthPass(frame);
+    impl.RenderOcclusionPass(frame);
     impl.RenderScenePass(frame);
     impl.RenderDecalPass(frame);
     impl.RenderWaterPass(frame);
@@ -967,28 +983,19 @@ void Renderer::EndFrame() {
 
     const auto submit_start = std::chrono::steady_clock::now();
     impl.stats.cpu_milliseconds = std::chrono::duration<float, std::milli>(submit_start - cpu_start).count();
-    if (impl.window != nullptr) {
-        // The swapchain keeps the processor at most a few frames ahead of the card.
-        if (!SDL_SubmitGPUCommandBuffer(commands)) {
-            FatalSdlError("cannot submit frame");
-        }
-    } else {
-        // Without a window nothing else waits for the card: if it is slower than the
-        // processor, frames (and the resources they hold) would pile up without end. Wait for
-        // the oldest frame once more than kMaxFramesInFlight are in flight.
-        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
-        if (fence == nullptr) {
-            FatalSdlError("cannot submit frame");
-        }
-        impl.frames_in_flight.push_back(fence);
-        while (static_cast<int>(impl.frames_in_flight.size()) > kMaxFramesInFlight) {
-            SDL_GPUFence* oldest = impl.frames_in_flight.front();
-            if (!SDL_WaitForGPUFences(impl.device, true, &oldest, 1)) {
-                FatalSdlError("cannot wait for a frame");
-            }
-            SDL_ReleaseGPUFence(impl.device, oldest);
-            impl.frames_in_flight.pop_front();
-        }
+    // Every frame's fence is kept, numbered: occlusion culling reads a copy only once its
+    // frame is finished. Without a window nothing else waits for the card: if it is slower
+    // than the processor, frames (and the resources they hold) would pile up without end, so
+    // the processor waits for the oldest once more than kMaxFramesInFlight are in flight. With
+    // a window the swapchain keeps it at most a few frames ahead; one more is allowed here.
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
+    if (fence == nullptr) {
+        FatalSdlError("cannot submit frame");
+    }
+    impl.submitted.emplace_back(++impl.submission_count, fence);
+    const int in_flight = impl.window != nullptr ? kMaxFramesInFlight + 1 : kMaxFramesInFlight;
+    while (static_cast<int>(impl.submitted.size()) > in_flight) {
+        impl.WaitForSubmission(impl.submitted.front().first);
     }
     impl.stats.wait_milliseconds =
         std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - submit_start).count();

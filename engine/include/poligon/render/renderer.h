@@ -181,6 +181,11 @@ struct Environment {
     // ones from the ground) instead of DirectionalLight::ambient, and let smooth surfaces
     // mirror the sky.
     bool sky_light = false;
+
+    // Leave out of the picture instances, meshes and impostors that the scene's depth of two
+    // frames before, moved onto this frame's camera, wholly hides (not out of shadows; never
+    // terrain). Off by default. See rendering.md, "Occlusion culling by depth".
+    bool occlusion_culling = false;
     float sky_light_intensity = 1.0f;
 
     // The sun casts shadows up to this distance from the camera (meters). Shadows are skipped
@@ -554,6 +559,9 @@ struct MeshLodGroup {
 
 // What the last finished frame cost, for checking that culling works and where time goes.
 struct FrameStats {
+    // Instances, meshes and impostors left out of the picture because the depth of an earlier
+    // frame hid them (Environment::occlusion_culling).
+    int occlusion_culled = 0;
     // Point and spot lights that lit the frame, and those left out (beyond kMaxLights).
     int lights_drawn = 0;
     int lights_skipped = 0;

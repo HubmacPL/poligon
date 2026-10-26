@@ -28,6 +28,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.ground_cover_density = 0.35f;
         quality.ground_cover_radius = 0.6f;
         quality.terrain_detail = 0.6f;
+        quality.occlusion_culling = false;
         break;
     case GraphicsPreset::Medium:
         quality.render_scale = 0.8f;
@@ -46,6 +47,7 @@ GraphicsQuality GetGraphicsPreset(GraphicsPreset preset) {
         quality.ground_cover_density = 0.65f;
         quality.ground_cover_radius = 0.8f;
         quality.terrain_detail = 0.8f;
+        quality.occlusion_culling = false;
         break;
     case GraphicsPreset::High:
         break;
@@ -99,6 +101,7 @@ void ApplyGraphicsQuality(const GraphicsQuality& quality, Environment& environme
     environment.shadows = environment.shadows && quality.shadows;
     environment.ambient_occlusion = environment.ambient_occlusion && quality.ambient_occlusion;
     environment.volumetric_fog = environment.volumetric_fog && quality.volumetric_fog;
+    environment.occlusion_culling = environment.occlusion_culling || quality.occlusion_culling;
     environment.shadow_distance *= quality.shadow_distance_scale;
     environment.ambient_occlusion_samples = quality.ambient_occlusion_samples;
     environment.soft_shadows = quality.soft_shadows;

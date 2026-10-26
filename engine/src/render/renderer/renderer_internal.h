@@ -34,6 +34,7 @@
 #include "../resources/atmosphere_state.h"
 #include "../resources/decal_state.h"
 #include "../resources/light_state.h"
+#include "../resources/occlusion_state.h"
 #include "../resources/overlay_state.h"
 #include "../resources/particle_state.h"
 
@@ -915,6 +916,8 @@ struct Renderer::Impl {
     AtmosphereState atmosphere;
     // Point and spot lights (resources/lights.cpp, passes/spot_shadow_pass.cpp).
     LightState lights;
+    // Occlusion culling by depth (passes/occlusion_pass.cpp, renderer/occlusion.cpp).
+    OcclusionState occlusion;
     // Particles recorded this frame (resources/particles.cpp, passes/particle_pass.cpp).
     ParticleState particles;
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
@@ -922,7 +925,10 @@ struct Renderer::Impl {
     bool has_finished_frame = false;
     // Without a window nothing waits for the graphics card (a swapchain does that): fences of
     // the frames still in flight, oldest first, at most kMaxFramesInFlight of them.
-    std::deque<SDL_GPUFence*> frames_in_flight;
+    std::deque<std::pair<std::uint64_t, SDL_GPUFence*>> submitted;  // (submission number, its fence)
+    std::uint64_t submission_count = 0;  // frames submitted so far, render targets' included
+    // Waits until the card has finished every submission up to this number, releasing their fences.
+    void WaitForSubmission(std::uint64_t submission);
     // Render targets (CreateRenderTarget), and the one this frame draws into (0 = the window).
     std::vector<RenderTargetData> render_targets;
     std::uint32_t active_target = 0;
@@ -1130,6 +1136,13 @@ struct Renderer::Impl {
     void RenderFogPass(FrameContext& frame);
     void RenderAtmospherePass(FrameContext& frame);
     void RenderSpotShadowPass(FrameContext& frame);
+    void RenderOcclusionPass(FrameContext& frame);
+    // Reads the newest finished copy of an earlier frame's shrunk depth and moves it onto this
+    // camera (unshifted); before anything is culled.
+    void PrepareCoverage(const glm::mat4& view_projection);
+    // A sphere (relative to the camera) wholly behind the coverage.
+    bool IsOccluded(const glm::vec3& center, float radius) const;
+    void ReleaseOcclusion();
     // Keeps the lights that reach the view (the nearest kMaxLights), assigns them to screen
     // tiles and places the spot light shadows; before the instances are culled (EndFrame).
     void PrepareLights(const glm::mat4& view_projection);

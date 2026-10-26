@@ -42,6 +42,8 @@ struct GraphicsQuality {
     bool volumetric_fog = true;
     bool bloom = true;
     bool temporal_aa = true;
+    // Environment::occlusion_culling (on from high: in medium it cost slightly more than it saved).
+    bool occlusion_culling = true;
     // Multiplies the scene's shadow range.
     float shadow_distance_scale = 1.0f;
     // Samples per pixel of ambient occlusion, steps per pixel of volumetric fog.

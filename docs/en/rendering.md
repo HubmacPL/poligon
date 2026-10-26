@@ -63,6 +63,7 @@ Header: `poligon/render/graphics_quality.h`. Example: `examples/render/graphics_
 | ground cover density, radius | x0.35, x0.6 | x0.65, x0.8 | x1, x1 | x1.5, x1.3 |
 | terrain detail | x0.6 | x0.8 | x1 | x1.5 |
 | mesh levels of detail (`mesh_detail`) | x0.6 | x0.8 | x1 | x1.5 |
+| occlusion culling by depth | off | off | on | on |
 
 Measured in `forest_scene` on generated land with its lakes, cooked (block-compressed) assets, plants placed by rules, clouds, cloud shadows, haze, sky occlusion, the sky light map, soft shadows and motion vectors, on the GTX 980 at 1920 x 1080 (`release`, headless, 200 ticks), in milliseconds per frame, at the four views used for every measurement: the start looking at the lake `0 0`, inside the forest `-60 -40 225 6`, on the lake shore `-6 -230 12 -8`, back over the forest `0 0 185 -3`:
 
@@ -186,6 +187,18 @@ Headers: `poligon/assets/model.h` (model data, uploading, drawing), `poligon/ass
 - `Renderer::SetWindowMode(WindowMode::Windowed, width, height)` shows the game in a window of that size; `WindowMode::Fullscreen` switches the display to exactly that resolution and shows only the game (exclusive fullscreen, not a borderless window). It returns false and changes nothing when the display has no such mode. Call it between frames; the next frame is drawn at the new size, because every image that depends on the size is made again (temporal anti-aliasing starts fresh). Without a window only the picture's size changes, which is how tests check it.
 - The window can be resized with the mouse and maximized. `BeginFrame` compares the window's size in pixels with the picture's and, when they differ, calls `Renderer::Resize(width, height)`, which makes every size-dependent image again; temporal anti-aliasing and the clouds start their history afresh, the camera's proportions follow the new width and height, and the debug windows take the new size on their own. A minimized window keeps the last size. `Resize` can also be called by the game between frames (without a window it is the only way). Test: the resize part of `tests/render/effects_render_test.cpp` (a scene drawn after `Resize` matches, within 2 of 255, one drawn by a renderer made at that size); example: `examples/render/window_mode`.
 - In `forest_scene` F11 switches between a 1280 x 720 window and fullscreen at 1920 x 1080. Example: `examples/render/window_mode`; test: the window part of `tests/render/effects_render_test.cpp`.
+
+## Occlusion culling by depth
+
+`Environment::occlusion_culling` (`quality.occlusion_culling`, on in high and ultra; `culling.occlusion` in a settings file turns it on for a scene) leaves out of the picture instances, meshes and impostors that the scene itself hides: a hierarchical depth test (HZB-like) on the processor, from the depth of an earlier frame.
+
+- On the graphics card (`passes/occlusion_pass.cpp`, `occlusion_depth.frag.hlsl`): after the depth pass, its image is shrunk to 128 x 72 pixels, each the farthest depth of its block, and copied to a buffer the processor can read; three copies go round.
+- On the processor (`renderer/occlusion.cpp`): at the start of a frame the newest copy of a frame at least two submissions back is read (never the frame being drawn; every submission's fence is kept, numbered, and the processor waits only if the card is that far behind). Each of its pixels is put back where it was in the world and seen by this frame's camera (reprojection; where several land in one pixel the farthest counts, where none land nothing is known), then each pixel takes the farthest of its 3 x 3 neighbors, which pulls the edges of what hides inwards. A sphere around an instance, a mesh (its box) or an impostor is left out when its nearest depth lies behind that in every pixel its square covers. Terrain is never left out (it is what hides); shadows are not affected. Counted in `FrameStats::occlusion_culled`. After a camera jump of more than 25 m, or in the first two frames, nothing is culled. The depth pass runs whenever it is on; render targets are not culled this way.
+- Deterministic: what a frame culls depends only on frames before it, all rendered the same way.
+- Without compute shaders, by choice: a compute pass could test every instance on the card and draw indirectly, but SDL GPU's indirect draws would mean moving every batch to them; the processor's test costs about 0.1 ms for some ten thousand instances.
+- Gain on the GTX 980 at 1920 x 1080 (800 frames, with against without): high 0.2 to 0.3 ms faster in the four measured views and two views with a ridge in front; medium 0 to 0.1 ms slower (fewer things far away to hide, and the shrinking and copying cost about as much as it saves), hence on from high only. In the `forest` view it leaves out 3436 of 12428 instances in view.
+- Pictures: the same views with and without, 1280 x 720 high, differ in 0 to 30 pixels (thin plants at the edge of what hides; `image_compare` passes them with the usual tolerance).
+- Test: `tests/render/occlusion_render_test.cpp` (behind a wall a mesh and five instanced boxes are culled from the third frame on, 6 a frame, a box beside the wall and one in front are not, nothing in the first two frames, nothing with it off, and the picture is the same as without culling to the last channel; both backends).
 
 ## Point and spot lights
 

@@ -10,6 +10,7 @@ add_library(poligon_render STATIC
   passes/decal_pass.cpp
   passes/depth_pass.cpp
   passes/fog_pass.cpp
+  passes/occlusion_pass.cpp
   passes/output_pass.cpp
   passes/particle_pass.cpp
   passes/overlay_pass.cpp
@@ -20,6 +21,7 @@ add_library(poligon_render STATIC
   passes/temporal_aa_pass.cpp
   passes/water_pass.cpp
   renderer/drawing.cpp
+  renderer/occlusion.cpp
   renderer/pipelines.cpp
   renderer/renderer.cpp
   renderer/render_targets.cpp
@@ -150,5 +152,6 @@ poligon_embed_shader(shaders/post/fog_composite.frag.hlsl fragment kFogComposite
 poligon_embed_shader(shaders/post/bloom_down.frag.hlsl fragment kBloomDownFrag bloom_down_frag)
 poligon_embed_shader(shaders/post/bloom_up.frag.hlsl fragment kBloomUpFrag bloom_up_frag)
 poligon_embed_shader(shaders/post/luminance_blocks.frag.hlsl fragment kLuminanceBlocksFrag luminance_blocks_frag)
+poligon_embed_shader(shaders/post/occlusion_depth.frag.hlsl fragment kOcclusionDepthFrag occlusion_depth_frag)
 poligon_embed_shader(shaders/post/luminance.frag.hlsl fragment kLuminanceFrag luminance_frag)
 poligon_embed_shader(shaders/post/taa.frag.hlsl fragment kTaaFrag taa_frag)

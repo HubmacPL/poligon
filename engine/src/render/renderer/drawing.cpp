@@ -402,6 +402,12 @@ void Renderer::Impl::CullInstances(const glm::mat4& view_projection, const Casca
             for (std::uint32_t i = 0; i < batch.count; ++i) {
                 const glm::vec4& sphere = instance_spheres[i];
                 if (!IsSphereOutside(volume, glm::vec3(sphere), sphere.w)) {
+                    // In the picture, instances an earlier frame's depth hides are left out
+                    // (never terrain: it is what hides).
+                    if (list == 0 && batch.terrain_id == 0 && occlusion.ready && IsOccluded(glm::vec3(sphere), sphere.w)) {
+                        ++stats.occlusion_culled;
+                        continue;
+                    }
                     const glm::vec4 clip = list_projection * glm::vec4(glm::vec3(sphere), 1.0f);
                     // The view uses distance along the view (w); a cascade, depth from the sun (z).
                     sorted_instances.emplace_back(list == 0 ? clip.w : clip.z, i);
