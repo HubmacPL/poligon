@@ -513,7 +513,8 @@ void Renderer::DrawImpostorInstances(ImpostorHandle impostor, const glm::dvec3& 
     impl_->instance_batches.push_back(batch);
 }
 
-void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count) {
+void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count,
+                           const InstanceOptions& options) {
     if (!impl_->in_frame) {
         FatalError("Renderer::DrawTerrain: call BeginFrame first");
     }
@@ -557,7 +558,7 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     batch.terrain_material = material;
     batch.first_source = impl_->instance_sources.size();
     batch.count = static_cast<std::uint32_t>(count);
-    batch.options = InstanceOptions{};
+    batch.options = options;
     for (int i = 0; i < count; ++i) {
         // Corner, size and height range of the patch, packed into a matrix like any instance
         // (the diagonal and column 3, which culling reads). The free entries say which page

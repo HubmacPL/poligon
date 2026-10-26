@@ -29,6 +29,17 @@ terrain.Draw(camera);
 - `Terrain::GetHeight(x, z)`, `GetNormal`, `GetSlopeDegrees` odpowiadają dla pozycji w świecie; `GetStats()` liczy kafle według rozmiaru.
 - Pod `Terrain` jest `Renderer::CreateTerrain` / `DrawTerrain(terrain, material, patches, count)`; wszystkie kafle jednego wywołania kosztują jedno polecenie rysowania na przebieg, a każdy jest odrzucany osobno.
 
+## Co zasłaniają wzgórza
+
+`TerrainOcclusion` (`poligon/world/terrain_occlusion.h`) pomija w obrazie to, co zasłania teren (occlusion culling przez teren). Kod własny: żadna biblioteka nie obejmuje pola wysokości widzianego z jednego punktu i sprawdzanego z pudełkami na procesorze.
+
+- Horyzont: z kamery, w 512 kierunkach, teren jest śledzony do 4096 m krokami połowy rozstawu podłogi (32 m), a każdy krok zachowuje najstromsze dotąd nachylenie (wzniesienie przez odległość). Budowany na procesorze, przebudowywany tylko, gdy kamera przesunie się o więcej niż 0,25 m; deterministyczny, nic nie jest czytane z karty graficznej.
+- Budowany z `LandInfo::occlusion_floor`: w punktach tła (co 64 m) najniższa wysokość terenu w promieniu 64 m od każdego (z czterech kwadratów wokół; `MakeOcclusionFloor`, liczona przy wypiekaniu terenu, `poligon-world 2`). Mieszana między punktami nigdy nie wznosi się ponad teren, więc horyzont może być niższy od prawdziwego, nigdy wyższy, i nic widocznego nie znika. Grzbiety węższe niż około 128 m w niej przepadają.
+- `IsHidden(box)`: prawda, gdy pudełko leży pod horyzontem we wszystkich kierunkach, które obejmuje jego rzut, mierzonym tylko względem terenu bliższego niż pudełko (dwa kroki zapasu); jego najstromsze nachylenie od oka to nachylenie wierzchu w najmniejszej odległości (wierzch nad okiem) albo w największej (wierzch pod okiem).
+- `Vegetation::SetOcclusion` i `Terrain::SetOcclusion`: zasłonięte komórki roślin i kwadraty terenu rysowane są tylko jako rzucające cień, jak dotąd komórki poza widokiem (`InstanceOptions::draw_in_view` false; `Renderer::DrawTerrain` też przyjmuje opcje), więc cienie się nie zmieniają. Liczone w `VegetationStats::cells_hidden_by_terrain` i `TerrainStats::patches_hidden`. `forest_scene` używa tego dla drzew, roślin przyziemnych i terenu; słowo `noocclusion` to wyłącza, a program wypisuje, co zostało zasłonięte.
+- Zysk na GTX 980 w 1920 x 1080 (800 klatek, z wobec bez): 0 do 0,1 ms w medium i 0,1 do 0,3 ms w high w czterech mierzonych widokach i dwóch widokach z grzbietem przed kamerą (`0 400 0 0`: zasłonięte 1511 z 4140 komórek; `400 -400 180 0`: 926). Mało, bo to, co tu zasłaniają wzgórza, to głównie dalekie drzewa rysowane jako impostory, już tanie; będzie miało większe znaczenie przy większej szczegółowości w oddali.
+- Test: `tests/world/terrain_occlusion_test.cpp` (podłoga nigdy nie wznosi się ponad teren; za wzgórzem 50 m wysokim i 300 m szerokim pudełko jest zasłonięte, przed nim nie, wieża wyższa od jego szczytu nie, bez podłogi nic; komórka roślin za nim nie jest rysowana w obrazie, a ta przed nim tak: 4 instancje w widoku z 8; oba backendy).
+
 ## Fizyka
 
 - `PhysicsWorld::AddHeightField(heights, size, spacing, origin)` robi grunt z kwadratowej siatki wysokości. Chodząca postać, bryły i promienie traktują go jak każdy inny grunt.

@@ -98,6 +98,7 @@ struct Vegetation::Impl {
     float detail_scale = 1.0f;
     float shadow_scale = 1.0f;
     VegetationStats stats;
+    const TerrainOcclusion* occlusion = nullptr;
     // Scratch for parts whose local transform is not the identity, and for the plants of a
     // level as the picture draws them (shadowed and unshadowed together).
     std::vector<glm::mat4> part_transforms;
@@ -222,6 +223,10 @@ const VegetationStats& Vegetation::GetStats() const {
     return impl_->stats;
 }
 
+void Vegetation::SetOcclusion(const TerrainOcclusion* occlusion) {
+    impl_->occlusion = occlusion;
+}
+
 void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
     Impl& impl = *impl_;
     impl.stats = VegetationStats{};
@@ -262,9 +267,15 @@ void Vegetation::Draw(Renderer& renderer, const Camera& camera) {
             glm::length(glm::vec3(cell.max.x - cell.min.x, cell.max_y - cell.min_y + kPlantReach, cell.max.y - cell.min.y)) *
                 0.5f +
             kPlantReach;
-        const bool cell_visible = view.Sees(cell_center, cell_radius);
+        bool cell_visible = view.Sees(cell_center, cell_radius);
         if (!cell_visible) {
             ++impl.stats.cells_out_of_view;
+        } else if (impl.occlusion != nullptr &&
+                   impl.occlusion->IsHidden(origin + glm::dvec3(cell.min.x, cell.min_y, cell.min.y),
+                                            origin + glm::dvec3(cell.max.x, cell.max_y + kPlantReach, cell.max.y))) {
+            // A hill hides it: like a cell out of view, its plants only cast shadows.
+            cell_visible = false;
+            ++impl.stats.cells_hidden_by_terrain;
         }
         // Nearest and farthest the cell's plants can be from the camera.
         const glm::vec2 nearest_point = glm::clamp(eye, cell.min, cell.max);

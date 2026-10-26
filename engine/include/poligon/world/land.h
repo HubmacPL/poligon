@@ -52,6 +52,10 @@ struct LandInfo {
     // The whole land's heights, a point every `background_spacing` meters, for drawing it far
     // away where no patch is loaded and for heights outside the loaded patches.
     HeightMap background;
+    // At the same points, the lowest height of the land within one background spacing of
+    // each (so over the four squares around it): read between its points it never rises
+    // above the land, which makes a horizon from it never too high (TerrainOcclusion).
+    HeightMap occlusion_floor;
     // Its ground layer weights at the same points (TerrainMaterial::weights' layout), or
     // empty images when the land has no layer rules.
     Image background_weights[2];
@@ -142,5 +146,8 @@ private:
 
 // A coarser copy of a height map: every `step`-th point (the corners stay).
 HeightMap MakeCoarseHeightMap(const HeightMap& map, int step);
+// The same points as MakeCoarseHeightMap, each the lowest height of `map` within `step`
+// points of it (LandInfo::occlusion_floor).
+HeightMap MakeOcclusionFloor(const HeightMap& map, int step);
 
 } // namespace poligon

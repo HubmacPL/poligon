@@ -37,6 +37,35 @@ HeightMap MakeCoarseHeightMap(const HeightMap& map, int step) {
     return coarse;
 }
 
+HeightMap MakeOcclusionFloor(const HeightMap& map, int step) {
+    HeightMap floor = MakeCoarseHeightMap(map, step);
+    // Lowest over each row's runs first, then over the columns of those: separable.
+    std::vector<float> rows(static_cast<size_t>(map.depth) * static_cast<size_t>(floor.width));
+    for (int z = 0; z < map.depth; ++z) {
+        for (int x = 0; x < floor.width; ++x) {
+            const int from = std::max(x * step - step, 0);
+            const int to = std::min(x * step + step, map.width - 1);
+            float lowest = map.heights[static_cast<size_t>(z) * static_cast<size_t>(map.width) + static_cast<size_t>(from)];
+            for (int i = from + 1; i <= to; ++i) {
+                lowest = std::min(lowest, map.heights[static_cast<size_t>(z) * static_cast<size_t>(map.width) + static_cast<size_t>(i)]);
+            }
+            rows[static_cast<size_t>(z) * static_cast<size_t>(floor.width) + static_cast<size_t>(x)] = lowest;
+        }
+    }
+    for (int z = 0; z < floor.depth; ++z) {
+        const int from = std::max(z * step - step, 0);
+        const int to = std::min(z * step + step, map.depth - 1);
+        for (int x = 0; x < floor.width; ++x) {
+            float lowest = rows[static_cast<size_t>(from) * static_cast<size_t>(floor.width) + static_cast<size_t>(x)];
+            for (int i = from + 1; i <= to; ++i) {
+                lowest = std::min(lowest, rows[static_cast<size_t>(i) * static_cast<size_t>(floor.width) + static_cast<size_t>(x)]);
+            }
+            floor.heights[static_cast<size_t>(z) * static_cast<size_t>(floor.width) + static_cast<size_t>(x)] = lowest;
+        }
+    }
+    return floor;
+}
+
 namespace {
 
 // The patches a land source keeps, newest or last used first; shared by the threads that ask.
@@ -115,6 +144,7 @@ LandFromMaps::LandFromMaps(const TerrainMaps& maps, double patch_size, const glm
     info.map_spacing = maps.map_spacing;
     info.lakes = maps.lakes;
     info.background = MakeCoarseHeightMap(height, step);
+    info.occlusion_floor = MakeOcclusionFloor(height, step);
     info.has_lake_viewpoint = FindLakeViewpoint(maps, kLandViewpointEyeHeight, info.lake_viewpoint);
     if (rule_count > 0) {
         // The whole land's weights, at the background's points (the last ones repeat the edge).
@@ -195,7 +225,7 @@ std::shared_ptr<const LandPatch> LandFromMaps::GetPatch(PatchCoord patch) {
 
 namespace {
 
-constexpr const char* kWorldFileHeader = "poligon-world 1\n";
+constexpr const char* kWorldFileHeader = "poligon-world 2\n";  // 2: the occlusion floor
 constexpr const char* kPatchFileHeader = "poligon-patch 1\n";
 
 std::string PatchFileName(const std::string& name, PatchCoord patch) {
@@ -297,6 +327,7 @@ std::vector<std::uint8_t> WriteInfo(const LandInfo& info, std::uint64_t settings
     writer.Raw(info.size_z);
     writer.Array(info.lakes);
     WriteHeightMap(writer, info.background);
+    WriteHeightMap(writer, info.occlusion_floor);
     WriteImages(writer, info.background_weights);
     writer.Raw(static_cast<std::uint8_t>(info.has_lake_viewpoint ? 1 : 0));
     writer.Raw(info.lake_viewpoint);
@@ -310,7 +341,7 @@ bool ReadInfo(const std::vector<std::uint8_t>& bytes, LandInfo& info, std::uint6
     if (!reader.Header(kWorldFileHeader) || !reader.Raw(settings_hash) || !reader.Raw(info.grid.patch_size) || !reader.Raw(count_x) ||
         !reader.Raw(count_z) || !reader.Raw(info.spacing) || !reader.Raw(info.map_spacing) || !reader.Raw(info.size_x) ||
         !reader.Raw(info.size_z) || !reader.Array(info.lakes) || !ReadHeightMap(reader, info.background) ||
-        !ReadImages(reader, info.background_weights)) {
+        !ReadHeightMap(reader, info.occlusion_floor) || !ReadImages(reader, info.background_weights)) {
         return false;
     }
     std::uint8_t has_viewpoint = 0;
@@ -374,7 +405,7 @@ bool CookLevelWorld(const Level& level, const std::vector<GroundLayer>& layers, 
     // Everything the cooked files depend on, in one number.
     std::uint64_t hash = 1469598103934665603ull;
     const std::uint64_t generator = HashTerrainGeneratorSettings(level.terrain);
-    const int format = 2;  // 2: the lake viewpoint
+    const int format = 3;  // 2: the lake viewpoint, 3: the occlusion floor
     hash = HashBytes(hash, &format, sizeof(format));
     hash = HashBytes(hash, &generator, sizeof(generator));
     hash = HashBytes(hash, &level.world_patch_size, sizeof(level.world_patch_size));

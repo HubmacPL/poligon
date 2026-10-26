@@ -96,6 +96,34 @@ struct Terrain::Impl {
     std::vector<LevelRanges> levels;
     std::vector<TerrainPatch> patches;
     TerrainStats stats;
+    const TerrainOcclusion* occlusion = nullptr;
+    std::vector<TerrainPatch> hidden;  // scratch: the squares a hill hides
+
+    // Draws the squares, those a hill hides as shadow casters only.
+    void DrawSquares(TerrainHandle terrain, const TerrainMaterial& material, std::vector<TerrainPatch>& squares) {
+        hidden.clear();
+        if (occlusion != nullptr) {
+            size_t kept = 0;
+            for (const TerrainPatch& square : squares) {
+                if (occlusion->IsHidden(glm::dvec3(square.x, square.min_height, square.z),
+                                        glm::dvec3(square.x + square.size, square.max_height, square.z + square.size))) {
+                    hidden.push_back(square);
+                } else {
+                    squares[kept++] = square;
+                }
+            }
+            squares.resize(kept);
+            stats.patches_hidden += static_cast<int>(hidden.size());
+        }
+        if (!squares.empty()) {
+            renderer->DrawTerrain(terrain, material, squares.data(), static_cast<int>(squares.size()));
+        }
+        if (!hidden.empty()) {
+            InstanceOptions shadow_only;
+            shadow_only.draw_in_view = false;
+            renderer->DrawTerrain(terrain, material, hidden.data(), static_cast<int>(hidden.size()), shadow_only);
+        }
+    }
 
     // --- Streamed ---
     bool streamed = false;
@@ -387,8 +415,7 @@ void Terrain::Draw(const Camera& camera) {
             TerrainMaterial look = impl.config.material;
             look.weights[0] = impl.background_material.weights[0];
             look.weights[1] = impl.background_material.weights[1];
-            impl.renderer->DrawTerrain(impl.background_handle, look, impl.background_patches.data(),
-                                       static_cast<int>(impl.background_patches.size()));
+            impl.DrawSquares(impl.background_handle, look, impl.background_patches);
         }
     } else {
         const int top = static_cast<int>(impl.levels.size()) - 1;
@@ -399,9 +426,11 @@ void Terrain::Draw(const Camera& camera) {
             }
         }
     }
-    if (!impl.patches.empty()) {
-        impl.renderer->DrawTerrain(impl.handle, impl.config.material, impl.patches.data(), static_cast<int>(impl.patches.size()));
-    }
+    impl.DrawSquares(impl.handle, impl.config.material, impl.patches);
+}
+
+void Terrain::SetOcclusion(const TerrainOcclusion* occlusion) {
+    impl_->occlusion = occlusion;
 }
 
 // The height map counts in float from its own first point; world positions are moved there in double.

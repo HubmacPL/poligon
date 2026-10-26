@@ -6,6 +6,7 @@
 
 #include "poligon/core/math.h"
 #include "poligon/render/renderer.h"
+#include "poligon/world/terrain_occlusion.h"
 
 namespace poligon {
 
@@ -74,6 +75,8 @@ struct VegetationStats {
     int cells_total = 0;
     int cells_skipped = 0;
     int cells_out_of_view = 0;
+    // Cells in view but wholly below the land's horizon (SetOcclusion): shadow casters only.
+    int cells_hidden_by_terrain = 0;
     // Renderer::DrawMeshInstances and DrawImpostorInstances calls made.
     int batches = 0;
 };
@@ -108,6 +111,10 @@ public:
     // every level's max_distance and the shadow distance of every species by these factors,
     // relative to what was given to AddSpecies.
     void SetDistanceScale(float detail_scale, float shadow_scale);
+
+    // Cells a hill hides from the camera (TerrainOcclusion::IsHidden, updated by the caller
+    // for this frame's camera) only cast shadows. nullptr: none are hidden (the default).
+    void SetOcclusion(const TerrainOcclusion* occlusion);
 
     // Call between Renderer::BeginFrame and EndFrame, with the camera of that frame.
     void Draw(Renderer& renderer, const Camera& camera);

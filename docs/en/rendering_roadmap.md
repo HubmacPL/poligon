@@ -34,21 +34,6 @@ done and described in [rendering.md](rendering.md). Remove a point from here whe
   four views. Test: the present ambient occlusion tests (a corner is darker than an open
   floor) and an image of the inside view compared by eye once.
 
-## 9. Plants hidden behind hills left out (occlusion culling by terrain)
-
-- What: before drawing, leave out plant cells and impostors that a hill hides from the
-  camera. On rolling land a large share of the forest behind the nearest ridge is now drawn
-  and then covered.
-- How: our own code (there is no library for this shape of the problem): a horizon of the
-  terrain seen from the camera, built from the coarse height map on the processor (one
-  height angle per column of directions, walking outwards), and a cell is left out when its
-  top lies below that horizon in every direction it covers. Deterministic, no read back from
-  the graphics card. Shadow passes are not affected (hills do not hide shadow casters from
-  the sun).
-- Cost: well under 0.5 ms on the processor; the gain depends on the view (most on the shore
-  and back views). Test: a cell behind a wall of terrain is not drawn
-  (`FrameStats`), the same cell on the near side is.
-
 ## 10. FSR 2 upscaling (later)
 
 - What: AMD's FidelityFX Super Resolution 2 in place of our TAA's upscaling at render scales

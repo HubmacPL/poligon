@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "poligon/world/height_map.h"
+#include "poligon/world/terrain_occlusion.h"
 #include "poligon/core/image.h"
 #include "poligon/render/renderer.h"
 #include "poligon/world/streaming.h"
@@ -40,6 +41,8 @@ struct TerrainConfig {
 struct TerrainStats {
     int patches = 0;
     int background_patches = 0;  // of a streamed terrain: squares drawn from the background
+    // Of those, squares wholly below the land's horizon (SetOcclusion): shadow casters only.
+    int patches_hidden = 0;
     // Patches by size: index 0 = smallest (finest). Up to 16 sizes.
     int patches_per_level[16] = {};
 };
@@ -88,6 +91,10 @@ public:
     int GetPatchCount() const;
     // Whether the background is drawn where no patch is held (on by default).
     void SetBackgroundVisible(bool visible);
+
+    // Squares a hill hides from the camera (TerrainOcclusion::IsHidden, updated by the caller
+    // for this frame's camera) only cast shadows. nullptr: none are hidden (the default).
+    void SetOcclusion(const TerrainOcclusion* occlusion);
 
     void SetMaterial(const TerrainMaterial& material);
     void SetDetail(float detail);

@@ -693,8 +693,10 @@ public:
     // Draws pieces of a terrain. Each patch is one flat grid of 64 x 64 cells stretched
     // over its square and lifted to the land's height, so a large patch is coarse and a
     // small one fine. All patches of a call cost one draw call per pass, and each is culled
-    // on its own. Patch corners should lie on height map points.
-    void DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count);
+    // on its own. Patch corners should lie on height map points. `options`: as for instances
+    // (draw_in_view false: the patches only cast shadows, for land a hill hides).
+    void DrawTerrain(TerrainHandle terrain, const TerrainMaterial& material, const TerrainPatch* patches, int count,
+                     const InstanceOptions& options = InstanceOptions{});
     // Grass and small plants standing on trampled ground are bent flat: instanced meshes
     // whose material bends in the wind (wind_bend above 0) read `map` at their foot, lean
     // over and get lower by its value. The map is copied when its version changes; it must

@@ -8,6 +8,7 @@ add_library(poligon_world STATIC
   terrain/sky_occlusion.cpp
   terrain/land.cpp
   terrain/terrain.cpp
+  terrain/terrain_occlusion.cpp
   terrain/generator/fine_scale.cpp
   terrain/generator/large_scale.cpp
   terrain/generator/maps.cpp

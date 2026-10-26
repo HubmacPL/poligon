@@ -34,21 +34,6 @@ zrobione i opisane w [rendering.md](rendering.md). Punkt zrobiony usuwa się st�
   w czterech widokach. Test: obecne testy przyciemniania (narożnik ciemniejszy niż otwarta
   podłoga) i jednorazowe porównanie na oko obrazu widoku w lesie.
 
-## 9. Rośliny schowane za wzgórzami pomijane (odrzucanie zasłoniętego przez teren)
-
-- Co: przed rysowaniem pominąć komórki roślin i impostory, które wzgórze zasłania przed
-  kamerą. Na pofałdowanym terenie spora część lasu za najbliższym grzbietem jest dziś
-  rysowana, a potem zakryta.
-- Jak: kod własny (nie ma biblioteki do problemu tego kształtu): horyzont terenu widziany
-  z kamery, liczony z zgrubnej mapy wysokości na procesorze (jeden kąt wzniesienia na kolumnę
-  kierunków, idąc na zewnątrz), a komórka jest pomijana, gdy jej szczyt leży poniżej tego
-  horyzontu we wszystkich kierunkach, które obejmuje. Deterministyczne, bez odczytu z karty
-  graficznej. Przebiegi cieni bez zmian (wzgórza nie zasłaniają rzucających cień przed
-  słońcem).
-- Koszt: dużo poniżej 0,5 ms na procesorze; zysk zależy od widoku (największy na brzegu
-  i we wstecznym). Test: komórka za ścianą terenu nie jest rysowana (`FrameStats`), ta sama
-  po bliższej stronie jest.
-
 ## 10. Skalowanie FSR 2 (później)
 
 - Co: FidelityFX Super Resolution 2 AMD w miejsce skalowania w naszym TAA przy skali

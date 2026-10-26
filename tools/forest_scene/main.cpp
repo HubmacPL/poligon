@@ -17,6 +17,7 @@
 //   TURN TILT   where to look, in degrees (default: towards the lake, slightly down)
 //   collision   the word itself: start with the collision shapes shown
 //   lights      the word itself: 16 point lights around the camera (to measure what they cost)
+//   noocclusion the word itself: draw what hills hide too (to measure what leaving it out saves)
 //   --render-settings FILE   the look to start with, as saved from the settings window
 //   --record FILE, --replay FILE   write or play back the input (docs/en/input.md)
 //
@@ -317,6 +318,22 @@ public:
     }
     void ShowCollision(bool show) { show_collision_ = show; }
     void ShowTestLights(bool show) { test_lights_ = show; }
+    // What hills hid in the last frame (TerrainOcclusion).
+    void PrintOcclusion() const {
+        std::printf("hidden by hills: %d of %d plant cells, %d land squares\n", vegetation_.GetStats().cells_hidden_by_terrain,
+                    vegetation_.GetStats().cells_total, terrain_->GetStats().patches_hidden);
+    }
+    void UseTerrainOcclusion(bool use) {
+        use_occlusion_ = use;
+        const poligon::TerrainOcclusion* occlusion = use ? &occlusion_ : nullptr;
+        if (terrain_) {
+            terrain_->SetOcclusion(occlusion);
+        }
+        vegetation_.SetOcclusion(occlusion);
+        if (ground_cover_) {
+            ground_cover_->GetVegetation().SetOcclusion(occlusion);
+        }
+    }
     // How fast the world's own time runs (wind, clouds, water, animals): 1 = real time,
     // 0 = stopped. The player and physics always run in real time. Also in the Simulation window.
     void SetTimeScale(float scale) { time_scale_ = glm::clamp(scale, 0.0f, 20.0f); }
@@ -477,6 +494,7 @@ public:
             poligon::ShowRenderSettingsWindow(renderer_, settings_, settings_path_.c_str());
             poligon::ShowFrameStatsWindow(renderer_);
         }
+        occlusion_.Update(camera.position);
         terrain_->Draw(camera);
         water_->Draw(renderer_, water_material_);
         if (test_lights_) {
@@ -705,6 +723,12 @@ private:
         }
         config.material.steep_start_degrees = 90.0f;  // a rock layer covers steep ground
         terrain_ = std::make_unique<poligon::Terrain>(renderer_, info, config, kTerrainPages);
+        // Plant cells and land squares a hill hides from the camera only cast shadows.
+        occlusion_.SetFloor(&info.occlusion_floor, info.world_origin);
+        if (use_occlusion_) {
+            terrain_->SetOcclusion(&occlusion_);
+            vegetation_.SetOcclusion(&occlusion_);
+        }
 
         // What is streamed, each with its own window: the land drawn and its water around the
         // camera, the land's collisions around the player and the crates.
@@ -1067,6 +1091,9 @@ private:
     // around the player (poligon/world/ground_cover.h) from rules and the land, over the whole map.
     void GrowGroundCover() {
         ground_cover_ = std::make_unique<poligon::GroundCover>(*terrain_, kGroundCoverRadius);
+        if (use_occlusion_) {
+            ground_cover_->GetVegetation().SetOcclusion(&occlusion_);
+        }
         // One layer per variant of a kind, sharing the kind's density between them. A
         // kind's levels are cut at the radius, so that plants fade out before their cell goes.
         // every_nth: use only every n-th variant of the kind (each variant is a draw call per
@@ -1274,6 +1301,8 @@ private:
     poligon::Material crate_material_;
     bool show_collision_ = false;
     bool test_lights_ = false;
+    bool use_occlusion_ = true;
+    poligon::TerrainOcclusion occlusion_;
 
     // Traces and weather (SetUpTracesAndWeather).
     poligon::FootprintTrail footprints_;
@@ -1426,8 +1455,8 @@ int main(int argc, char** argv) {
     float view[4] = {0.0f, 0.0f, 0.0f, -6.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
         for (size_t i = 4; i < options.positional.size(); ++i) {
-            if (options.positional[i] != "collision" && options.positional[i] != "lights") {
-                error = "expected at most X Z TURN TILT and the words collision and lights";
+            if (options.positional[i] != "collision" && options.positional[i] != "lights" && options.positional[i] != "noocclusion") {
+                error = "expected at most X Z TURN TILT and the words collision, lights and noocclusion";
             }
         }
         for (size_t i = 0; i < options.positional.size() && i < 4 && error.empty(); ++i) {
@@ -1532,6 +1561,7 @@ int main(int argc, char** argv) {
     };
     game.ShowCollision(has_word("collision"));
     game.ShowTestLights(has_word("lights"));
+    game.UseTerrainOcclusion(!has_word("noocclusion"));
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s; quality %s, %d x %d\n", load_seconds,
                 poligon::GetGraphicsPresetName(settings.quality.preset), renderer.GetWidth(), renderer.GetHeight());
@@ -1564,6 +1594,7 @@ int main(int argc, char** argv) {
     const glm::dvec3 standing = game.GetCameraPosition();
     std::printf("camera at %.17g %.17g %.17g\n", standing.x, standing.y, standing.z);
     game.PrintCrates();
+    game.PrintOcclusion();
     const poligon::FrameStats stats = renderer.GetFrameStats();
     std::printf("last frame: %d meshes submitted, %d drawn, %d shadow draws; processor per frame on average: %.2f ms "
                 "preparing, %.2f ms waiting for the card\n",

@@ -29,6 +29,17 @@ terrain.Draw(camera);
 - `Terrain::GetHeight(x, z)`, `GetNormal`, `GetSlopeDegrees` answer for world positions; `GetStats()` counts patches by size.
 - Under `Terrain` is `Renderer::CreateTerrain` / `DrawTerrain(terrain, material, patches, count)`; all patches of a call cost one draw call per pass and each is culled on its own.
 
+## What hills hide
+
+`TerrainOcclusion` (`poligon/world/terrain_occlusion.h`) leaves out of the picture what the land hides (occlusion culling by terrain). Our own code: no library covers a height field seen from one point and tested against boxes on the processor.
+
+- The horizon: from the camera, in 512 directions, the land is followed out to 4096 m in steps of half the floor's spacing (32 m), and each step keeps the steepest slope (rise over distance) of the land so far. Built on the processor, rebuilt only when the camera has moved more than 0.25 m; deterministic, nothing is read back from the graphics card.
+- It is built from `LandInfo::occlusion_floor`: at the background's points (64 m apart), the lowest height of the land within 64 m of each (over the four squares around it; `MakeOcclusionFloor`, made when the land is cooked, `poligon-world 2`). Blended between its points it never rises above the land, so the horizon may be lower than the real one, never higher, and nothing visible is left out. Ridges narrower than about 128 m are lost from it.
+- `IsHidden(box)`: true when the box lies below the horizon in every direction its footprint covers, measured only against land nearer than the box (two steps of margin); its steepest slope from the eye is that of its top at its nearest distance (top above the eye) or its farthest (top below).
+- `Vegetation::SetOcclusion` and `Terrain::SetOcclusion`: hidden plant cells and land squares are drawn as shadow casters only, as cells out of view already were (`InstanceOptions::draw_in_view` false; `Renderer::DrawTerrain` takes the options too), so shadows do not change. Counted in `VegetationStats::cells_hidden_by_terrain` and `TerrainStats::patches_hidden`. `forest_scene` uses it for the trees, the ground cover and the land; the word `noocclusion` turns it off, and it prints what was hidden.
+- Gain on the GTX 980 at 1920 x 1080 (800 frames, with against without): 0 to 0.1 ms in medium and 0.1 to 0.3 ms in high in the four measured views and two views with a ridge in front (`0 400 0 0`: 1511 of 4140 cells hidden; `400 -400 180 0`: 926). Small, because what hills hide here is mostly far trees drawn as impostors, already cheap; it will matter more with more detail far away.
+- Test: `tests/world/terrain_occlusion_test.cpp` (the floor never rises above the land; behind a hill 50 m high and 300 m wide a box is hidden, in front of it not, a tower rising above its top not, nothing without a floor; a plant cell behind it is not drawn in the picture while the one in front is: 4 instances in view of 8; both backends).
+
 ## Physics
 
 - `PhysicsWorld::AddHeightField(heights, size, spacing, origin)` makes ground from a square grid of heights. A walking character, bodies and rays treat it like any other ground.
