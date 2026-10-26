@@ -59,7 +59,7 @@ void Renderer::Impl::RenderOutputPass(FrameContext& frame) {
         bindings[3].texture = debug_image;
         bindings[3].sampler = impl.linear_clamp_sampler;
         TonemapUniforms uniforms;
-        uniforms.parameters = glm::vec4(impl.post.exposure, impl.post.tone_mapping == ToneMapping::Aces ? 1.0f : 0.0f,
+        uniforms.parameters = glm::vec4(impl.post.exposure, static_cast<float>(impl.post.tone_mapping),
                                         bloom_on ? impl.post.bloom_strength : 0.0f,
                                         impl.post.auto_exposure ? 1.0f : 0.0f);
         uniforms.auto_exposure = glm::vec4(impl.post.auto_exposure_target, impl.post.auto_exposure_min,

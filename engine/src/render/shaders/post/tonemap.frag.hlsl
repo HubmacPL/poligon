@@ -27,7 +27,7 @@ Texture2D<float4> debug_texture : register(t3, space2);
 SamplerState debug_sampler : register(s3, space2);
 
 cbuffer TonemapUniforms : register(b0, space3) {
-    float4 parameters;     // x: exposure (brightness multiplier), y: 0 = none, 1 = ACES filmic curve, z: bloom share, w: automatic exposure on
+    float4 parameters;     // x: exposure (brightness multiplier), y: 0 = none, 1 = ACES filmic curve, 2 = AgX, 3 = AgX punchy, z: bloom share, w: automatic exposure on
     float4 auto_exposure;  // x: brightness the average is brought to, y: lowest multiplier, z: highest multiplier, w: debug view (0 = off, 1 = show red as gray, 2 = show color, 3 = show motion)
     float4 white_balance;  // rgb: multipliers from temperature and tint (1 = neutral)
     float4 grading;        // x: saturation, y: contrast, z: vignette strength, w: sharpening
@@ -45,6 +45,8 @@ struct FragmentInput {
 float3 AcesFilmic(float3 x) {
     return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
 }
+
+#include "agx.hlsli"
 
 float Luminance(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
@@ -98,7 +100,13 @@ float4 main(FragmentInput input_pixel) : SV_Target0 {
     color *= white_balance.rgb;
     color = max(lerp(Luminance(color).xxx, color, grading.x), 0.0);
 
-    if (parameters.y > 0.5) {
+    if (parameters.y > 1.5) {
+        color = Agx(color);
+        if (parameters.y > 2.5) {
+            color = AgxPunchy(color);
+        }
+        color = AgxEotf(color);
+    } else if (parameters.y > 0.5) {
         color = AcesFilmic(color);
     }
     // Contrast around middle gray, in a perceptual (square root) scale so that it acts on

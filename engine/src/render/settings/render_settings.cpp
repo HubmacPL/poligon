@@ -81,9 +81,9 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Float("ambient_occlusion.strength", environment.ambient_occlusion_strength, 0.0f, 3.0f);
 
     visitor.Section("exposure and bloom");
-    static const char* const kToneMappings[] = {"none", "aces"};
+    static const char* const kToneMappings[] = {"none", "aces", "agx", "agx_punchy"};
     int tone_mapping = static_cast<int>(post.tone_mapping);
-    visitor.Choice("post.tone_mapping", tone_mapping, kToneMappings, 2);
+    visitor.Choice("post.tone_mapping", tone_mapping, kToneMappings, 4);
     post.tone_mapping = static_cast<ToneMapping>(tone_mapping);
     visitor.Float("post.exposure", post.exposure, 0.05f, 4.0f);
     visitor.Bool("post.auto_exposure", post.auto_exposure);

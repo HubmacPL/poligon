@@ -5,18 +5,6 @@ Prace nad rendererem uzgodnione, ale jeszcze niezrobione. Pochodzą z porównani
 miękkie cienie, chmury budowane przez kilka klatek, wektory ruchu, mgła w kolorze nieba) są
 zrobione i opisane w [rendering.md](rendering.md). Punkt zrobiony usuwa się stąd.
 
-## 7. Mapowanie tonów AgX jako opcja
-
-- Co: trzeci wybór `PostSettings::tone_mapping` obok ACES i braku. AgX (Troy Sobotka,
-  w Blenderze od wersji 4.0, w Godocie od 4.2) nie pozwala bardzo jasnym kolorom zamienić się
-  w płaski żółty, cyjan albo magentę: zachód słońca czy ogień zachowuje odcień, blednąc do
-  bieli. ACES zostaje domyślne.
-- Jak: krzywa dopasowana do AgX w shaderze mapowania tonów (kilka linii HLSL), z wyglądem
-  „punchy” jako opcją dla większego kontrastu. Przed napisaniem sprawdzić, czy istnieje
-  dopasowana wersja na liberalnej licencji (zasada 1), i sprawdzić licencję u źródła.
-- Koszt: dużo poniżej 0,1 ms. Test: jasny nasycony kolor zachowuje odcień przy AgX, a test
-  obrazu dla pozostałych mapowań się nie zmienia.
-
 ## 8. XeGTAO zamiast naszego przyciemniania zagłębień
 
 - Co: XeGTAO Intela (ground-truth ambient occlusion, Jimenez 2016, w wersji Intela) zamiast

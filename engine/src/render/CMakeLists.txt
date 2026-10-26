@@ -62,6 +62,7 @@ set(POLIGON_SHADER_SHARED
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/clouds.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/atmosphere.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/lights.hlsli
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/post/agx.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh/mesh.frag.hlsl
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vegetation/impostor.frag.hlsl)
 

@@ -5,18 +5,6 @@ with Godot 4.7 (2026-10-17); points 1 to 6 of that comparison (cloud shadows, th
 map, soft shadows, clouds built over frames, motion vectors, fog in the sky's color) are
 done and described in [rendering.md](rendering.md). Remove a point from here when it is done.
 
-## 7. AgX tone mapping as an option
-
-- What: a third choice of `PostSettings::tone_mapping` next to ACES and none. AgX (Troy
-  Sobotka, used by Blender since 4.0 and by Godot since 4.2) keeps very bright colors from
-  turning into flat yellow, cyan or magenta: a sunset or a fire keeps its hue as it bleaches
-  to white. ACES stays the default.
-- How: a curve fitted to AgX in the tone mapping shader (a few lines of HLSL), with a
-  "punchy" look as an option for more contrast. Before writing it, check whether a fitted
-  version with a permissive license exists (rule 1) and check its license at the source.
-- Cost: well under 0.1 ms. Test: a bright saturated color keeps its hue under AgX, and the
-  image test for the other tone mappings is unchanged.
-
 ## 8. XeGTAO instead of our ambient occlusion
 
 - What: Intel's XeGTAO (ground-truth ambient occlusion, Jimenez 2016, as written by Intel)

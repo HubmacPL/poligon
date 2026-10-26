@@ -17,6 +17,10 @@ namespace poligon {
 enum class ToneMapping {
     None,  // values are used as they are and clipped at white; exact, for tests
     Aces,  // filmic curve: bright areas roll off smoothly instead of clipping
+    // AgX (Troy Sobotka's transform, as in Blender and Godot): very bright colors bleach
+    // towards white keeping their hue, where ACES turns them yellow, cyan or magenta.
+    AgX,
+    AgXPunchy,  // AgX with its "Punchy" look: more contrast and saturation
 };
 
 
