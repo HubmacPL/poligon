@@ -47,6 +47,28 @@ Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<prese
 - `flecs` (MIT; w środku fragmenty na BSD-2, MIT i jeden w domenie publicznej).
 - Obecne poza tym: `sdl3` z cechą `vulkan` (zlib, z częściami na MIT, Apache 2.0 i BSD-3), `stb` (MIT lub domena publiczna), `directx-dxc` jako narzędzie budowania (NCSA; nic z niego nie jest linkowane ani dołączane do gry).
 
+## Paczki wydania
+
+`tools\package.ps1 [-Version 0.1.0]` buduje konfigurację `release` i pakuje
+`build\release_package\poligon-WERSJA-windows-x64.zip`: `forest_scene`, `toy`, `model_viewer`,
+`asset_cooker`, wszystkie przykłady, DLL z `build\release\bin`, `assets.txt` i `forest.level`
+sceny `forest_scene`, `LICENSE`, `THIRD_PARTY_LICENSES.md`, teksty licencji bibliotek
+(`licenses\`, z plików `copyright` vcpkg i z nagłówków shaderów z cudzym kodem) i `README.txt`.
+Bez testów i bez plików `.pdb` (raporty awarii z wydanej kopii pokazują wtedy adresy bez nazw
+funkcji).
+
+- `dxcompiler.dll` nie jest potrzebny: shadery są kompilowane przy budowaniu i wbudowane
+  (`dumpbin /dependents` po wszystkich programach i DLL wersji 0.1.0 nie wymienia DXC).
+- Środowisko uruchomieniowe C++ jest linkowane dynamicznie (`/MD`, tak jak triplet `x64-windows`
+  vcpkg buduje każdą bibliotekę): programy potrzebują `msvcp140.dll`, `vcruntime140.dll` i
+  `vcruntime140_1.dll` z Microsoft Visual C++ Redistributable, który `README.txt` wymienia z
+  odnośnikiem do pobrania. Linkowanie statyczne wymagałoby przebudowania każdej biblioteki
+  statycznym tripletem i zmiany naszych portów DLL (Jolt, ozz-animation), a każdy DLL niósłby
+  własną kopię środowiska; pakiet redystrybucyjny jest już na większości komputerów z Windows.
+
+`tools\package_assets.ps1 [-Version 0.1.0] [-Exclude NAZWY] [-Zip]` robi archiwum zasobów
+(zob. [assets.md](assets.md)).
+
 ## Układ silnika
 
 Silnik to zestaw bibliotek statycznych, po jednej na obszar. Każdy obszar ma nagłówki publiczne w `engine/include/poligon/<obszar>/` (dołączane jako `poligon/<obszar>/<nazwa>.h`), źródła w `engine/src/<obszar>/`, z osobnym folderem na każdy moduł tam, gdzie obszar ma ich kilka, i własny `CMakeLists.txt`.

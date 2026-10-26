@@ -47,6 +47,28 @@ Output goes to `build/<preset>/`; all programs and DLLs to `build/<preset>/bin/`
 - `flecs` (MIT; contains pieces under BSD-2, MIT and one in the public domain).
 - `sdl3` with the `vulkan` feature (zlib, with parts under MIT, Apache 2.0 and BSD-3), `stb` (MIT or public domain), `directx-dxc` as a build tool (NCSA; nothing from it is linked or shipped with a game).
 
+## Release packages
+
+`tools\package.ps1 [-Version 0.1.0]` builds the `release` preset and packs
+`build\release_package\poligon-VERSION-windows-x64.zip`: `forest_scene`, `toy`, `model_viewer`,
+`asset_cooker`, every example, the DLLs from `build\release\bin`, `forest_scene`'s `assets.txt`
+and `forest.level`, `LICENSE`, `THIRD_PARTY_LICENSES.md`, the license texts of the libraries
+(`licenses\`, from vcpkg's `copyright` files and from the headers of the shaders with code of
+others) and a `README.txt`. No tests and no `.pdb` files (crash reports from a released copy
+then show addresses without function names).
+
+- `dxcompiler.dll` is not needed: the shaders are compiled at build time and embedded
+  (`dumpbin /dependents` over every program and DLL of 0.1.0 lists no DXC).
+- The C++ runtime is linked dynamically (`/MD`, as vcpkg's `x64-windows` triplet builds every
+  library): the programs need `msvcp140.dll`, `vcruntime140.dll` and `vcruntime140_1.dll` from
+  the Microsoft Visual C++ Redistributable, which `README.txt` names with its download link.
+  Linking it statically would need every library rebuilt with a static triplet and our DLL ports
+  (Jolt, ozz-animation) changed, and each DLL would carry its own copy of the runtime; the
+  redistributable is on most Windows computers already.
+
+`tools\package_assets.ps1 [-Version 0.1.0] [-Exclude NAMES] [-Zip]` makes the asset archive
+(see [assets.md](assets.md)).
+
 ## Engine layout
 
 The engine is a set of static libraries, one per area. Each area has its public headers in `engine/include/poligon/<area>/` (included as `poligon/<area>/<name>.h`), its sources in `engine/src/<area>/`, with one folder per module where the area has several, and its own `CMakeLists.txt` there.
