@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <deque>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -310,6 +311,9 @@ constexpr SDL_GPUTextureFormat kLuminanceFormat = SDL_GPU_TEXTUREFORMAT_R16_FLOA
 // 65535 steps, which is millimeters for hills. Unlike a float format it can always be
 // read with blending between points.
 constexpr SDL_GPUTextureFormat kHeightFormat = SDL_GPU_TEXTUREFORMAT_R16_UNORM;
+// Frames a headless renderer lets the processor be ahead of the graphics card (a window's
+// swapchain allows two by default, SDL_SetGPUAllowedFramesInFlight).
+constexpr int kMaxFramesInFlight = 2;
 // Cells along one edge of the grid mesh that every terrain patch is drawn with.
 constexpr int kTerrainGridCells = 64;
 
@@ -835,6 +839,9 @@ struct Renderer::Impl {
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
     int mesh_lod_draws[kMaxMeshLods] = {};
     bool has_finished_frame = false;
+    // Without a window nothing waits for the graphics card (a swapchain does that): fences of
+    // the frames still in flight, oldest first, at most kMaxFramesInFlight of them.
+    std::deque<SDL_GPUFence*> frames_in_flight;
     Camera camera;
     DirectionalLight light;
     Environment environment;

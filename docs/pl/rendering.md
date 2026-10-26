@@ -166,6 +166,7 @@ Nagłówki: `poligon/assets/model.h` (dane modelu, wysyłanie na kartę, rysowan
 - Powód wyboru: warstwa diagnostyczna D3D12 jest częścią Windows i działa od ręki (`--gpu-validation`). Dla Vulkana warstw walidacji na tej maszynie nie ma (wymagają instalacji Vulkan SDK), więc ten sam błąd przechodzi tam po cichu.
 - W trybie bez okna renderer wyłącza „niejawne warstwy” Vulkana (nakładki i nagrywarki innych programów, np. OBS, RivaTuner), które inaczej ładują swój kod do procesu.
 - Testy renderują tę samą klatkę na obu backendach i porównują obrazy. Dzięki temu shadery pozostają przenośne.
+- Klatki w locie: z oknem czekanie na swapchain trzyma procesor najwyżej dwie klatki przed kartą. Bez okna do 2026-10-26 nic nie czekało i gdy karta była wolniejsza od procesora (forest_scene w high: około 12 ms pracy karty wobec 5 ms procesora), nieskończone klatki i zasoby, które SDL dla nich trzyma, piętrzyły się: 0,8 do 1,8 MB pamięci więcej co klatkę. EndFrame wysyła teraz klatkę bez okna z fence'em i czeka na najstarszą, gdy w locie są więcej niż dwie (`kMaxFramesInFlight`). `tests/render/frame_memory_test.cpp` rysuje 1200 klatek w presecie ultra w 3840 x 2160 (żeby karta była wolniejsza nawet w budowie Debug) i wymaga, żeby proces po klatce 1200 trzymał najwyżej 50 MB więcej niż po klatce 300 (przed poprawką: 0,78 MB na klatkę na Direct3D 12, 1,77 na Vulkanie; po: 0).
 
 ## Okno i pełny ekran
 

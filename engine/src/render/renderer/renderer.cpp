@@ -136,6 +136,9 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
 Renderer::~Renderer() {
     if (impl_->device != nullptr) {
         SDL_WaitForGPUIdle(impl_->device);
+        for (SDL_GPUFence* fence : impl_->frames_in_flight) {
+            SDL_ReleaseGPUFence(impl_->device, fence);
+        }
         if (impl_->debug_ui_active) {
             ImGui_ImplSDLGPU3_Shutdown();
             ImGui_ImplSDL3_Shutdown();
@@ -932,8 +935,28 @@ void Renderer::EndFrame() {
 
     const auto submit_start = std::chrono::steady_clock::now();
     impl.stats.cpu_milliseconds = std::chrono::duration<float, std::milli>(submit_start - cpu_start).count();
-    if (!SDL_SubmitGPUCommandBuffer(commands)) {
-        FatalSdlError("cannot submit frame");
+    if (impl.window != nullptr) {
+        // The swapchain keeps the processor at most a few frames ahead of the card.
+        if (!SDL_SubmitGPUCommandBuffer(commands)) {
+            FatalSdlError("cannot submit frame");
+        }
+    } else {
+        // Without a window nothing else waits for the card: if it is slower than the
+        // processor, frames (and the resources they hold) would pile up without end. Wait for
+        // the oldest frame once more than kMaxFramesInFlight are in flight.
+        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
+        if (fence == nullptr) {
+            FatalSdlError("cannot submit frame");
+        }
+        impl.frames_in_flight.push_back(fence);
+        while (static_cast<int>(impl.frames_in_flight.size()) > kMaxFramesInFlight) {
+            SDL_GPUFence* oldest = impl.frames_in_flight.front();
+            if (!SDL_WaitForGPUFences(impl.device, true, &oldest, 1)) {
+                FatalSdlError("cannot wait for a frame");
+            }
+            SDL_ReleaseGPUFence(impl.device, oldest);
+            impl.frames_in_flight.pop_front();
+        }
     }
     impl.stats.wait_milliseconds =
         std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - submit_start).count();

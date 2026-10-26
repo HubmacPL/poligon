@@ -164,6 +164,7 @@ Headers: `poligon/assets/model.h` (model data, uploading, drawing), `poligon/ass
 - Reason: the D3D12 debug layer is part of Windows and works out of the box (`--gpu-validation`). Vulkan validation layers are not installed on this machine (they need the Vulkan SDK), so the same mistake passes silently there.
 - In headless mode the renderer turns off Vulkan "implicit layers" (overlays and recorders of other programs, such as OBS or RivaTuner), which otherwise load their code into the process.
 - Tests render the same frame on both backends and compare the images. This keeps shaders portable.
+- Frames in flight: with a window, waiting for the swapchain keeps the processor at most two frames ahead of the graphics card. Without one nothing waited until 2026-10-26, and when the card was slower than the processor (forest_scene in high: about 12 ms of the card's work against 5 ms of the processor's), unfinished frames and the resources SDL keeps for them piled up: 0.8 to 1.8 MB more memory every frame. EndFrame now submits a headless frame with a fence and waits for the oldest once more than two are in flight (`kMaxFramesInFlight`). `tests/render/frame_memory_test.cpp` draws 1200 frames in the ultra preset at 3840 x 2160 (so that the card is slower even in the Debug build) and requires the process to hold at most 50 MB more after frame 1200 than after frame 300 (before the fix: 0.78 MB per frame on Direct3D 12, 1.77 on Vulkan; after: 0).
 
 ## Window and fullscreen
 
