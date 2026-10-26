@@ -9,16 +9,12 @@ void Renderer::Impl::RenderDepthPass(FrameContext& frame) {
     Impl& impl = *this;
     SDL_GPUCommandBuffer* commands = frame.commands;
     const glm::mat4& view_projection = frame.view_projection;
-    const glm::mat4& projection = frame.projection;
     const glm::mat4& unshifted_view_projection = frame.unshifted_view_projection;
     const bool taa_on = frame.taa_on;
     const bool ao_on = frame.ao_on;
     const bool fog_on = frame.fog_on;
     const bool scene_after_depth = frame.scene_after_depth;
     const bool water_on = frame.water_on;
-    const float width = frame.width;
-    const float height = frame.height;
-    const glm::vec4& projection_info = frame.projection_info;
 
     // --- Pass 2: depth of the scene, for ambient occlusion, fog and temporal anti-aliasing,
     // and without multisampling also for the scene pass itself: it then tests this depth
@@ -64,32 +60,9 @@ void Renderer::Impl::RenderDepthPass(FrameContext& frame) {
         SDL_EndGPURenderPass(pass);
     }
 
-    // --- Pass 3: ambient occlusion from that depth, then a blur across and a blur down. ---
+    // --- Pass 3: ambient occlusion from that depth, by XeGTAO (renderer/gtao.cpp). ---
     if (ao_on) {
-        AoUniforms ao_uniforms;
-        ao_uniforms.projection_info = projection_info;
-        ao_uniforms.screen =
-            glm::vec4(width, height, static_cast<float>(glm::clamp(environment.ambient_occlusion_samples, 4, 64)), 0.0f);
-        ao_uniforms.ao = glm::vec4(environment.ambient_occlusion_radius, environment.ambient_occlusion_strength,
-                                   0.5f * height * projection[1][1], impl.temporal_noise_offset);
-        SDL_GPUTextureSamplerBinding bindings[2]{};
-        bindings[0].texture = impl.prepass_depth;
-        bindings[0].sampler = impl.clamp_sampler;
-        impl.DrawFullscreenPass(commands, impl.ao_target, false, impl.ao_pipeline, bindings, 1, &ao_uniforms,
-                                sizeof(ao_uniforms));
-
-        AoBlurUniforms blur_uniforms;
-        blur_uniforms.projection_info = projection_info;
-        bindings[1].texture = impl.prepass_depth;
-        bindings[1].sampler = impl.clamp_sampler;
-        bindings[0].texture = impl.ao_target;
-        blur_uniforms.direction = glm::vec4(1.0f, 0.0f, width, height);
-        impl.DrawFullscreenPass(commands, impl.ao_scratch, false, impl.ao_blur_pipeline, bindings, 2, &blur_uniforms,
-                                sizeof(blur_uniforms));
-        bindings[0].texture = impl.ao_scratch;
-        blur_uniforms.direction = glm::vec4(0.0f, 1.0f, width, height);
-        impl.DrawFullscreenPass(commands, impl.ao_target, false, impl.ao_blur_pipeline, bindings, 2, &blur_uniforms,
-                                sizeof(blur_uniforms));
+        impl.RenderGtao(frame);
 
         // What casts no ambient occlusion (grass) joins the depth image now, for the scene
         // pass, water, fog and anti-aliasing.

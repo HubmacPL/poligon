@@ -218,8 +218,9 @@ struct Environment {
     // the sky in the direction one looks, from the sky light map (with sky_light), instead of
     // fog_color and the horizon's color: at 1 the fog matches the sky behind it, clouds included.
     float fog_sky_color = 0.0f;
-    // Steps along each line of sight of volumetric fog, and samples per pixel of ambient
-    // occlusion: more is smoother and costs more (set by GraphicsQuality).
+    // Steps along each line of sight of volumetric fog, and the quality of ambient occlusion as
+    // samples per pixel: up to 8 is XeGTAO's low level, 12 medium, 20 high, more ultra. More is
+    // smoother and costs more (set by GraphicsQuality).
     int fog_steps = 32;
     int ambient_occlusion_samples = 20;
     // Water mirrors what is on screen by walking each reflected ray this many steps through
@@ -280,6 +281,7 @@ struct Environment {
     bool ambient_occlusion = false;
     // How far (meters) a surface can be to still darken another.
     float ambient_occlusion_radius = 0.6f;
+    // 0 to 1: how much of the darkening is applied (1 = as XeGTAO gives it).
     float ambient_occlusion_strength = 1.0f;
 
     // Debug aid: tints surfaces by the shadow cascade that shades them (red, green, blue,

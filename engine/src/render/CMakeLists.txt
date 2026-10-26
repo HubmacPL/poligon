@@ -21,6 +21,7 @@ add_library(poligon_render STATIC
   passes/temporal_aa_pass.cpp
   passes/water_pass.cpp
   renderer/drawing.cpp
+  renderer/gtao.cpp
   renderer/occlusion.cpp
   renderer/pipelines.cpp
   renderer/renderer.cpp
@@ -63,13 +64,16 @@ set(POLIGON_SHADER_SHARED
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/atmosphere.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/lights.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/post/agx.hlsli
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/post/gtao_main.hlsli
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/third_party/xegtao/XeGTAO.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/third_party/xegtao/XeGTAO.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh/mesh.frag.hlsl
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vegetation/impostor.frag.hlsl)
 
 # Compiles one HLSL file to DXIL (Direct3D 12) and SPIR-V (Vulkan) and embeds both in the
 # engine as byte arrays, so there are no shader files to find at run time.
 #   source: path relative to this directory, for example shaders/mesh/mesh.vert.hlsl
-#   stage:  vertex or fragment
+#   stage:  vertex, fragment or compute
 #   symbol: array name prefix, for example kMeshVert -> kMeshVertDxil, kMeshVertSpirv
 #   header: header name prefix, for example mesh_vert -> mesh_vert_dxil.h, mesh_vert_spirv.h
 function(poligon_embed_shader source stage symbol header)
@@ -77,6 +81,8 @@ function(poligon_embed_shader source stage symbol header)
     set(profile vs_6_0)
   elseif(stage STREQUAL "fragment")
     set(profile ps_6_0)
+  elseif(stage STREQUAL "compute")
+    set(profile cs_6_0)
   else()
     message(FATAL_ERROR "Unknown shader stage: ${stage}")
   endif()
@@ -146,8 +152,13 @@ poligon_embed_shader(shaders/overlay/overlay.frag.hlsl fragment kOverlayFrag ove
 
 poligon_embed_shader(shaders/post/fullscreen.vert.hlsl vertex kFullscreenVert fullscreen_vert)
 poligon_embed_shader(shaders/post/tonemap.frag.hlsl fragment kTonemapFrag tonemap_frag)
-poligon_embed_shader(shaders/post/ao.frag.hlsl fragment kAoFrag ao_frag)
-poligon_embed_shader(shaders/post/ao_blur.frag.hlsl fragment kAoBlurFrag ao_blur_frag)
+poligon_embed_shader(shaders/post/gtao_prefilter.comp.hlsl compute kGtaoPrefilterComp gtao_prefilter_comp)
+poligon_embed_shader(shaders/post/gtao_main_low.comp.hlsl compute kGtaoMainLowComp gtao_main_low_comp)
+poligon_embed_shader(shaders/post/gtao_main_medium.comp.hlsl compute kGtaoMainMediumComp gtao_main_medium_comp)
+poligon_embed_shader(shaders/post/gtao_main_high.comp.hlsl compute kGtaoMainHighComp gtao_main_high_comp)
+poligon_embed_shader(shaders/post/gtao_main_ultra.comp.hlsl compute kGtaoMainUltraComp gtao_main_ultra_comp)
+poligon_embed_shader(shaders/post/gtao_denoise.comp.hlsl compute kGtaoDenoiseComp gtao_denoise_comp)
+poligon_embed_shader(shaders/post/gtao_apply.frag.hlsl fragment kGtaoApplyFrag gtao_apply_frag)
 poligon_embed_shader(shaders/post/fog.frag.hlsl fragment kFogFrag fog_frag)
 poligon_embed_shader(shaders/post/fog_composite.frag.hlsl fragment kFogCompositeFrag fog_composite_frag)
 poligon_embed_shader(shaders/post/bloom_down.frag.hlsl fragment kBloomDownFrag bloom_down_frag)

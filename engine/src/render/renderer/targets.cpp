@@ -81,8 +81,6 @@ void Renderer::Impl::CreateSizedTargets() {
                                  width, height, SDL_GPU_SAMPLECOUNT_1, nullptr, "depth image", 0.0f);
     ao_target = CreateTarget(kAoFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
                              "ambient occlusion image");
-    ao_scratch = CreateTarget(kAoFormat, drawn_and_read, width, height, SDL_GPU_SAMPLECOUNT_1, nullptr,
-                              "ambient occlusion image");
     fog_width = (width + 1) / 2;
     fog_height = (height + 1) / 2;
     fog_target = CreateTarget(kSceneFormat, drawn_and_read, fog_width, fog_height, SDL_GPU_SAMPLECOUNT_1, nullptr,
@@ -162,7 +160,7 @@ void Renderer::Impl::CreateFixedTargets() {
 
 void Renderer::Impl::ReleaseSizedTargets() {
     SDL_GPUTexture** sized[] = {&scene_color,  &scene_resolved, &scene_depth,      &output_target,  &prepass_depth,
-                                &ao_target,    &ao_scratch,     &fog_target,       &taa_targets[0], &taa_targets[1],
+                                &ao_target,    &fog_target,       &taa_targets[0], &taa_targets[1],
                                 &water_scene_copy, &cloud_target, &water_depth_copy, &cloud_history[0], &cloud_history[1],
                                 &motion_target};
     for (SDL_GPUTexture** texture : sized) {
@@ -175,6 +173,7 @@ void Renderer::Impl::ReleaseSizedTargets() {
         ReleaseTrackedTexture(device, level.texture);
     }
     bloom_levels.clear();
+    ReleaseGtaoTargets();
 }
 
 void Renderer::Impl::CreateSamplers() {

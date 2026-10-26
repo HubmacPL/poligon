@@ -33,6 +33,7 @@
 #include "poligon/render/renderer.h"
 #include "../resources/atmosphere_state.h"
 #include "../resources/decal_state.h"
+#include "../resources/gtao_state.h"
 #include "../resources/light_state.h"
 #include "../resources/occlusion_state.h"
 #include "../resources/overlay_state.h"
@@ -261,17 +262,6 @@ constexpr int kTaaSequenceLength = 8;
 // history then no longer fits and is dropped.
 constexpr float kTaaCutDistance = 25.0f;
 
-struct AoUniforms {
-    glm::vec4 projection_info;
-    glm::vec4 screen;
-    glm::vec4 ao;
-};
-
-struct AoBlurUniforms {
-    glm::vec4 projection_info;
-    glm::vec4 direction;
-};
-
 struct FogUniforms {
     glm::mat4 inverse_view_projection;
     glm::mat4 shadow_matrices[kCascadeCount];
@@ -458,7 +448,7 @@ struct ViewState {
     SDL_GPUTexture* output_target = nullptr;
     SDL_GPUTexture* prepass_depth = nullptr;
     SDL_GPUTexture* ao_target = nullptr;
-    SDL_GPUTexture* ao_scratch = nullptr;
+    GtaoTargets gtao;  // XeGTAO's images
     SDL_GPUTexture* fog_target = nullptr;
     int fog_width = 0;
     int fog_height = 0;
@@ -722,7 +712,7 @@ struct Renderer::Impl {
     // occlusion and fog can read it.
     SDL_GPUTexture* prepass_depth = nullptr;
     SDL_GPUTexture* ao_target = nullptr;
-    SDL_GPUTexture* ao_scratch = nullptr;
+    GtaoTargets gtao;  // XeGTAO's images
     SDL_GPUTexture* fog_target = nullptr;
     int fog_width = 0;
     int fog_height = 0;
@@ -737,8 +727,8 @@ struct Renderer::Impl {
 
     SDL_GPUGraphicsPipeline* prepass_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* prepass_pipeline_double_sided = nullptr;
-    SDL_GPUGraphicsPipeline* ao_pipeline = nullptr;
-    SDL_GPUGraphicsPipeline* ao_blur_pipeline = nullptr;
+    // Ambient occlusion by XeGTAO (renderer/gtao.cpp).
+    GtaoPipelines gtao_pipelines;
     SDL_GPUGraphicsPipeline* fog_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* fog_composite_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* bloom_down_pipeline = nullptr;
@@ -1136,6 +1126,14 @@ struct Renderer::Impl {
     void RenderFogPass(FrameContext& frame);
     void RenderAtmospherePass(FrameContext& frame);
     void RenderSpotShadowPass(FrameContext& frame);
+    // XeGTAO's passes into ao_target, from the depth pass's image (called by the depth pass).
+    void RenderGtao(FrameContext& frame);
+    void CreateGtaoPipelines();
+    void ReleaseGtao();
+    void ReleaseGtaoTargets();
+    SDL_GPUComputePipeline* CreateComputePipeline(const unsigned char* dxil, size_t dxil_size, const unsigned char* spirv, size_t spirv_size,
+                                                  Uint32 sampler_count, Uint32 readable_texture_count, Uint32 writable_texture_count,
+                                                  Uint32 uniform_buffer_count, Uint32 threads_x, Uint32 threads_y);
     void RenderOcclusionPass(FrameContext& frame);
     // Reads the newest finished copy of an earlier frame's shrunk depth and moves it onto this
     // camera (unshifted); before anything is culled.

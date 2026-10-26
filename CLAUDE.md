@@ -8,7 +8,7 @@ This file is the table of contents and the rule book. Details live in topic file
 - Building, presets, dependencies, adding tests and examples: [docs/en/building.md](docs/en/building.md)
 - Game loop, tick and frame, headless mode, command line: [docs/en/game_loop.md](docs/en/game_loop.md)
 - Renderer, graphics quality presets (low to ultra), render targets, blended transparency, point and spot lights, the sky from the atmosphere and the time of day, water surfaces, volumetric clouds, sky light and haze, math conventions, textures and materials, HLSL shaders, backends, frame dumps and image comparison: [docs/en/rendering.md](docs/en/rendering.md)
-- Rendering work agreed but not done yet (AgX, XeGTAO, terrain occlusion culling, FSR 2): [docs/en/rendering_roadmap.md](docs/en/rendering_roadmap.md)
+- Rendering work agreed but not done yet (FSR 2, stopped: how much it would cost): [docs/en/rendering_roadmap.md](docs/en/rendering_roadmap.md)
 - ECS (flecs): rules, changes during a system, JSON state dump, state hash, repeatability test: [docs/en/ecs.md](docs/en/ecs.md)
 - Input as actions, bindings, recording and replay, recording file format: [docs/en/input.md](docs/en/input.md)
 - Determinism: what is guaranteed, how to compare two runs and find the tick where they diverge, what breaks it: [docs/en/determinism.md](docs/en/determinism.md)

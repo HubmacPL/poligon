@@ -2,10 +2,6 @@
 
 #include "renderer_internal.h"
 
-#include "poligon_shaders/ao_blur_frag_dxil.h"
-#include "poligon_shaders/ao_blur_frag_spirv.h"
-#include "poligon_shaders/ao_frag_dxil.h"
-#include "poligon_shaders/ao_frag_spirv.h"
 #include "poligon_shaders/bloom_down_frag_dxil.h"
 #include "poligon_shaders/bloom_down_frag_spirv.h"
 #include "poligon_shaders/bloom_up_frag_dxil.h"
@@ -517,10 +513,6 @@ void Renderer::Impl::CreatePipelines() {
         FullscreenBlend blend;
     };
     const FullscreenPass passes[] = {
-        {&ao_pipeline, 1, kAoFragDxil, sizeof(kAoFragDxil), kAoFragSpirv, sizeof(kAoFragSpirv), kAoFormat,
-         FullscreenBlend::Replace},
-        {&ao_blur_pipeline, 2, kAoBlurFragDxil, sizeof(kAoBlurFragDxil), kAoBlurFragSpirv, sizeof(kAoBlurFragSpirv),
-         kAoFormat, FullscreenBlend::Replace},
         {&fog_pipeline, 4, kFogFragDxil, sizeof(kFogFragDxil), kFogFragSpirv, sizeof(kFogFragSpirv), kSceneFormat,
          FullscreenBlend::Replace},
         {&fog_composite_pipeline, 2, kFogCompositeFragDxil, sizeof(kFogCompositeFragDxil), kFogCompositeFragSpirv,

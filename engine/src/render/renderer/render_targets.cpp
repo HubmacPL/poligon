@@ -16,7 +16,7 @@ void Renderer::Impl::SwapView(ViewState& view) {
     std::swap(output_target, view.output_target);
     std::swap(prepass_depth, view.prepass_depth);
     std::swap(ao_target, view.ao_target);
-    std::swap(ao_scratch, view.ao_scratch);
+    std::swap(gtao, view.gtao);
     std::swap(fog_target, view.fog_target);
     std::swap(fog_width, view.fog_width);
     std::swap(fog_height, view.fog_height);

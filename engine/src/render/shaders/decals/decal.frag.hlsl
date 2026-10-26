@@ -80,7 +80,7 @@ float4 main(FragmentInput input) : SV_Target0 {
     }
 
     // The surface's direction from neighboring depths; of the two neighbors on each axis the
-    // nearer one, so that the normal stays right at an object's outline (as in ao.frag.hlsl).
+    // nearer one, so that the normal stays right at an object's outline.
     float3 left = world - WorldAt(pixel + int2(-1, 0));
     float3 right = WorldAt(pixel + int2(1, 0)) - world;
     float3 up = world - WorldAt(pixel + int2(0, -1));

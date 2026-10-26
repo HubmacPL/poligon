@@ -24,7 +24,7 @@ Texture2D<float> shadow_texture : register(LIGHTING_SHADOW_T, space2);
 [[vk::combinedImageSampler]][[vk::binding(LIGHTING_SHADOW_BINDING, 2)]]
 SamplerComparisonState shadow_sampler : register(LIGHTING_SHADOW_S, space2);
 
-// Ambient occlusion computed from the depth image (ao.frag.hlsl), one value per screen pixel.
+// Ambient occlusion computed from the depth image (XeGTAO, renderer/gtao.cpp), one value per screen pixel.
 [[vk::combinedImageSampler]][[vk::binding(LIGHTING_AO_BINDING, 2)]]
 Texture2D<float> ao_texture : register(LIGHTING_AO_T, space2);
 [[vk::combinedImageSampler]][[vk::binding(LIGHTING_AO_BINDING, 2)]]

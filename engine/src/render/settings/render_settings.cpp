@@ -78,7 +78,7 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
     visitor.Section("ambient occlusion");
     visitor.Bool("ambient_occlusion.on", environment.ambient_occlusion);
     visitor.Float("ambient_occlusion.radius", environment.ambient_occlusion_radius, 0.02f, 2.0f);
-    visitor.Float("ambient_occlusion.strength", environment.ambient_occlusion_strength, 0.0f, 3.0f);
+    visitor.Float("ambient_occlusion.strength", environment.ambient_occlusion_strength, 0.0f, 1.0f);
 
     visitor.Section("exposure and bloom");
     static const char* const kToneMappings[] = {"none", "aces", "agx", "agx_punchy"};

@@ -66,6 +66,7 @@ Renderer::Renderer(const RendererConfig& config) : impl_(std::make_unique<Impl>(
     impl_->CreateTargets();
     impl_->CreateSamplers();
     impl_->CreatePipelines();
+    impl_->CreateGtaoPipelines();
     impl_->CreateOverlayPipeline();
     impl_->CreateDecalPipeline();
     impl_->CreateParticlePipelines();
@@ -140,6 +141,8 @@ Renderer::~Renderer() {
             SDL_ReleaseGPUFence(impl_->device, fence);
         }
         impl_->ReleaseOcclusion();
+        impl_->ReleaseGtao();
+        impl_->ReleaseGtaoTargets();
         // Render targets' images (their pictures are also in `textures`: released here, not there).
         for (RenderTargetData& target : impl_->render_targets) {
             if (target.alive) {
@@ -180,14 +183,14 @@ Renderer::~Renderer() {
         SDL_ReleaseGPUSampler(impl_->device, impl_->repeat_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->cube_sampler);
         for (SDL_GPUGraphicsPipeline* pipeline :
-             {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
+             {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, 
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
               impl_->luminance_pipeline, impl_->luminance_blocks_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline,
               impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline, impl_->clouds_resolve_pipeline,
               impl_->sky_capture_pipeline, impl_->sky_prefilter_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
         }
-        for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->ao_scratch, impl_->fog_target,
+        for (SDL_GPUTexture* texture : {impl_->prepass_depth, impl_->ao_target, impl_->fog_target,
                                         impl_->luminance_targets[0], impl_->luminance_targets[1], impl_->taa_targets[0],
                                         impl_->taa_targets[1], impl_->water_scene_copy, impl_->water_depth_copy,
                                         impl_->no_trample_texture, impl_->trample_texture, impl_->cloud_shape, impl_->cloud_detail,
