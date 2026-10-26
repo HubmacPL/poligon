@@ -39,6 +39,8 @@
 #include "poligon_shaders/impostor_vert_dxil.h"
 #include "poligon_shaders/impostor_vert_spirv.h"
 #include "poligon_shaders/luminance_frag_dxil.h"
+#include "poligon_shaders/luminance_blocks_frag_dxil.h"
+#include "poligon_shaders/luminance_blocks_frag_spirv.h"
 #include "poligon_shaders/luminance_frag_spirv.h"
 #include "poligon_shaders/mesh_after_depth_frag_dxil.h"
 #include "poligon_shaders/mesh_blend_frag_dxil.h"
@@ -527,6 +529,8 @@ void Renderer::Impl::CreatePipelines() {
          sizeof(kBloomDownFragSpirv), kSceneFormat, FullscreenBlend::Replace},
         {&bloom_up_pipeline, 1, kBloomUpFragDxil, sizeof(kBloomUpFragDxil), kBloomUpFragSpirv,
          sizeof(kBloomUpFragSpirv), kSceneFormat, FullscreenBlend::Mix},
+        {&luminance_blocks_pipeline, 1, kLuminanceBlocksFragDxil, sizeof(kLuminanceBlocksFragDxil), kLuminanceBlocksFragSpirv,
+         sizeof(kLuminanceBlocksFragSpirv), SDL_GPU_TEXTUREFORMAT_R16_FLOAT, FullscreenBlend::Replace},
         {&luminance_pipeline, 2, kLuminanceFragDxil, sizeof(kLuminanceFragDxil), kLuminanceFragSpirv,
          sizeof(kLuminanceFragSpirv), kLuminanceFormat, FullscreenBlend::Replace},
         {&taa_pipeline, 4, kTaaFragDxil, sizeof(kTaaFragDxil), kTaaFragSpirv, sizeof(kTaaFragSpirv), kSceneFormat,

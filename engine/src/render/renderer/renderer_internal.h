@@ -743,6 +743,9 @@ struct Renderer::Impl {
     SDL_GPUGraphicsPipeline* bloom_down_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* bloom_up_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* luminance_pipeline = nullptr;
+    // Automatic exposure's first half: mean logarithms over 16 x 16 blocks (shared by every view).
+    SDL_GPUGraphicsPipeline* luminance_blocks_pipeline = nullptr;
+    SDL_GPUTexture* luminance_blocks = nullptr;
     SDL_GPUGraphicsPipeline* taa_pipeline = nullptr;
     // Water: drawn after the scene from copies of the scene's color and depth.
     SDL_GPUGraphicsPipeline* water_pipeline = nullptr;

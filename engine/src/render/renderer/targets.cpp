@@ -135,6 +135,8 @@ void Renderer::Impl::CreateFixedTargets() {
         target = CreateTarget(kLuminanceFormat, drawn_and_read, 1, 1, SDL_GPU_SAMPLECOUNT_1, nullptr,
                               "luminance image");
     }
+    luminance_blocks = CreateTarget(SDL_GPU_TEXTUREFORMAT_R16_FLOAT, drawn_and_read, 16, 16, SDL_GPU_SAMPLECOUNT_1, nullptr,
+                                    "luminance blocks image");
     // The sky light map: cube maps with chains of smaller levels.
     const auto create_cube = [this](int levels, const char* what) {
         SDL_GPUTextureCreateInfo info{};

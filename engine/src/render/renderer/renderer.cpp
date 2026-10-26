@@ -181,7 +181,7 @@ Renderer::~Renderer() {
         for (SDL_GPUGraphicsPipeline* pipeline :
              {impl_->prepass_pipeline, impl_->prepass_pipeline_double_sided, impl_->ao_pipeline, impl_->ao_blur_pipeline,
               impl_->fog_pipeline, impl_->fog_composite_pipeline, impl_->bloom_down_pipeline, impl_->bloom_up_pipeline,
-              impl_->luminance_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline,
+              impl_->luminance_pipeline, impl_->luminance_blocks_pipeline, impl_->taa_pipeline, impl_->water_pipeline, impl_->depth_copy_pipeline,
               impl_->clouds_pipeline, impl_->cloud_shadow_pipeline, impl_->clouds_composite_pipeline, impl_->clouds_resolve_pipeline,
               impl_->sky_capture_pipeline, impl_->sky_prefilter_pipeline}) {
             SDL_ReleaseGPUGraphicsPipeline(impl_->device, pipeline);
@@ -192,7 +192,7 @@ Renderer::~Renderer() {
                                         impl_->no_trample_texture, impl_->trample_texture, impl_->cloud_shape, impl_->cloud_detail,
                                         impl_->cloud_weather, impl_->cloud_target, impl_->cloud_history[0], impl_->cloud_history[1], impl_->cloud_shadow_target,
                                         impl_->sky_capture, impl_->sky_radiance, impl_->dummy_volume,
-                                        impl_->sky_occlusion_texture}) {
+                                        impl_->sky_occlusion_texture, impl_->luminance_blocks}) {
             ReleaseTrackedTexture(impl_->device, texture);
         }
         for (const BloomLevel& level : impl_->bloom_levels) {

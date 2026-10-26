@@ -5,14 +5,15 @@
 // The average is taken of logarithms (the log average), so that a small very bright area
 // (the sun, a bright sky between trees) does not outweigh everything else: over 64 x 64
 // points of the half-size image (the first level of the bloom chain, each of its pixels a
-// blurred mean of the scene pixels around it). The smallest level of the chain was read
-// before; its pixels average linearly over large areas, so the sun weighed in before the
-// logarithm.
+// blurred mean of the scene pixels around it), summed in two steps: luminance_blocks.frag.hlsl
+// gives the mean logarithm of 16 points per pixel of a 16 x 16 image, read here. The smallest
+// level of the chain was read before; its pixels average linearly over large areas, so the
+// sun weighed in before the logarithm.
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
-Texture2D<float4> scene_texture : register(t0, space2);
+Texture2D<float> blocks_texture : register(t0, space2);
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
-SamplerState scene_sampler : register(s0, space2);
+SamplerState blocks_sampler : register(s0, space2);
 
 [[vk::combinedImageSampler]][[vk::binding(1, 2)]]
 Texture2D<float> previous_texture : register(t1, space2);
@@ -30,16 +31,13 @@ struct FragmentInput {
 };
 
 float main(FragmentInput input) : SV_Target0 {
-    static const int kGrid = 64;
     float log_sum = 0.0;
-    for (int y = 0; y < kGrid; ++y) {
-        for (int x = 0; x < kGrid; ++x) {
-            float2 uv = (float2(x, y) + 0.5) / kGrid;
-            float3 color = scene_texture.SampleLevel(scene_sampler, uv, 0.0).rgb;
-            log_sum += log(max(dot(color, float3(0.2126, 0.7152, 0.0722)), 0.0001));
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 0; x < 16; ++x) {
+            log_sum += blocks_texture.Load(int3(x, y, 0));
         }
     }
-    float average = exp(log_sum / (kGrid * kGrid));
+    float average = exp(log_sum / 256.0);
     if (parameters.z > 0.5) {
         return average;  // first frame: there is no previous value yet
     }

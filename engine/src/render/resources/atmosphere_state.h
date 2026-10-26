@@ -8,6 +8,7 @@
 #include <SDL3/SDL_gpu.h>
 
 #include "poligon/core/math.h"
+#include "poligon/render/sky.h"
 
 namespace poligon {
 namespace render_internal {
@@ -22,6 +23,10 @@ struct AtmosphereState {
     // as the game gave it; the frame's light is that times what the air lets through).
     bool on = false;
     glm::vec3 sun_above_air{0.0f};
+    // ComputeSkyLight for sky_direction, kept while the sun stays.
+    SkyLight sky;
+    glm::vec3 sky_direction{0.0f};
+    bool sky_valid = false;
 };
 
 // Must match atmosphere_sky_view.frag.hlsl.

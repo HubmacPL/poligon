@@ -330,7 +330,9 @@ float3 SurfaceReflection(float3 normal, float3 to_camera, float3 to_light, float
     float distribution = a2 / (kPi * denominator * denominator);
     float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
     float geometry = (n_dot_l / (n_dot_l * (1.0 - k) + k)) * (n_dot_v / (n_dot_v * (1.0 - k) + k));
-    float3 fresnel = specular_color + (1.0 - specular_color) * pow(1.0 - v_dot_h, 5.0);
+    float edge = 1.0 - v_dot_h;
+    float edge2 = edge * edge;
+    float3 fresnel = specular_color + (1.0 - specular_color) * (edge2 * edge2 * edge);
     float3 specular = distribution * geometry * fresnel / max(4.0 * n_dot_l * n_dot_v, 0.0001);
     return (diffuse_color * (1.0 - fresnel) + specular * kPi) * n_dot_l;
 }
@@ -371,8 +373,20 @@ float3 LocalLightsOnSurface(float2 pixel, float3 position, float3 surface_normal
         [loop] while (bits != 0u) {
             uint bit = firstbitlow(bits);
             bits &= bits - 1u;
+            // A tile lists every light whose reach may touch it; many of its pixels still lie
+            // beyond the reach or behind the surface: those read only the light's position.
+            int index = part * 32 + (int)bit;
+            float4 position_range = LoadLightPosition(index);
+            float3 offset = position_range.xyz - position;
+            if (dot(offset, offset) >= position_range.w * position_range.w || dot(offset, normal) <= 0.0) {
+                continue;
+            }
+            LocalLight light = LoadLocalLight(index);
             float3 to_local;
-            float3 arriving = LocalLightWithShadow(LoadLocalLight(part * 32 + (int)bit), position, surface_normal, to_local);
+            float3 arriving = LocalLightWithShadow(light, position, surface_normal, to_local);
+            if (all(arriving <= 0.0)) {
+                continue;
+            }
             total += SurfaceReflection(normal, to_camera, to_local, diffuse_color, specular_color, roughness, n_dot_v) * arriving;
         }
     }

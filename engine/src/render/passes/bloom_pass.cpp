@@ -51,9 +51,14 @@ void Renderer::Impl::RenderBloomPass(FrameContext& frame) {
         ParameterUniforms uniforms;
         uniforms.parameters = glm::vec4(share(impl.post.auto_exposure_brighter_seconds), share(impl.post.auto_exposure_darker_seconds),
                                         impl.has_luminance_history ? 0.0f : 1.0f, 0.0f);
+        SDL_GPUTextureSamplerBinding level_binding{};
+        level_binding.texture = impl.bloom_levels.front().texture;
+        level_binding.sampler = impl.linear_clamp_sampler;
+        impl.DrawFullscreenPass(commands, impl.luminance_blocks, false, impl.luminance_blocks_pipeline, &level_binding, 1,
+                                &uniforms, sizeof(uniforms));
         SDL_GPUTextureSamplerBinding bindings[2]{};
-        bindings[0].texture = impl.bloom_levels.front().texture;
-        bindings[0].sampler = impl.linear_clamp_sampler;
+        bindings[0].texture = impl.luminance_blocks;
+        bindings[0].sampler = impl.clamp_sampler;
         bindings[1].texture = impl.luminance_targets[previous];
         bindings[1].sampler = impl.clamp_sampler;
         impl.DrawFullscreenPass(commands, impl.luminance_targets[current], false, impl.luminance_pipeline, bindings, 2,

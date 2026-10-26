@@ -25,6 +25,11 @@ cbuffer LightUniforms : register(b3, space3) {
 [[vk::binding(LIGHTING_LIGHT_DATA_BINDING, 2)]]
 ByteAddressBuffer light_data : register(LIGHTING_LIGHT_DATA_T, space2);
 
+// Only a light's position and range (enough to know whether it reaches a point).
+float4 LoadLightPosition(int index) {
+    return asfloat(light_data.Load4((uint)index * 64u));
+}
+
 LocalLight LoadLocalLight(int index) {
     uint start = (uint)index * 64u;
     LocalLight light;

@@ -38,7 +38,13 @@ void Renderer::Impl::ApplyAtmosphere() {
     if (environment.time_of_day >= 0.0f) {
         light.direction = ComputeSunDirection(environment.time_of_day, environment.day_of_year, environment.latitude);
     }
-    const SkyLight sky = ComputeSkyLight(light.direction);
+    // The model's light changes only with the sun; recomputed when the sun moves.
+    if (!atmosphere.sky_valid || light.direction != atmosphere.sky_direction) {
+        atmosphere.sky = ComputeSkyLight(light.direction);
+        atmosphere.sky_direction = light.direction;
+        atmosphere.sky_valid = true;
+    }
+    const SkyLight& sky = atmosphere.sky;
     const glm::vec3 above(light.color.r, light.color.g, light.color.b);
     atmosphere.sun_above_air = above;
     const auto to_color = [](const glm::vec3& value) { return Color{value.x, value.y, value.z, 1.0f}; };
