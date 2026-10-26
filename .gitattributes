@@ -1,3 +1,26 @@
-# Text files are stored with LF in the repository; binary files are never converted.
+# Text files are stored with LF in the repository and checked out with the platform's line
+# endings, except where a tool needs one kind.
 * text=auto
+# PowerShell scripts: CRLF, as Windows PowerShell 5.1 and its editors expect.
+*.ps1 text eol=crlf
+# Documentation and plain text: LF everywhere, so diffs stay clean on every platform.
+*.md text eol=lf
+*.txt text eol=lf
+# Binary files are never converted.
 *.png binary
+*.jpg binary
+*.jpeg binary
+*.dds binary
+*.ktx2 binary
+*.hdr binary
+*.exr binary
+*.tif binary
+*.tiff binary
+*.glb binary
+*.bin binary
+*.zip binary
+*.dll binary
+*.exe binary
+*.pak binary
+*.ppatch binary
+*.pworld binary

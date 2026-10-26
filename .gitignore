@@ -1,5 +1,15 @@
+# Build output, including caches made by the programs (build/terrain_cache, build/test_output)
 /build/
+# Libraries vcpkg installs in manifest mode
 /vcpkg_installed/
+# Editors and IDEs
 /.vs/
 /.vscode/
+/.idea/
+*.user
 CMakeUserPresets.json
+# Window layouts Dear ImGui saves next to a program
+imgui.ini
+# Crash reports and logs the programs write
+*.dmp
+*.log
