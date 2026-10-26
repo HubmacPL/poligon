@@ -33,6 +33,7 @@
 #include "poligon/render/renderer.h"
 #include "../resources/atmosphere_state.h"
 #include "../resources/decal_state.h"
+#include "../resources/light_state.h"
 #include "../resources/overlay_state.h"
 #include "../resources/particle_state.h"
 
@@ -283,6 +284,8 @@ struct FogUniforms {
     glm::vec4 options;
     glm::vec4 quality;
     glm::vec4 cloud_shadow_area;
+    GpuLight local_lights[4];       // the four lights nearest the camera
+    glm::vec4 local_light_count;
 };
 
 struct FogCompositeUniforms {
@@ -425,7 +428,9 @@ inline bool IsScenePass(MeshPass pass) {
 enum MeshKind { kRigid, kSkinned, kInstanced, kMeshKindCount };
 
 // The lists of instances a batch is culled into: the camera's view, then one per cascade.
-constexpr int kInstanceListCount = 1 + kCascadeCount;
+// The view, the sun's cascades, then the spot lights with shadows.
+constexpr int kSpotShadowList = 1 + kCascadeCount;
+constexpr int kInstanceListCount = 1 + kCascadeCount + kMaxShadowedSpotLights;
 
 // A height map on the graphics card.
 // Textures and buffers through these are counted (gpu_memory.cpp, FrameStats::texture_bytes):
@@ -905,6 +910,8 @@ struct Renderer::Impl {
     DecalState decals;
     // The sky from the atmosphere model (resources/atmosphere.cpp, passes/atmosphere_pass.cpp).
     AtmosphereState atmosphere;
+    // Point and spot lights (resources/lights.cpp, passes/spot_shadow_pass.cpp).
+    LightState lights;
     // Particles recorded this frame (resources/particles.cpp, passes/particle_pass.cpp).
     ParticleState particles;
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
@@ -1119,6 +1126,16 @@ struct Renderer::Impl {
     void RenderCloudPass(FrameContext& frame);
     void RenderFogPass(FrameContext& frame);
     void RenderAtmospherePass(FrameContext& frame);
+    void RenderSpotShadowPass(FrameContext& frame);
+    // Keeps the lights that reach the view (the nearest kMaxLights), assigns them to screen
+    // tiles and places the spot light shadows; before the instances are culled (EndFrame).
+    void PrepareLights(const glm::mat4& view_projection);
+    // Copies LightData to the graphics card (outside any render pass).
+    void UploadLights(SDL_GPUCommandBuffer* commands);
+    // LightUniforms as fragment uniform buffer 3 and LightData as fragment storage buffer 0,
+    // for a pass drawing into an image of this size.
+    void PushLightUniforms(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float width, float height);
+    void ReleaseLights();
     // With SkyModel::Atmosphere, sets the frame's sun and sky colors from the model (BeginFrame).
     void ApplyAtmosphere();
     void ReleaseAtmosphere();

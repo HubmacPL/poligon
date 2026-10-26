@@ -170,6 +170,7 @@ Renderer::~Renderer() {
         impl_->ReleaseOverlay();
         impl_->ReleaseDecals();
         impl_->ReleaseAtmosphere();
+        impl_->ReleaseLights();
         impl_->ReleaseParticles();
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
@@ -285,6 +286,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->ApplyAtmosphere();
     impl_->draw_commands.clear();
     impl_->blended_commands.clear();
+    impl_->lights.records.clear();
     impl_->water_commands.clear();
     // The sky occlusion map, copied to the card when it changed.
     impl_->sky_map = impl_->sky_occlusion_source != nullptr ? impl_->sky_occlusion_source->GetGroundMap() : GroundMap{};
@@ -899,6 +901,8 @@ void Renderer::EndFrame() {
     }
     impl.stats = FrameStats{};
     std::copy(std::begin(impl.mesh_lod_draws), std::end(impl.mesh_lod_draws), std::begin(impl.stats.mesh_lod_draws));
+    impl.PrepareLights(frame.unshifted_view_projection);
+    impl.UploadLights(commands);
     {
         // Instances are culled against the view and against every cascade before any pass
         // starts, because their transforms must be on the graphics card by then.
@@ -915,6 +919,7 @@ void Renderer::EndFrame() {
     impl.stats.meshes_drawn = static_cast<int>(impl.visible_commands.size());
 
     impl.RenderShadowPass(frame);
+    impl.RenderSpotShadowPass(frame);
     impl.RenderCloudShadowPass(frame);
     impl.RenderAtmospherePass(frame);
     impl.RenderSkyLightPass(frame);

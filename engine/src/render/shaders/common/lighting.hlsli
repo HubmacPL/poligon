@@ -12,7 +12,10 @@
 //     #define LIGHTING_CLOUD_BINDING 5    // and LIGHTING_CLOUD_T t5, LIGHTING_CLOUD_S s5
 //     #define LIGHTING_SKY_BINDING 6      // and LIGHTING_SKY_T t6, LIGHTING_SKY_S s6
 //     #define LIGHTING_RADIANCE_BINDING 7 // and LIGHTING_RADIANCE_T t7, LIGHTING_RADIANCE_S s7
-// The frame's uniforms are always uniform buffer 0 of the fragment shader.
+//     #define LIGHTING_SPOT_SHADOW_BINDING 8 // and LIGHTING_SPOT_SHADOW_T t8, LIGHTING_SPOT_SHADOW_S s8
+//     #define LIGHTING_LIGHT_DATA_BINDING 10 // and LIGHTING_LIGHT_DATA_T t10: the lights' storage buffer, after all textures
+// The frame's uniforms are always uniform buffer 0 of the fragment shader, the point and
+// spot lights (lights.hlsli) uniform buffer 3.
 #include "common.hlsli"
 
 // All shadow cascades side by side in one depth image (2 x 2 tiles).
@@ -46,6 +49,14 @@ SamplerState sky_occlusion_sampler : register(LIGHTING_SKY_S, space2);
 TextureCube<float4> sky_radiance_texture : register(LIGHTING_RADIANCE_T, space2);
 [[vk::combinedImageSampler]][[vk::binding(LIGHTING_RADIANCE_BINDING, 2)]]
 SamplerState sky_radiance_sampler : register(LIGHTING_RADIANCE_S, space2);
+
+// The shadows of up to four spot lights, 2 x 2 tiles (passes/spot_shadow_pass.cpp).
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_SPOT_SHADOW_BINDING, 2)]]
+Texture2D<float> spot_shadow_texture : register(LIGHTING_SPOT_SHADOW_T, space2);
+[[vk::combinedImageSampler]][[vk::binding(LIGHTING_SPOT_SHADOW_BINDING, 2)]]
+SamplerComparisonState spot_shadow_sampler : register(LIGHTING_SPOT_SHADOW_S, space2);
+
+#include "lights.hlsli"
 
 cbuffer FrameUniforms : register(b0, space3) {
     float4x4 shadow_matrices[4];  // world position -> shadow image coordinates and depth, per cascade
@@ -304,6 +315,86 @@ float3 ApplyDistanceFog(float3 color, float3 world_position) {
     return ApplyAerialPerspective(color, world_position);
 }
 
+// What a surface sends towards the camera of light arriving from `to_light`: a GGX highlight
+// and the diffuse part. Light units are chosen so that a white, rough surface facing a light
+// reflects exactly the light's color; the highlight is scaled by pi to match.
+float3 SurfaceReflection(float3 normal, float3 to_camera, float3 to_light, float3 diffuse_color, float3 specular_color,
+                         float roughness, float n_dot_v) {
+    float n_dot_l = saturate(dot(normal, to_light));
+    float3 half_vector = normalize(to_light + to_camera);
+    float n_dot_h = saturate(dot(normal, half_vector));
+    float v_dot_h = saturate(dot(to_camera, half_vector));
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denominator = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+    float distribution = a2 / (kPi * denominator * denominator);
+    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    float geometry = (n_dot_l / (n_dot_l * (1.0 - k) + k)) * (n_dot_v / (n_dot_v * (1.0 - k) + k));
+    float3 fresnel = specular_color + (1.0 - specular_color) * pow(1.0 - v_dot_h, 5.0);
+    float3 specular = distribution * geometry * fresnel / max(4.0 * n_dot_l * n_dot_v, 0.0001);
+    return (diffuse_color * (1.0 - fresnel) + specular * kPi) * n_dot_l;
+}
+
+// Share of a spot light's light reaching a point past what its shadow image holds: 3 x 3
+// comparisons one shadow pixel apart, the point moved off the surface along its normal by
+// about a shadow pixel's size at that distance.
+float SpotShadow(int tile, float3 world_position, float3 normal, float distance) {
+    float4 position = mul(spot_shadow_matrices[tile], float4(world_position + normal * (distance * 0.003 + 0.01), 1.0));
+    float3 shadow_position = position.xyz / position.w;
+    const float texel = 1.0 / 2048.0;
+    float lit = 0.0;
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            lit += spot_shadow_texture.SampleCmpLevelZero(spot_shadow_sampler, shadow_position.xy + float2(x, y) * texel, shadow_position.z);
+        }
+    }
+    return lit / 9.0;
+}
+
+// One point or spot light as it arrives at a point, with its shadow for a spot light that has one.
+float3 LocalLightWithShadow(LocalLight light, float3 position, float3 shadow_normal, out float3 to_local) {
+    float local_distance;
+    float3 arriving = LocalLightArriving(light, position, to_local, local_distance);
+    if (light.inner_shadow.y >= 0.0) {
+        arriving *= SpotShadow((int)light.inner_shadow.y, position, shadow_normal, local_distance);
+    }
+    return arriving;
+}
+
+// The point and spot lights listed for a pixel's tile, reflected by a surface.
+float3 LocalLightsOnSurface(float2 pixel, float3 position, float3 surface_normal, float3 normal, float3 to_camera,
+                            float3 diffuse_color, float3 specular_color, float roughness, float n_dot_v) {
+    float3 total = float3(0.0, 0.0, 0.0);
+    uint2 mask = LightMask(pixel);
+    [loop] for (int part = 0; part < 2; ++part) {
+        uint bits = part == 0 ? mask.x : mask.y;
+        [loop] while (bits != 0u) {
+            uint bit = firstbitlow(bits);
+            bits &= bits - 1u;
+            float3 to_local;
+            float3 arriving = LocalLightWithShadow(LoadLocalLight(part * 32 + (int)bit), position, surface_normal, to_local);
+            total += SurfaceReflection(normal, to_camera, to_local, diffuse_color, specular_color, roughness, n_dot_v) * arriving;
+        }
+    }
+    return total;
+}
+
+// Point and spot light on a particle lit the simple way: all that arrives, whatever its facing.
+float3 LocalLightsSimple(float2 pixel, float3 position) {
+    float3 total = float3(0.0, 0.0, 0.0);
+    uint2 mask = LightMask(pixel);
+    [loop] for (int part = 0; part < 2; ++part) {
+        uint bits = part == 0 ? mask.x : mask.y;
+        [loop] while (bits != 0u) {
+            uint bit = firstbitlow(bits);
+            bits &= bits - 1u;
+            float3 to_local;
+            total += LocalLightWithShadow(LoadLocalLight(part * 32 + (int)bit), position, float3(0.0, 0.0, 0.0), to_local);
+        }
+    }
+    return total;
+}
+
 // The color of a surface point under the frame's light, in linear wide-range values.
 float3 ShadeSurface(Surface surface) {
     float3 base_color = surface.base_color;
@@ -331,22 +422,7 @@ float3 ShadeSurface(Surface surface) {
         float visibility = SunVisibility(surface.world_position, surface.surface_normal) * CloudShadow(surface.world_position);
         float3 sun = light_color.rgb * visibility;
 
-        // Specular highlight (GGX microfacet model).
-        float3 half_vector = normalize(to_light + to_camera);
-        float n_dot_h = saturate(dot(normal, half_vector));
-        float v_dot_h = saturate(dot(to_camera, half_vector));
-        float a = roughness * roughness;
-        float a2 = a * a;
-        float denominator = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
-        float distribution = a2 / (kPi * denominator * denominator);
-        float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
-        float geometry = (n_dot_l / (n_dot_l * (1.0 - k) + k)) * (n_dot_v / (n_dot_v * (1.0 - k) + k));
-        float3 fresnel = specular_color + (1.0 - specular_color) * pow(1.0 - v_dot_h, 5.0);
-        float3 specular = distribution * geometry * fresnel / max(4.0 * n_dot_l * n_dot_v, 0.0001);
-
-        // Light units are chosen so that a white, rough surface facing the sun reflects exactly
-        // the sun's color; the highlight is scaled by pi to match.
-        color += (diffuse_color * (1.0 - fresnel) + specular * kPi) * sun * n_dot_l;
+        color += SurfaceReflection(normal, to_camera, to_light, diffuse_color, specular_color, roughness, n_dot_v) * sun;
 
         // Thin foliage lets light through: a leaf lit from behind glows on the near side, in
         // a warmer, more saturated green than its lit face (light passes the leaf's color
@@ -358,6 +434,10 @@ float3 ShadeSurface(Surface surface) {
             color += transmitted_color * sun * foliage.x * (back_light * 0.6 + through * 1.4);
         }
     }
+
+    // --- Point and spot lights listed for this pixel's tile ---
+    color += LocalLightsOnSurface(surface.pixel, surface.world_position, surface.surface_normal, normal, to_camera, diffuse_color,
+                                  specular_color, roughness, n_dot_v);
 
     // --- Ambient light: from the sky above and the ground below ---
     // Hills and tree crowns around a place hide part of the sky (large-scale occlusion): the

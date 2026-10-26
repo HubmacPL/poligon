@@ -143,6 +143,7 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
                                            environment.sky_light ? 1.0f : 0.0f,
                                            1.0f / static_cast<float>(impl.config.shadow_map_size * 2));
         SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
+        impl.PushLightUniforms(commands, pass, frame.width, frame.height);
 
         SDL_GPUGraphicsPipeline* bound_pipeline = nullptr;
         for (const std::uint32_t command_index : impl.visible_commands) {
@@ -155,9 +156,9 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
             const MaterialUniforms material_uniforms = Impl::MakeMaterialUniforms(material, impl.temporal_noise_offset);
             SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-            SDL_GPUTextureSamplerBinding bindings[9]{};
+            SDL_GPUTextureSamplerBinding bindings[10]{};
             impl.FillMeshBindings(material, ao_on, bindings);
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 10);
             impl.DrawCommandGeometry(pass, command);
         }
         impl.DrawInstanceBatches(commands, pass, scene_after_depth ? kSceneAfterDepthPass : kScenePass, 0, ao_on,

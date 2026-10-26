@@ -6,6 +6,8 @@
 //
 // Output: rgb = light added by the fog, a = part of the scene's light that gets through.
 #include "common.hlsli"
+#define LIGHTS_NO_UNIFORMS
+#include "lights.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
 Texture2D<float> depth_texture : register(t0, space2);
@@ -42,6 +44,8 @@ cbuffer FogUniforms : register(b0, space3) {
     float4 options;          // x: shadows on, y: farthest distance walked, zw: size of the depth image in pixels
     float4 quality;          // x: steps along each line of sight, y: the sky light map's level for roughness 1, z: share of the sky's color in the fog
     float4 cloud_shadow_area;  // xy: world x and z of the cloud shadow image's corner, z: 1 / its size, w: 1 = on
+    LocalLight fog_lights[4];  // the point and spot lights nearest the camera (lights.hlsli)
+    float4 fog_light_count;    // x: how many of them
 };
 
 struct FragmentInput {
@@ -75,6 +79,30 @@ float SunVisibility(float3 world_position) {
     }
     float4 shadow_position = mul(shadow_matrices[cascade], float4(world_position, 1.0));
     return shadow_texture.SampleCmpLevelZero(shadow_sampler, shadow_position.xy, shadow_position.z) * CloudShadow(world_position);
+}
+
+// Point and spot light scattered towards the camera by the fog along one step of the walk,
+// per unit of fog density, without the lights' shadows: evenly in every direction (a quarter of
+// what arrives in the light's units: the even phase function 1 / (4 pi) times pi). The falling
+// off with the square of the distance is integrated exactly over the step (the integral of
+// 1 / (h^2 + t^2) is atan(t / h) / h), because a step can be meters long and a sample next to a
+// lamp would flash; the range's fade and a spot's cone are taken at the step's jittered point
+// (`sample_at`), whose noise temporal anti-aliasing averages away like the rest of the fog's.
+float3 LocalLightsInFog(float3 direction, float start, float end, float sample_at) {
+    float3 total = float3(0.0, 0.0, 0.0);
+    for (int l = 0; l < (int)fog_light_count.x; ++l) {
+        LocalLight light = fog_lights[l];
+        float3 to_light = light.position_range.xyz - camera_position.xyz;
+        float along = dot(to_light, direction);
+        float passing = max(length(to_light - direction * along), 0.05);
+        float integral = (atan((end - along) / passing) - atan((start - along) / passing)) / passing;
+        float3 to_point;
+        float point_distance;
+        // LocalLightArriving's falling off is replaced by the integral: times the squared distance.
+        float3 arriving = LocalLightArriving(light, camera_position.xyz + direction * sample_at, to_point, point_distance);
+        total += arriving * max(point_distance * point_distance, 0.01) * integral * 0.25;
+    }
+    return total;
 }
 
 float4 main(FragmentInput input) : SV_Target0 {
@@ -123,7 +151,7 @@ float4 main(FragmentInput input) : SV_Target0 {
         float blocked = 1.0 - exp(-density * (end - start));
         float visibility = SunVisibility(position);
         float3 light = fog_light * lerp(fog_shape.w, 1.0, visibility) + sun_glow * visibility;
-        added_light += let_through * blocked * light;
+        added_light += let_through * (blocked * light + density * LocalLightsInFog(direction, start, end, lerp(start, end, jitter)));
         let_through *= 1.0 - blocked;
     }
     return float4(added_light, let_through);

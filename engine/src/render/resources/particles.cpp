@@ -13,8 +13,8 @@ namespace poligon {
 void Renderer::Impl::CreateParticlePipelines() {
     SDL_GPUShader* vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 1, kParticleVertDxil, sizeof(kParticleVertDxil),
                                          kParticleVertSpirv, sizeof(kParticleVertSpirv), 1);
-    SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kParticleFragDxil, sizeof(kParticleFragDxil),
-                                           kParticleFragSpirv, sizeof(kParticleFragSpirv));
+    SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 4, kParticleFragDxil, sizeof(kParticleFragDxil),
+                                           kParticleFragSpirv, sizeof(kParticleFragSpirv), 1);
     particles.alpha_pipeline = CreateFullscreenPipeline(vertex, fragment, kSceneFormat, FullscreenBlend::Mix);
     particles.additive_pipeline = CreateFullscreenPipeline(vertex, fragment, kSceneFormat, FullscreenBlend::Add);
     SDL_ReleaseGPUShader(device, vertex);

@@ -19,6 +19,12 @@
 #define LIGHTING_RADIANCE_BINDING 7
 #define LIGHTING_RADIANCE_T t7
 #define LIGHTING_RADIANCE_S s7
+#define LIGHTING_SPOT_SHADOW_BINDING 8
+#define LIGHTING_SPOT_SHADOW_T t8
+#define LIGHTING_SPOT_SHADOW_S s8
+// The lights' storage buffer comes after the 9 textures.
+#define LIGHTING_LIGHT_DATA_BINDING 9
+#define LIGHTING_LIGHT_DATA_T t9
 #include "lighting.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]

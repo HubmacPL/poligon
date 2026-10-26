@@ -187,8 +187,8 @@ void Renderer::Impl::DrawFullscreenToCube(SDL_GPUCommandBuffer* commands, SDL_GP
 void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* mesh_vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kMeshVertDxil, sizeof(kMeshVertDxil),
                                               kMeshVertSpirv, sizeof(kMeshVertSpirv));
-    SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 2, kMeshFragDxil,
-                                                sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv));
+    SDL_GPUShader* mesh_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 10, 4, kMeshFragDxil,
+                                                sizeof(kMeshFragDxil), kMeshFragSpirv, sizeof(kMeshFragSpirv), 1);
     SDL_GPUShader* shadow_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kShadowFragDxil,
                                                   sizeof(kShadowFragDxil), kShadowFragSpirv, sizeof(kShadowFragSpirv));
     SDL_GPUShader* depth_motion_fragment =
@@ -340,8 +340,8 @@ void Renderer::Impl::CreatePipelines() {
     // ("greater or equal" with reversed depth: the surface the depth pass kept) before
     // the shader runs, writing no depth.
     SDL_GPUShader* after_depth_fragment =
-        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 2, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
-                     kMeshAfterDepthFragSpirv, sizeof(kMeshAfterDepthFragSpirv));
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 10, 4, kMeshAfterDepthFragDxil, sizeof(kMeshAfterDepthFragDxil),
+                     kMeshAfterDepthFragSpirv, sizeof(kMeshAfterDepthFragSpirv), 1);
     after_depth_info = mesh_info;
     after_depth_info.fragment_shader = after_depth_fragment;
     after_depth_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
@@ -357,8 +357,8 @@ void Renderer::Impl::CreatePipelines() {
     // (one sample per pixel), mixed over it by their alpha. No depth target: the shader tests
     // the depth pass's image, which it also reads for fog.
     SDL_GPUShader* blend_fragment =
-        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 11, 3, kMeshBlendFragDxil, sizeof(kMeshBlendFragDxil), kMeshBlendFragSpirv,
-                     sizeof(kMeshBlendFragSpirv));
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 12, 4, kMeshBlendFragDxil, sizeof(kMeshBlendFragDxil), kMeshBlendFragSpirv,
+                     sizeof(kMeshBlendFragSpirv), 1);
     SDL_GPUColorTargetDescription blend_color_description = scene_color_description;
     blend_color_description.blend_state.enable_blend = true;
     blend_color_description.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
@@ -418,8 +418,8 @@ void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* terrain_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 1, 3, kTerrainVertDxil, sizeof(kTerrainVertDxil), kTerrainVertSpirv,
                      sizeof(kTerrainVertSpirv), 1);
-    SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 10, 2, kTerrainFragDxil,
-                                                   sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv));
+    SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 11, 4, kTerrainFragDxil,
+                                                   sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv), 1);
     const auto create_terrain = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUShader* fragment,
                                     SDL_GPUCullMode cull_mode) {
         info.vertex_shader = terrain_vertex;
@@ -443,8 +443,8 @@ void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* impostor_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 2, kImpostorVertDxil, sizeof(kImpostorVertDxil), kImpostorVertSpirv,
                      sizeof(kImpostorVertSpirv), 1);
-    SDL_GPUShader* impostor_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kImpostorFragDxil,
-                                                    sizeof(kImpostorFragDxil), kImpostorFragSpirv, sizeof(kImpostorFragSpirv));
+    SDL_GPUShader* impostor_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 4, kImpostorFragDxil,
+                                                    sizeof(kImpostorFragDxil), kImpostorFragSpirv, sizeof(kImpostorFragSpirv), 1);
     SDL_GPUShader* impostor_depth_fragment =
         CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1, kImpostorDepthFragDxil, sizeof(kImpostorDepthFragDxil),
                      kImpostorDepthFragSpirv, sizeof(kImpostorDepthFragSpirv));
@@ -463,8 +463,8 @@ void Renderer::Impl::CreatePipelines() {
     impostor_pipelines[kScenePass] = create_impostor(mesh_info, impostor_fragment);
     impostor_pipelines[kDepthPass] = create_impostor(prepass_info, impostor_depth_fragment);
     SDL_GPUShader* impostor_after_depth_fragment =
-        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
-                     kImpostorAfterDepthFragSpirv, sizeof(kImpostorAfterDepthFragSpirv));
+        CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 4, kImpostorAfterDepthFragDxil, sizeof(kImpostorAfterDepthFragDxil),
+                     kImpostorAfterDepthFragSpirv, sizeof(kImpostorAfterDepthFragSpirv), 1);
     impostor_pipelines[kSceneAfterDepthPass] = create_impostor(after_depth_info, impostor_after_depth_fragment);
     SDL_ReleaseGPUShader(device, impostor_after_depth_fragment);
     SDL_ReleaseGPUShader(device, impostor_vertex);
@@ -551,8 +551,8 @@ void Renderer::Impl::CreatePipelines() {
 
     // --- Water: a mesh drawn over the single-sample scene, testing and writing depth. ---
     {
-        SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 2, kWaterFragDxil,
-                                                     sizeof(kWaterFragDxil), kWaterFragSpirv, sizeof(kWaterFragSpirv));
+        SDL_GPUShader* water_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 4, kWaterFragDxil,
+                                                     sizeof(kWaterFragDxil), kWaterFragSpirv, sizeof(kWaterFragSpirv), 1);
         SDL_GPUGraphicsPipelineCreateInfo water_info = mesh_info;
         water_info.fragment_shader = water_fragment;
         water_info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;

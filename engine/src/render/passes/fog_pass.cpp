@@ -48,6 +48,12 @@ void Renderer::Impl::RenderFogPass(FrameContext& frame) {
                                          static_cast<float>(kSkyRadianceLevels - 2),
                                          use_sky_map ? glm::clamp(environment.fog_sky_color, 0.0f, 1.0f) : 0.0f, 0.0f);
         const glm::vec2 corner(cloud_shadow_corner - glm::dvec2(camera.position.x, camera.position.z));
+        // The four lights nearest the camera light the fog too (PrepareLights sorts them so).
+        const int local_count = std::min(static_cast<int>(impl.lights.uniforms.info.x), 4);
+        for (int i = 0; i < local_count; ++i) {
+            fog_uniforms.local_lights[i] = impl.lights.data.lights[i];
+        }
+        fog_uniforms.local_light_count = glm::vec4(static_cast<float>(local_count), 0.0f, 0.0f, 0.0f);
         fog_uniforms.cloud_shadow_area = glm::vec4(corner, 1.0f / cloud_shadow_size,
                                                    clouds_on && environment.cloud_shadows ? 1.0f : 0.0f);
         SDL_GPUTextureSamplerBinding bindings[4]{};

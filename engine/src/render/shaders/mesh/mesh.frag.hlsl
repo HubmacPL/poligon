@@ -21,6 +21,17 @@
 #define LIGHTING_RADIANCE_BINDING 7
 #define LIGHTING_RADIANCE_T t7
 #define LIGHTING_RADIANCE_S s7
+#define LIGHTING_SPOT_SHADOW_BINDING 8
+#define LIGHTING_SPOT_SHADOW_T t8
+#define LIGHTING_SPOT_SHADOW_S s8
+// The lights' storage buffer comes after the textures: 10, or 12 in the blend pass.
+#ifdef BLENDED
+#define LIGHTING_LIGHT_DATA_BINDING 12
+#define LIGHTING_LIGHT_DATA_T t12
+#else
+#define LIGHTING_LIGHT_DATA_BINDING 10
+#define LIGHTING_LIGHT_DATA_T t10
+#endif
 #include "lighting.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
@@ -40,10 +51,10 @@ Texture2D<float4> orm_texture : register(t2, space2);
 SamplerState orm_sampler : register(s2, space2);
 
 // Emitted light, multiplied by Material::emissive (a color texture).
-[[vk::combinedImageSampler]][[vk::binding(8, 2)]]
-Texture2D<float4> emissive_texture : register(t8, space2);
-[[vk::combinedImageSampler]][[vk::binding(8, 2)]]
-SamplerState emissive_sampler : register(s8, space2);
+[[vk::combinedImageSampler]][[vk::binding(9, 2)]]
+Texture2D<float4> emissive_texture : register(t9, space2);
+[[vk::combinedImageSampler]][[vk::binding(9, 2)]]
+SamplerState emissive_sampler : register(s9, space2);
 
 cbuffer MaterialUniforms : register(b1, space3) {
     float4 material_factors;  // x: metallic, y: roughness, z: alpha cutoff, w: the frame's noise offset
@@ -55,15 +66,15 @@ cbuffer MaterialUniforms : register(b1, space3) {
 #ifdef BLENDED
 // The blend pass: the volumetric fog image (rgb: light the fog adds in front of the scene,
 // a: the part of the scene let through) and the scene's depth (the depth pass's image).
-[[vk::combinedImageSampler]][[vk::binding(9, 2)]]
-Texture2D<float4> fog_texture : register(t9, space2);
-[[vk::combinedImageSampler]][[vk::binding(9, 2)]]
-SamplerState fog_sampler : register(s9, space2);
+[[vk::combinedImageSampler]][[vk::binding(10, 2)]]
+Texture2D<float4> fog_texture : register(t10, space2);
+[[vk::combinedImageSampler]][[vk::binding(10, 2)]]
+SamplerState fog_sampler : register(s10, space2);
 
-[[vk::combinedImageSampler]][[vk::binding(10, 2)]]
-Texture2D<float> scene_depth_texture : register(t10, space2);
-[[vk::combinedImageSampler]][[vk::binding(10, 2)]]
-SamplerState scene_depth_sampler : register(s10, space2);
+[[vk::combinedImageSampler]][[vk::binding(11, 2)]]
+Texture2D<float> scene_depth_texture : register(t11, space2);
+[[vk::combinedImageSampler]][[vk::binding(11, 2)]]
+SamplerState scene_depth_sampler : register(s11, space2);
 
 cbuffer BlendUniforms : register(b2, space3) {
     float4 blend_fog;     // x: 1 = volumetric fog, y: density at the base height, z: height falloff, w: base height relative to the camera

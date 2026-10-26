@@ -17,6 +17,12 @@
 #define LIGHTING_RADIANCE_BINDING 6
 #define LIGHTING_RADIANCE_T t6
 #define LIGHTING_RADIANCE_S s6
+#define LIGHTING_SPOT_SHADOW_BINDING 7
+#define LIGHTING_SPOT_SHADOW_T t7
+#define LIGHTING_SPOT_SHADOW_S s7
+// The lights' storage buffer comes after the 8 textures.
+#define LIGHTING_LIGHT_DATA_BINDING 8
+#define LIGHTING_LIGHT_DATA_T t8
 #include "lighting.hlsli"
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
@@ -61,7 +67,7 @@ float4 main(FragmentInput input) : SV_Target0 {
         float3 to_camera = normalize(camera_position.xyz - input.world_position);
         float sun = SunVisibility(input.world_position, to_camera) * CloudShadow(input.world_position);
         float3 ambient = sky_radiance.y > 0.5 ? SkyIrradiance(float3(0.0, 1.0, 0.0)) : ambient_sky.rgb;
-        color *= light_color.rgb * sun + ambient;
+        color *= light_color.rgb * sun + ambient + LocalLightsSimple(input.clip_position.xy, input.world_position);
     }
     color = ApplyDistanceFog(color, input.world_position);
     // Additive: light added in proportion to alpha; alpha blending: covered by alpha.

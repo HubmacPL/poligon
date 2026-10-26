@@ -11,6 +11,9 @@ void Renderer::Impl::AddLightingBindings(SDL_GPUTextureSamplerBinding* bindings)
     bindings[1].sampler = linear_clamp_sampler;
     bindings[2].texture = sky_radiance;
     bindings[2].sampler = cube_sampler;
+    // Without spot light shadows the sun's image stands in (a depth image is needed; never read).
+    bindings[3].texture = lights.shadowed_count > 0 ? lights.spot_shadow_atlas : shadow_atlas;
+    bindings[3].sampler = shadow_sampler;
 }
 
 void Renderer::Impl::FillMeshBindings(const Material& material, bool ao_on, SDL_GPUTextureSamplerBinding* bindings) const {
@@ -25,8 +28,8 @@ void Renderer::Impl::FillMeshBindings(const Material& material, bool ao_on, SDL_
     bindings[4].texture = ao_on ? ao_target : textures[white_texture.id - 1];
     bindings[4].sampler = clamp_sampler;
     AddLightingBindings(&bindings[5]);
-    bindings[8].texture = GetTexture(material.emissive_texture, white_texture);
-    bindings[8].sampler = texture_sampler;
+    bindings[9].texture = GetTexture(material.emissive_texture, white_texture);
+    bindings[9].sampler = texture_sampler;
 }
 
 void Renderer::Impl::DrawCommandGeometry(SDL_GPURenderPass* pass, const DrawCommand& command) {
@@ -156,13 +159,13 @@ void Renderer::Impl::DrawInstanceBatches(SDL_GPUCommandBuffer* commands, SDL_GPU
 
         if (bound_material == nullptr || !SameFragmentBindings(*bound_material, material)) {
             const MaterialUniforms material_uniforms = MakeMaterialUniforms(material, temporal_noise_offset);
-            SDL_GPUTextureSamplerBinding bindings[9]{};
+            SDL_GPUTextureSamplerBinding bindings[10]{};
             bindings[0].texture = GetTexture(material.texture, white_texture);
             bindings[0].sampler = texture_sampler;
             if (IsScenePass(mesh_pass)) {
                 SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
                 FillMeshBindings(material, ao_on, bindings);
-                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
+                SDL_BindGPUFragmentSamplers(pass, 0, bindings, 10);
             } else {
                 // The depth-only passes need the material only to cut out leaves.
                 SDL_PushGPUFragmentUniformData(commands, 0, &material_uniforms, sizeof(material_uniforms));
@@ -250,7 +253,7 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
                                                  0.5f / weight_size.y - border * weight_scale.y);
         SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
 
-        SDL_GPUTextureSamplerBinding bindings[10]{};
+        SDL_GPUTextureSamplerBinding bindings[11]{};
         bindings[0].texture = terrain.height_texture;
         bindings[0].sampler = linear_clamp_sampler;
         bindings[1].texture = GetTexture(textured ? look.colors : white_array_texture, white_array_texture);
@@ -267,7 +270,7 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
         bindings[6].texture = ao_on ? ao_target : textures[white_texture.id - 1];
         bindings[6].sampler = clamp_sampler;
         AddLightingBindings(&bindings[7]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 10);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 11);
     } else {
         // The depth-only passes use the leaf-cutting shader with nothing to cut.
         MaterialUniforms material_uniforms{};
@@ -309,7 +312,7 @@ void Renderer::Impl::DrawImpostorBatch(SDL_GPUCommandBuffer* commands, SDL_GPURe
     ImpostorMaterial material;
     material.material = glm::vec4(kImpostorAlphaCutoff, kImpostorRoughness, temporal_noise_offset, 0.0f);
 
-    SDL_GPUTextureSamplerBinding bindings[7]{};
+    SDL_GPUTextureSamplerBinding bindings[8]{};
     bindings[0].texture = textures[impostor.color.id - 1];
     bindings[0].sampler = texture_sampler;
     if (IsScenePass(mesh_pass)) {
@@ -321,7 +324,7 @@ void Renderer::Impl::DrawImpostorBatch(SDL_GPUCommandBuffer* commands, SDL_GPURe
         bindings[3].texture = ao_on ? ao_target : textures[white_texture.id - 1];
         bindings[3].sampler = clamp_sampler;
         AddLightingBindings(&bindings[4]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 8);
     } else {
         SDL_PushGPUFragmentUniformData(commands, 0, &material, sizeof(material));
         SDL_BindGPUFragmentSamplers(pass, 0, bindings, 1);
@@ -344,6 +347,9 @@ void Renderer::Impl::CullInstances(const glm::mat4& view_projection, const Casca
     volumes[0] = MakeViewVolume(view_projection, true);
     for (int cascade = 0; cascade < kCascadeCount && cascades != nullptr; ++cascade) {
         volumes[1 + cascade] = MakeViewVolume(cascades->light_view_projection[cascade], false);
+    }
+    for (int spot = 0; spot < lights.shadowed_count; ++spot) {
+        volumes[kSpotShadowList + spot] = MakeViewVolume(lights.spot_view_projection[spot], false);
     }
     for (InstanceBatch& batch : instance_batches) {
         // A sphere around the mesh; each instance moves and scales it.
@@ -375,8 +381,11 @@ void Renderer::Impl::CullInstances(const glm::mat4& view_projection, const Casca
         for (int list = 0; list < kInstanceListCount; ++list) {
             batch.list_first[list] = static_cast<std::uint32_t>(instance_data.size());
             batch.list_count[list] = 0;
-            const bool wanted = list == 0 ? batch.options.draw_in_view
-                                          : cascades != nullptr && (batch.options.shadow_cascades >> (list - 1)) & 1;
+            // Spot lights take shadows from instanced meshes that cast any, not from terrain or impostors.
+            const bool wanted = list == 0                ? batch.options.draw_in_view
+                                : list < kSpotShadowList ? cascades != nullptr && (batch.options.shadow_cascades >> (list - 1)) & 1
+                                                         : list - kSpotShadowList < lights.shadowed_count && batch.terrain_id == 0 &&
+                                                               batch.impostor_id == 0 && batch.options.shadow_cascades != 0;
             if (!wanted) {
                 continue;
             }
@@ -386,8 +395,9 @@ void Renderer::Impl::CullInstances(const glm::mat4& view_projection, const Casca
             // their pixels are shaded, which matters most in shadow cascades, where tree
             // crowns overlap many times. Ties keep the instances' order, so the result is
             // the same on every run.
-            const glm::mat4& list_projection =
-                list == 0 ? view_projection : cascades->light_view_projection[list - 1];
+            const glm::mat4& list_projection = list == 0                ? view_projection
+                                               : list < kSpotShadowList ? cascades->light_view_projection[list - 1]
+                                                                        : lights.spot_view_projection[list - kSpotShadowList];
             sorted_instances.clear();
             for (std::uint32_t i = 0; i < batch.count; ++i) {
                 const glm::vec4& sphere = instance_spheres[i];

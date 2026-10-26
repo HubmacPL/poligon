@@ -15,6 +15,7 @@ add_library(poligon_render STATIC
   passes/overlay_pass.cpp
   passes/scene_pass.cpp
   passes/shadow_pass.cpp
+  passes/spot_shadow_pass.cpp
   passes/sky_light_pass.cpp
   passes/temporal_aa_pass.cpp
   passes/water_pass.cpp
@@ -31,6 +32,7 @@ add_library(poligon_render STATIC
   resources/fonts.cpp
   resources/impostor_file.cpp
   resources/impostors.cpp
+  resources/lights.cpp
   resources/meshes.cpp
   resources/overlay.cpp
   resources/particles.cpp
@@ -57,6 +59,7 @@ set(POLIGON_SHADER_SHARED
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/impostor.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/clouds.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/atmosphere.hlsli
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/lights.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh/mesh.frag.hlsl
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vegetation/impostor.frag.hlsl)
 

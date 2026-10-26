@@ -49,6 +49,7 @@ void Renderer::Impl::RenderDecalPass(FrameContext& frame) {
     SDL_BindGPUGraphicsPipeline(pass, decals.pipeline);
     SDL_BindGPUVertexStorageBuffers(pass, 0, &decals.buffer.buffer, 1);
     SDL_PushGPUFragmentUniformData(commands, 0, &frame.frame_uniforms, sizeof(frame.frame_uniforms));
+    PushLightUniforms(commands, pass, frame.width, frame.height);
     const glm::mat4 inverse_view_projection = glm::inverse(view_projection);
     for (const Run& run : runs) {
         const DecalMaterial& material = decals.commands[run.command].material;
@@ -65,7 +66,7 @@ void Renderer::Impl::RenderDecalPass(FrameContext& frame) {
         uniforms.surface = glm::vec4(material.metallic, glm::clamp(material.roughness, 0.0f, 1.0f), glm::clamp(material.edge_fade, 0.0f, 1.0f),
                                      std::cos(glm::radians(glm::clamp(material.max_angle_degrees, 0.0f, 180.0f))));
         SDL_PushGPUFragmentUniformData(commands, 1, &uniforms, sizeof(uniforms));
-        SDL_GPUTextureSamplerBinding bindings[8]{};
+        SDL_GPUTextureSamplerBinding bindings[9]{};
         bindings[0].texture = GetTexture(material.texture, white_texture);
         bindings[0].sampler = linear_clamp_sampler;
         bindings[1].texture = GetTexture(material.normal_texture, flat_normal_texture);
@@ -77,7 +78,7 @@ void Renderer::Impl::RenderDecalPass(FrameContext& frame) {
         bindings[4].texture = frame.ao_on ? ao_target : textures[white_texture.id - 1];
         bindings[4].sampler = clamp_sampler;
         AddLightingBindings(&bindings[5]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 8);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 9);
         SDL_DrawGPUPrimitives(pass, 36, run.count, 0, 0);
     }
     SDL_EndGPURenderPass(pass);

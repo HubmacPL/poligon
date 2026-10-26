@@ -55,6 +55,7 @@ void Renderer::Impl::RenderBlendPass(FrameContext& frame) {
     FragmentFrameUniforms frame_uniforms = frame.frame_uniforms;
     frame_uniforms.screen.x = 0.0f;
     SDL_PushGPUFragmentUniformData(commands, 0, &frame_uniforms, sizeof(frame_uniforms));
+    PushLightUniforms(commands, pass, frame.width, frame.height);
     BlendUniforms blend_uniforms;
     blend_uniforms.fog = glm::vec4(frame.fog_on ? 1.0f : 0.0f, environment.fog_density, environment.fog_height_falloff,
                                    static_cast<float>(static_cast<double>(environment.fog_base_height) - camera.position.y));
@@ -70,13 +71,13 @@ void Renderer::Impl::RenderBlendPass(FrameContext& frame) {
         SDL_PushGPUVertexUniformData(commands, 1, &object_uniforms, sizeof(object_uniforms));
         const MaterialUniforms material_uniforms = MakeMaterialUniforms(command.material, temporal_noise_offset);
         SDL_PushGPUFragmentUniformData(commands, 1, &material_uniforms, sizeof(material_uniforms));
-        SDL_GPUTextureSamplerBinding bindings[11]{};
+        SDL_GPUTextureSamplerBinding bindings[12]{};
         FillMeshBindings(command.material, false, bindings);
-        bindings[9].texture = frame.fog_on ? fog_target : frame.white;
-        bindings[9].sampler = linear_clamp_sampler;
-        bindings[10].texture = prepass_depth;
-        bindings[10].sampler = clamp_sampler;
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 11);
+        bindings[10].texture = frame.fog_on ? fog_target : frame.white;
+        bindings[10].sampler = linear_clamp_sampler;
+        bindings[11].texture = prepass_depth;
+        bindings[11].sampler = clamp_sampler;
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 12);
         DrawCommandGeometry(pass, command);
     }
     SDL_EndGPURenderPass(pass);

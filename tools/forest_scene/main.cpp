@@ -11,11 +11,12 @@
 // (poligon/world/streaming.h): cooked into 512 m patches with the other assets, and loaded
 // in a window around the camera. Walking flattens grass into paths (poligon/world/trample.h).
 //
-// Usage: forest_scene [X Z TURN TILT [collision]] [standard Poligon options]
+// Usage: forest_scene [X Z TURN TILT [collision] [lights]] [standard Poligon options]
 //   X Z         where to stand, in meters from the start (default 0 0): a slope above
 //               the largest lake, chosen so that the lake is in view
 //   TURN TILT   where to look, in degrees (default: towards the lake, slightly down)
 //   collision   the word itself: start with the collision shapes shown
+//   lights      the word itself: 16 point lights around the camera (to measure what they cost)
 //   --render-settings FILE   the look to start with, as saved from the settings window
 //   --record FILE, --replay FILE   write or play back the input (docs/en/input.md)
 //
@@ -315,6 +316,7 @@ public:
         return land_->GetInfo().world_origin.y + static_cast<double>(LandAt(x, z)->maps.height.GetHeight(map_place.x, map_place.y));
     }
     void ShowCollision(bool show) { show_collision_ = show; }
+    void ShowTestLights(bool show) { test_lights_ = show; }
     // How fast the world's own time runs (wind, clouds, water, animals): 1 = real time,
     // 0 = stopped. The player and physics always run in real time. Also in the Simulation window.
     void SetTimeScale(float scale) { time_scale_ = glm::clamp(scale, 0.0f, 20.0f); }
@@ -477,6 +479,19 @@ public:
         }
         terrain_->Draw(camera);
         water_->Draw(renderer_, water_material_);
+        if (test_lights_) {
+            // Sixteen warm lamps in two rings around the camera, 6 and 14 m out, 1.5 m below it.
+            for (int i = 0; i < 16; ++i) {
+                const double angle = 6.2831853 * (static_cast<double>(i % 8) + (i < 8 ? 0.0 : 0.5)) / 8.0;
+                const double distance = i < 8 ? 6.0 : 14.0;
+                poligon::PointLight lamp;
+                lamp.position = camera.position + glm::dvec3(std::cos(angle) * distance, -1.5, std::sin(angle) * distance);
+                lamp.color = {1.0f, 0.7f, 0.4f, 1.0f};
+                lamp.intensity = 8.0f;
+                lamp.range = 12.0f;
+                renderer_.DrawLight(lamp);
+            }
+        }
         // Object ids (crates by body, foxes by number) let temporal anti-aliasing follow them.
         for (const poligon::BodyHandle crate : crates_) {
             poligon::Transform placed = physics_.GetTransform(crate);
@@ -1258,6 +1273,7 @@ private:
     poligon::MeshHandle cube_mesh_;
     poligon::Material crate_material_;
     bool show_collision_ = false;
+    bool test_lights_ = false;
 
     // Traces and weather (SetUpTracesAndWeather).
     poligon::FootprintTrail footprints_;
@@ -1409,8 +1425,10 @@ int main(int argc, char** argv) {
     // Default: at the start, looking towards the lake, slightly down.
     float view[4] = {0.0f, 0.0f, 0.0f, -6.0f};
     if (poligon::ParseCommandLine(argc, argv, options, error)) {
-        if (options.positional.size() > 5 || (options.positional.size() == 5 && options.positional[4] != "collision")) {
-            error = "expected at most X Z TURN TILT and the word collision";
+        for (size_t i = 4; i < options.positional.size(); ++i) {
+            if (options.positional[i] != "collision" && options.positional[i] != "lights") {
+                error = "expected at most X Z TURN TILT and the words collision and lights";
+            }
         }
         for (size_t i = 0; i < options.positional.size() && i < 4 && error.empty(); ++i) {
             char* end = nullptr;
@@ -1423,7 +1441,7 @@ int main(int argc, char** argv) {
     if (!error.empty()) {
         std::fprintf(stderr,
                      "forest_scene: %s\n"
-                     "usage: forest_scene [X Z TURN TILT [collision]] [--headless --ticks N] [--backend d3d12|vulkan]\n"
+                     "usage: forest_scene [X Z TURN TILT [collision] [lights]] [--headless --ticks N] [--backend d3d12|vulkan]\n"
                      "                    [--gpu-validation] [--dump-frame PATH.png] [--render-settings FILE]\n"
                      "                    [--quality low|medium|high|ultra] [--resolution WxH]\n",
                      error.c_str());
@@ -1504,7 +1522,16 @@ int main(int argc, char** argv) {
     const std::filesystem::path scene_folder = build_folder.parent_path() / "tools" / "forest_scene";
     ForestGame game(renderer, assets, build_folder, scene_folder / "assets.txt", scene_folder / "forest.level", input, actions, view,
                     options.positional.size() >= 3, settings, settings_path, options.headless);
-    game.ShowCollision(options.positional.size() == 5);
+    const auto has_word = [&options](const char* word) {
+        for (size_t i = 4; i < options.positional.size(); ++i) {
+            if (options.positional[i] == word) {
+                return true;
+            }
+        }
+        return false;
+    };
+    game.ShowCollision(has_word("collision"));
+    game.ShowTestLights(has_word("lights"));
     const double load_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - load_start).count();
     std::printf("forest_scene: loaded in %.1f s; quality %s, %d x %d\n", load_seconds,
                 poligon::GetGraphicsPresetName(settings.quality.preset), renderer.GetWidth(), renderer.GetHeight());

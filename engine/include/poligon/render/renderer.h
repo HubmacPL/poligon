@@ -344,6 +344,40 @@ struct TextureOptions {
     float coverage_cutoff = 0.0f;
 };
 
+// At most this many point and spot lights light a frame (the nearest to the camera); at most
+// kMaxShadowedSpotLights spot lights cast shadows.
+inline constexpr int kMaxLights = 64;
+inline constexpr int kMaxShadowedSpotLights = 4;
+
+// A light shining from a point in every direction: a lamp, a campfire, a lantern
+// (Renderer::DrawLight). It lights every surface the sun lights, particles lit the simple way,
+// and the volumetric fog (the four lights nearest the camera); it casts no shadow.
+struct PointLight {
+    glm::dvec3 position{0.0};
+    Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    // How bright: a white matte surface facing the light from 1 m away shows color times
+    // intensity, as one facing a sun of that color would; the light falls with the square of
+    // the distance.
+    float intensity = 1.0f;
+    // No light beyond this distance (meters); it fades smoothly to nothing before it.
+    float range = 10.0f;
+};
+
+// A light from a point within a cone: a flashlight, a headlamp, a car's lamp.
+struct SpotLight {
+    glm::dvec3 position{0.0};
+    glm::vec3 direction{0.0f, -1.0f, 0.0f};  // the cone's axis
+    Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    float intensity = 1.0f;  // as PointLight::intensity, along the axis
+    float range = 20.0f;
+    // Angles from the axis, in degrees: full light within the inner one, none beyond the outer.
+    float inner_angle_degrees = 15.0f;
+    float outer_angle_degrees = 25.0f;
+    // Cast shadows (from meshes, not from terrain or impostors), for the first
+    // kMaxShadowedSpotLights such lights of a frame by distance from the camera.
+    bool shadows = false;
+};
+
 // Identifies a render target (Renderer::CreateRenderTarget). An id of 0 means "the window"
 // (or, headless, the renderer's own picture).
 struct RenderTargetHandle {
@@ -520,6 +554,9 @@ struct MeshLodGroup {
 
 // What the last finished frame cost, for checking that culling works and where time goes.
 struct FrameStats {
+    // Point and spot lights that lit the frame, and those left out (beyond kMaxLights).
+    int lights_drawn = 0;
+    int lights_skipped = 0;
     // Time the processor spent in EndFrame preparing the frame (culling, copying instance
     // matrices, recording the commands), in milliseconds, and the time handing the commands
     // to the card took; the latter grows when the card is behind and the processor has to
@@ -840,6 +877,11 @@ public:
     // material are drawn in one call. Meant for hundreds a frame; each costs about the
     // pixels its box covers on screen.
     void DrawDecal(const Transform& transform, const DecalMaterial& material);
+
+    // A point or spot light for this frame (see PointLight, SpotLight). Between BeginFrame and
+    // EndFrame; at most kMaxLights light the frame, the nearest to the camera.
+    void DrawLight(const PointLight& light);
+    void DrawLight(const SpotLight& light);
 
     // Particles (poligon/render/particles.h): `count` cards facing the camera, with one texture
     // (an atlas of pictures, see ParticleOptions) and one way of blending. They are copied and

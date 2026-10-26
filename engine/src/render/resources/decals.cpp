@@ -23,8 +23,8 @@ bool SameDecalMaterial(const DecalMaterial& a, const DecalMaterial& b) {
 void Renderer::Impl::CreateDecalPipeline() {
     SDL_GPUShader* vertex = CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 1, kDecalVertDxil, sizeof(kDecalVertDxil), kDecalVertSpirv,
                                          sizeof(kDecalVertSpirv), 1);
-    SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 8, 2, kDecalFragDxil, sizeof(kDecalFragDxil), kDecalFragSpirv,
-                                           sizeof(kDecalFragSpirv));
+    SDL_GPUShader* fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 9, 4, kDecalFragDxil, sizeof(kDecalFragDxil), kDecalFragSpirv,
+                                           sizeof(kDecalFragSpirv), 1);
     // The box's back faces only: each pixel inside it is visited once, also from inside.
     decals.pipeline = CreateFullscreenPipeline(vertex, fragment, kSceneFormat, FullscreenBlend::Mix, SDL_GPU_CULLMODE_FRONT);
     SDL_ReleaseGPUShader(device, vertex);

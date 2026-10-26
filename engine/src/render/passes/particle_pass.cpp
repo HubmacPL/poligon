@@ -28,6 +28,7 @@ void Renderer::Impl::RenderParticlePass(FrameContext& frame) {
         FatalSdlError("cannot begin particle pass");
     }
     SDL_PushGPUFragmentUniformData(commands, 0, &frame.frame_uniforms, sizeof(frame.frame_uniforms));
+    PushLightUniforms(commands, pass, image_size.x, image_size.y);
     SDL_GPUGraphicsPipeline* bound = nullptr;
     for (const ParticleCall& call : particles.calls) {
         SDL_GPUGraphicsPipeline* pipeline =
@@ -51,7 +52,7 @@ void Renderer::Impl::RenderParticlePass(FrameContext& frame) {
         uniforms.settings = glm::vec4(glm::max(call.options.soft_distance, 0.0f), call.options.lighting == ParticleLighting::Simple ? 1.0f : 0.0f,
                                       call.options.blend == ParticleBlend::Additive ? 1.0f : 0.0f, 0.0f);
         SDL_PushGPUFragmentUniformData(commands, 1, &uniforms, sizeof(uniforms));
-        SDL_GPUTextureSamplerBinding bindings[7]{};
+        SDL_GPUTextureSamplerBinding bindings[8]{};
         bindings[0].texture = GetTexture(call.texture, white_texture);
         bindings[0].sampler = linear_clamp_sampler;
         bindings[1].texture = prepass_depth;
@@ -61,7 +62,7 @@ void Renderer::Impl::RenderParticlePass(FrameContext& frame) {
         bindings[3].texture = textures[white_texture.id - 1];
         bindings[3].sampler = clamp_sampler;
         AddLightingBindings(&bindings[4]);
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 7);
+        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 8);
         SDL_DrawGPUPrimitives(pass, 6, call.count, 0, 0);
     }
     SDL_EndGPURenderPass(pass);

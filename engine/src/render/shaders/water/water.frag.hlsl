@@ -29,6 +29,12 @@
 #define LIGHTING_RADIANCE_BINDING 6
 #define LIGHTING_RADIANCE_T t6
 #define LIGHTING_RADIANCE_S s6
+#define LIGHTING_SPOT_SHADOW_BINDING 7
+#define LIGHTING_SPOT_SHADOW_T t7
+#define LIGHTING_SPOT_SHADOW_S s7
+// The lights' storage buffer comes after the 8 textures.
+#define LIGHTING_LIGHT_DATA_BINDING 8
+#define LIGHTING_LIGHT_DATA_T t8
 #include "lighting.hlsli"
 
 // The scene as drawn before the water, and its depth (copied: the water writes depth).
