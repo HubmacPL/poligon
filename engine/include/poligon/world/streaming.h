@@ -13,7 +13,10 @@ namespace poligon {
 // camera is kept in memory. Each kind of data (terrain heights, plants, water...) is its own
 // PatchSource with its own window; patches are loaded on a background thread, nearest ring
 // first, and handed over on the main thread at one fixed place in the frame
-// (WorldStreamer::Update). Patches that leave the window are let go.
+// (WorldStreamer::Update). A patch comes in when it is within `radius` patches of the
+// observer's patch, and is let go only when the observer is more than radius + 1/2 patches
+// away from it (hysteresis), so that walking to and fro over a patch border loads nothing
+// again. A source therefore holds up to (2 radius + 2)^2 patches.
 //
 // Determinism: what the simulation stands on (terrain heights for physics, colliders) must
 // never depend on how fast loading went. Such sources are Immediate: they are loaded on the
@@ -62,6 +65,9 @@ public:
     std::vector<PatchCoord> GetWindow(const glm::dvec3& position, int radius) const;
     // The ring a patch lies on around another: 0 = the same patch, 1 = its eight neighbors...
     static int GetRing(PatchCoord center, PatchCoord patch);
+    // How far a world position is from a patch's square, along x or z, whichever is more
+    // (0 inside it), in meters.
+    double GetDistance(const glm::dvec3& position, PatchCoord patch) const;
 
 private:
     StreamingGridSettings settings_;

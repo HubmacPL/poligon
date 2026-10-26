@@ -15,6 +15,7 @@ Nagłówki: `poligon/world/streaming.h` (siatka i streamer), `poligon/world/land
 - `WorldStreamer` ma jeden wątek wczytujący (`poligon/core/worker.h`: `SDL_CreateThread`, `SDL_Mutex` i `SDL_Condition` z SDL3; SDL3 nie ma gotowej kolejki zadań, więc kolejka jest nasza, około 150 wierszy).
 - `AddSource(source, radius, mode)` daje każdemu źródłu jego własne okno.
 - `Update(observer)`, raz na klatkę, w ustalonym miejscu przed rysowaniem: gdy obserwator wszedł na inną łatę, łaty, które wypadły z okna źródła **Background**, są odłączane, czekające wczytania odrzucane, a brakujące łaty kolejkowane pierścień po pierścieniu przez wszystkie źródła, więc każdy rodzaj danych blisko obserwatora idzie pierwszy. Potem najwyżej `SetMaxAttachPerFrame` (4) skończonych wczytań jest dołączanych. Wczytanie, które skończy się, gdy jego łata już opuściła okno, jest odrzucane (`StreamingStats::discarded`).
+- **Histereza**: łata wchodzi, gdy leży w promieniu `radius` łat od łaty obserwatora, a wychodzi dopiero, gdy obserwator jest dalej niż `radius` + 1/2 łaty od jej kwadratu (`StreamingGrid::GetDistance`); to samo dotyczy źródeł Immediate i ich pozycji. Chodzenie tam i z powrotem przez granicę łaty nie wczytuje więc niczego ponownie: `streaming_test` przesuwa obserwatora o 2 m na obie strony granicy przez 600 ticków i po pierwszym przejściu (42 wczytania w źródle Background i Immediate) nie ma ani jednego wczytania czy zwolnienia więcej. Źródło trzyma do (2 `radius` + 2)^2 łat, i tyle stron potrzebuje strumieniowany `Terrain`.
 - `RequirePatches(positions)`, przed tickiem: każde źródło **Immediate** dostaje każdą łatę w swoim promieniu od dowolnej z pozycji, wczytaną i dołączoną od razu w wątku wołającym, w ustalonej kolejności, i zwalnia łaty, których żadna pozycja nie potrzebuje.
 - `SetSynchronous(true)` sprawia, że `Update` wczytuje od razu także źródła Background: dla przebiegów bez okna, których obrazy nie mogą zależeć od czasu. `FinishLoading` czeka na wszystkie zakolejkowane wczytania i je dołącza.
 
@@ -103,7 +104,6 @@ Obrazy czterech widoków zgadzają się z lądem trzymanym w całości poza 0,2 
 ## Znane ograniczenia
 
 - Jeden wątek wczytujący. Wczytania nie są rozkładane na kilka wątków.
-- Na razie bez histerezy: chodzenie tam i z powrotem przez granicę łaty za każdym razem wczytuje i zwalnia ten sam rząd łat.
 - Strony strumieniowanego terenu są ustalane przy jego tworzeniu; okno większe niż liczba stron kończy program komunikatem.
 - Zasłonięcie nieba sięga najdalej o jedną łatę (`reach` do rozmiaru łaty).
 - Bez lasu poza oknem roślin: dalekie łaty pokazują goły ląd tła. Impostory stawiane z mapy gęstości lasu nie zostały zbudowane: w `forest_scene`, jedynej mierzonej scenie, reguły sadzą drzewa tylko do 1,2 km od startu, więc nie ma dalekiego lasu, którego koszt dałoby się zmierzyć wobec granicy 1 ms w high.

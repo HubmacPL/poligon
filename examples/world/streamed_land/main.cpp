@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     poligon::TerrainConfig terrain_config;
     terrain_config.material.colors = renderer.CreateTextureArray(colors, 2);
     terrain_config.material.layer_count = 2;
-    poligon::Terrain terrain(renderer, land.GetInfo(), terrain_config, 49);  // pages: the 7 x 7 window
+    poligon::Terrain terrain(renderer, land.GetInfo(), terrain_config, 64);  // pages: the 7 x 7 window and a ring kept beyond it
 
     // Plants: one kind (a dark box with a trunk), placed by a rule from each patch's maps.
     const poligon::MeshHandle cube = renderer.CreateCubeMesh();

@@ -172,7 +172,8 @@ int main() {
         Expect(nearest_first, "a 5 x 5 window comes in nearest ring first");
         Expect(source.values.size() == 25 && source.values.at({30, 30}) == 30030, "every patch is handed over with its own data");
 
-        streamer.Update(first_place + glm::dvec3(512.0, 0.0, 0.0));
+        // 712 m: into the next patch and past the half patch the west column is kept for.
+        streamer.Update(first_place + glm::dvec3(712.0, 0.0, 0.0));
         streamer.FinishLoading();
         bool shifted = source.values.size() == 25;
         for (int z = 28; z <= 32; ++z) {
@@ -198,6 +199,38 @@ int main() {
             back_home = back_home && poligon::StreamingGrid::GetRing(center, patch) <= 2;
         }
         Expect(back_home, "after a jump away and back only the home window is attached");
+    }
+
+    // --- Hysteresis: to and fro over a patch border loads nothing again ---
+    {
+        poligon::WorldStreamer streamer(grid);
+        CountingSource drawn;
+        CountingSource collisions;
+        const int drawn_source = streamer.AddSource(drawn, 2, poligon::StreamingMode::Background);
+        streamer.AddSource(collisions, 1, poligon::StreamingMode::Immediate);
+        const double border = -1000.0 + 512.0 * 30.0;
+        int loads_after_first = -1;
+        size_t most_held = 0;
+        for (int tick = 0; tick < 600; ++tick) {
+            // 2 m west of the border, then 2 m east of it, and so on.
+            const glm::dvec3 observer(border + (tick % 2 == 0 ? -2.0 : 2.0), 0.0, 2000.0 + 512.0 * 30.5);
+            streamer.RequirePatches({observer});
+            streamer.Update(observer);
+            streamer.FinishLoading();
+            if (tick == 1) {
+                loads_after_first = streamer.GetStats().loads_started;  // the first crossing brings the new rows
+            }
+            most_held = std::max(most_held, drawn.values.size());
+        }
+        const poligon::StreamingStats stats = streamer.GetStats();
+        std::printf("  to and fro over a border for 600 ticks: %d loads in the first two, %d after; at most %zu patches held\n",
+                    loads_after_first, stats.loads_started - loads_after_first, most_held);
+        Expect(stats.loads_started == loads_after_first && stats.detached == 0,
+               "an observer going 2 m to and fro over a patch border loads and lets go nothing after the first crossing");
+        Expect(most_held == 30 && streamer.GetAttached(drawn_source).size() == 30, "the window keeps one extra column, not more");
+        // Walking on, the column left behind goes once the observer is half a patch past the window.
+        streamer.Update({border + 512.0 + 300.0, 0.0, 2000.0 + 512.0 * 30.5});
+        Expect(streamer.GetStats().detached > 0, "half a patch beyond the window, patches are let go");
     }
 
     // --- The simulation does not depend on loading speed ---

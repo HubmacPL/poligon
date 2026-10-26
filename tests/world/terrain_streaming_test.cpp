@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
     {
         poligon::PhysicsWorld physics;
         poligon::TerrainPhysicsSource collisions(physics, land);
-        poligon::Terrain windowed(renderer, info, terrain_config, 12);
+        poligon::Terrain windowed(renderer, info, terrain_config, 16);
         poligon::TerrainPatchSource windowed_source(windowed, land);
         poligon::WorldStreamer streamer(grid);
         streamer.AddSource(windowed_source, 1, poligon::StreamingMode::Background);

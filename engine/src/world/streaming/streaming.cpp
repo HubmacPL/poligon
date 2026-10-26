@@ -33,6 +33,14 @@ glm::dvec2 StreamingGrid::GetCorner(PatchCoord patch) const {
     return settings_.origin + glm::dvec2(static_cast<double>(patch.x), static_cast<double>(patch.z)) * settings_.patch_size;
 }
 
+double StreamingGrid::GetDistance(const glm::dvec3& position, PatchCoord patch) const {
+    const glm::dvec2 low = GetCorner(patch);
+    const glm::dvec2 high = low + glm::dvec2(settings_.patch_size);
+    const double dx = std::max({low.x - position.x, position.x - high.x, 0.0});
+    const double dz = std::max({low.y - position.z, position.z - high.y, 0.0});
+    return std::max(dx, dz);
+}
+
 int StreamingGrid::GetRing(PatchCoord center, PatchCoord patch) {
     return std::max(std::abs(patch.x - center.x), std::abs(patch.z - center.z));
 }
@@ -155,22 +163,32 @@ void WorldStreamer::Update(const glm::dvec3& observer) {
             impl.sources[static_cast<size_t>(TagSource(tag))].pending.erase(TagPatch(tag));
             --impl.stats.loads_started;
         }
-        int largest_radius = 0;
-        for (size_t index = 0; index < impl.sources.size(); ++index) {
-            Impl::Source& source = impl.sources[index];
-            if (source.mode != StreamingMode::Background) {
-                continue;
-            }
+    }
+    // Every frame: held patches farther than radius + 1/2 patches go (hysteresis); on a new
+    // observer patch the windows are made again.
+    int largest_radius = 0;
+    for (size_t index = 0; index < impl.sources.size(); ++index) {
+        Impl::Source& source = impl.sources[index];
+        if (source.mode != StreamingMode::Background) {
+            continue;
+        }
+        if (moved) {
             const std::vector<PatchCoord> window = grid_.GetWindow(observer, source.radius);
             source.wanted = std::set<PatchCoord>(window.begin(), window.end());
-            const std::vector<PatchCoord> leaving(source.attached.begin(), source.attached.end());
-            for (const PatchCoord patch : leaving) {
-                if (source.wanted.count(patch) == 0) {
-                    impl.Detach(static_cast<int>(index), patch);
-                }
-            }
-            largest_radius = std::max(largest_radius, source.radius);
         }
+        const double keep = (static_cast<double>(source.radius) + 0.5) * grid_.GetSettings().patch_size;
+        const std::vector<PatchCoord> held(source.attached.begin(), source.attached.end());
+        for (const PatchCoord patch : held) {
+            if (grid_.GetDistance(observer, patch) > keep && StreamingGrid::GetRing(center, patch) > source.radius) {
+                source.wanted.erase(patch);
+                impl.Detach(static_cast<int>(index), patch);
+            } else {
+                source.wanted.insert(patch);
+            }
+        }
+        largest_radius = std::max(largest_radius, source.radius);
+    }
+    if (moved) {
         // Ring by ring over all sources, so that every kind of data near the observer comes first.
         const std::vector<PatchCoord> window = grid_.GetWindow(observer, largest_radius);
         for (const PatchCoord patch : window) {
@@ -210,13 +228,21 @@ void WorldStreamer::RequirePatches(const std::vector<glm::dvec3>& positions) {
                 }
             }
         }
-        source.wanted = wanted;
+        // Held patches stay until every position is more than radius + 1/2 patches away (hysteresis).
+        const double keep = (static_cast<double>(source.radius) + 0.5) * grid_.GetSettings().patch_size;
         const std::vector<PatchCoord> held(source.attached.begin(), source.attached.end());
         for (const PatchCoord patch : held) {
-            if (wanted.count(patch) == 0) {
+            bool near = wanted.count(patch) != 0;
+            for (size_t i = 0; i < positions.size() && !near; ++i) {
+                near = grid_.GetDistance(positions[i], patch) <= keep;
+            }
+            if (near) {
+                wanted.insert(patch);
+            } else {
                 impl.Detach(static_cast<int>(index), patch);
             }
         }
+        source.wanted = wanted;
         for (const PatchCoord patch : needed) {
             if (source.attached.count(patch) == 0) {
                 ++impl.stats.loads_started;

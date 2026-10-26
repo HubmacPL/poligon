@@ -81,9 +81,10 @@ constexpr float kForestHalfSize = 250.0f;  // plants stand within this distance 
 // Beyond that, big trees alone continue to this distance; far away they are impostors.
 constexpr float kFarForestHalfSize = 1200.0f;
 // Windows of the streamed land, in 512 m patches around the camera (radius 4 = 9 x 9) or,
-// for collisions, around the player and the crates. The terrain's pages hold its window.
+// for collisions, around the player and the crates. The terrain's pages hold its window and
+// the patches kept half a patch beyond it (see poligon/world/streaming.h).
 constexpr int kTerrainWindow = 4;
-constexpr int kTerrainPages = (2 * kTerrainWindow + 1) * (2 * kTerrainWindow + 1);
+constexpr int kTerrainPages = (2 * kTerrainWindow + 2) * (2 * kTerrainWindow + 2);
 constexpr int kPlantWindow = 3;
 constexpr int kSkyWindow = 2;
 constexpr int kCollisionWindow = 1;

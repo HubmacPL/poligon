@@ -51,7 +51,8 @@ public:
     // A streamed terrain (poligon/world/streaming.h, poligon/world/land.h): it has no land
     // until patches are given (by a TerrainPatchSource, or SetPatch). `land` says how the
     // land is cut and where it lies (config.origin is not used: LandInfo::world_origin is);
-    // `pages`: how many patches it can hold at once. Each patch is its own tree of squares;
+    // `pages`: how many patches it can hold at once ((2 radius + 2)^2 for a streamer's window
+    // of `radius`, which keeps patches half a patch beyond it). Each patch is its own tree of squares;
     // all of them are drawn by one draw call per pass. The patch size must be 64, 128, 256,
     // 512... height points. Heights where no patch is held come from LandInfo::background,
     // and there the land is drawn from it too (the far background: squares of a patch's size

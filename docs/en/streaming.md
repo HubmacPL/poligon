@@ -15,6 +15,7 @@ Headers: `poligon/world/streaming.h` (the grid and the streamer), `poligon/world
 - `WorldStreamer` owns one loading thread (`poligon/core/worker.h`: SDL3's `SDL_CreateThread`, `SDL_Mutex` and `SDL_Condition`; SDL3 has no ready job queue, so the queue is our own, about 150 lines).
 - `AddSource(source, radius, mode)` gives each source its own window.
 - `Update(observer)`, once per frame at a fixed place before drawing: when the observer has entered another patch, patches that left a **Background** source's window are detached, loads still waiting are dropped, and the missing patches are queued ring by ring over all sources, so every kind of data near the observer comes first. Then at most `SetMaxAttachPerFrame` (4) finished loads are attached. A load that finishes after its patch has left the window is dropped (`StreamingStats::discarded`).
+- **Hysteresis**: a patch comes in when it is within `radius` patches of the observer's patch, and goes only when the observer is more than `radius` + 1/2 patches from its square (`StreamingGrid::GetDistance`); the same holds for Immediate sources and their positions. Walking to and fro over a patch border therefore loads nothing again: `streaming_test` moves an observer 2 m either side of a border for 600 ticks, and after the first crossing (42 loads over a Background and an Immediate source) there is not one load or release more. A source holds up to (2 `radius` + 2)^2 patches, which is what a streamed `Terrain` needs as pages.
 - `RequirePatches(positions)`, before a tick: every **Immediate** source gets each patch within its radius of any position, loaded and attached at once on the calling thread in a fixed order, and lets go of the patches no position needs.
 - `SetSynchronous(true)` makes `Update` load Background sources at once too: for headless runs whose pictures must not depend on timing. `FinishLoading` waits for every queued load and attaches it.
 
@@ -103,7 +104,6 @@ The pictures of the four views match the land held whole except on 0.2 to 3% of 
 ## Known limits
 
 - One loading thread. Loads are not spread over several threads.
-- No hysteresis yet: walking back and forth over a patch border loads and lets go the same row of patches each time.
 - A streamed terrain's pages are fixed when it is made; a window larger than its pages ends the program with a message.
 - Sky occlusion looks at most one patch far (`reach` up to the patch size).
 - No forest beyond the plants' window: far patches show bare background land. Impostors placed from a forest density map were not built: in `forest_scene`, the only measured scene, the rules plant trees only within 1.2 km of the start, so there is no far forest whose cost could be measured against the limit of 1 ms in high.
