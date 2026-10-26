@@ -76,6 +76,7 @@ public:
     // Call between Renderer::BeginFrame and EndFrame, with the camera of that frame.
     void Draw(Renderer& renderer, const Camera& camera);
 
+    // How far around the camera plants exist, in meters (above zero); the next Update rebuilds.
     void SetRadius(float radius);
     float GetRadius() const;
     // Multiplies every layer's density (graphics quality); all cells are rebuilt.

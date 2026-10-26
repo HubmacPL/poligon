@@ -12,7 +12,7 @@ Headers: `poligon/world/streaming.h` (the grid and the streamer), `poligon/world
 
 ## How it works
 
-- `WorldStreamer` owns one loading thread (`poligon/core/worker.h`: SDL3's `SDL_CreateThread`, `SDL_Mutex` and `SDL_Condition`; SDL3 has no ready job queue, so the queue is our own, about 150 lines).
+- `WorldStreamer` owns one loading thread (`poligon/core/worker.h`: SDL3's `SDL_CreateThread`, `SDL_Mutex` and `SDL_Condition`; SDL3 has no ready job queue, so the queue is our own, about 150 lines; example `examples/core/worker`).
 - `AddSource(source, radius, mode)` gives each source its own window.
 - `Update(observer)`, once per frame at a fixed place before drawing: when the observer has entered another patch, patches that left a **Background** source's window are detached, loads still waiting are dropped, and the missing patches are queued ring by ring over all sources, so every kind of data near the observer comes first. Then at most `SetMaxAttachPerFrame` (4) finished loads are attached. A load that finishes after its patch has left the window is dropped (`StreamingStats::discarded`).
 - **Hysteresis**: a patch comes in when it is within `radius` patches of the observer's patch, and goes only when the observer is more than `radius` + 1/2 patches from its square (`StreamingGrid::GetDistance`); the same holds for Immediate sources and their positions. Walking to and fro over a patch border therefore loads nothing again: `streaming_test` moves an observer 2 m either side of a border for 600 ticks, and after the first crossing (42 loads over a Background and an Immediate source) there is not one load or release more. A source holds up to (2 `radius` + 2)^2 patches, which is what a streamed `Terrain` needs as pages.
@@ -63,7 +63,7 @@ A game reads the land cooked (`poligon/world/land.h`): the level names its world
 - `NAME.pworld`: the header line `poligon-world 1`, a number naming the settings it was made from (the generator's, the ground layers', the patch size: when they change, it is cooked again), then the `LandInfo` (patches, spacings, size, lakes, the background heights and weights);
 - `NAME/X_Z.ppatch`: the header line `poligon-patch 1`, then one `LandPatch` (its window of the maps and its weights) as raw numbers.
 
-`LandFromFiles(library, name, world_origin)` reads them through an `AssetLibrary`, from the cooked folder or a `POLIPAK1` archive (read file by file, so a released game holds only the patches it uses), on any thread. A patch read back equals the patch cut from the whole maps to the bit (`land_files_test`, from the folder and from the archive). Binary files are written with `poligon/core/binary_io.h`, shared with the asset files.
+`LandFromFiles(library, name, world_origin)` reads them through an `AssetLibrary`, from the cooked folder or a `POLIPAK1` archive (read file by file, so a released game holds only the patches it uses), on any thread. A patch read back equals the patch cut from the whole maps to the bit (`land_files_test`, from the folder and from the archive). Binary files are written with `poligon/core/binary_io.h`, shared with the asset files (example `examples/core/binary_io`).
 
 ## The far background
 

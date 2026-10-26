@@ -31,7 +31,7 @@ terrain.Draw(camera);
 
 ## Co zasłaniają wzgórza
 
-`TerrainOcclusion` (`poligon/world/terrain_occlusion.h`) pomija w obrazie to, co zasłania teren (occlusion culling przez teren). Kod własny: żadna biblioteka nie obejmuje pola wysokości widzianego z jednego punktu i sprawdzanego z pudełkami na procesorze.
+`TerrainOcclusion` (`poligon/world/terrain_occlusion.h`) pomija w obrazie to, co zasłania teren (occlusion culling przez teren). Kod własny: żadna biblioteka nie obejmuje pola wysokości widzianego z jednego punktu i sprawdzanego z pudełkami na procesorze. Przykład: `examples/world/terrain_occlusion`.
 
 - Horyzont: z kamery, w 512 kierunkach, teren jest śledzony do 4096 m krokami połowy rozstawu podłogi (32 m), a każdy krok zachowuje najstromsze dotąd nachylenie (wzniesienie przez odległość). Budowany na procesorze, przebudowywany tylko, gdy kamera przesunie się o więcej niż 0,25 m; deterministyczny, nic nie jest czytane z karty graficznej.
 - Budowany z `LandInfo::occlusion_floor`: w punktach tła (co 64 m) najniższa wysokość terenu w promieniu 64 m od każdego (z czterech kwadratów wokół; `MakeOcclusionFloor`, liczona przy wypiekaniu terenu, `poligon-world 2`). Mieszana między punktami nigdy nie wznosi się ponad teren, więc horyzont może być niższy od prawdziwego, nigdy wyższy, i nic widocznego nie znika. Grzbiety węższe niż około 128 m w niej przepadają.

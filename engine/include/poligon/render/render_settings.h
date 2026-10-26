@@ -52,6 +52,7 @@ public:
     virtual void Choice(const char* name, int& value, const char* const* options, int count) = 0;
 };
 
+// Calls `visitor` once for every setting, in the order of the file, with sections between them.
 void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visitor);
 
 // Text file, one setting per line: "name value" (colors and directions have three values).

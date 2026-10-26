@@ -32,7 +32,7 @@ public:
     std::vector<std::uint8_t> data;
 };
 
-// Reads what a BinaryWriter wrote. Every call returns false (and ok() turns false) when the
+// Reads what a BinaryWriter wrote. Every call returns false (and IsOk() turns false) when the
 // data ends too early.
 class BinaryReader {
 public:
@@ -77,7 +77,7 @@ public:
         position_ += length;
         return true;
     }
-    bool ok() const { return ok_; }
+    bool IsOk() const { return ok_; }
 
 private:
     bool Fail() {

@@ -8,3 +8,6 @@ poligon_add_example(ground_cover ${CMAKE_BINARY_DIR}/test_output/example_ground_
 poligon_add_example(particles ${CMAKE_BINARY_DIR}/test_output/example_particles.png)
 poligon_add_example(streaming)
 poligon_add_example(streamed_land ${CMAKE_BINARY_DIR}/test_output/example_streamed_land.png)
+poligon_add_example(footprints)
+poligon_add_example(level ${CMAKE_BINARY_DIR}/test_output/example_level.txt)
+poligon_add_example(terrain_occlusion)

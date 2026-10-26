@@ -12,7 +12,7 @@ Nagłówki: `poligon/world/streaming.h` (siatka i streamer), `poligon/world/land
 
 ## Jak to działa
 
-- `WorldStreamer` ma jeden wątek wczytujący (`poligon/core/worker.h`: `SDL_CreateThread`, `SDL_Mutex` i `SDL_Condition` z SDL3; SDL3 nie ma gotowej kolejki zadań, więc kolejka jest nasza, około 150 wierszy).
+- `WorldStreamer` ma jeden wątek wczytujący (`poligon/core/worker.h`: `SDL_CreateThread`, `SDL_Mutex` i `SDL_Condition` z SDL3; SDL3 nie ma gotowej kolejki zadań, więc kolejka jest nasza, około 150 wierszy; przykład `examples/core/worker`).
 - `AddSource(source, radius, mode)` daje każdemu źródłu jego własne okno.
 - `Update(observer)`, raz na klatkę, w ustalonym miejscu przed rysowaniem: gdy obserwator wszedł na inną łatę, łaty, które wypadły z okna źródła **Background**, są odłączane, czekające wczytania odrzucane, a brakujące łaty kolejkowane pierścień po pierścieniu przez wszystkie źródła, więc każdy rodzaj danych blisko obserwatora idzie pierwszy. Potem najwyżej `SetMaxAttachPerFrame` (4) skończonych wczytań jest dołączanych. Wczytanie, które skończy się, gdy jego łata już opuściła okno, jest odrzucane (`StreamingStats::discarded`).
 - **Histereza**: łata wchodzi, gdy leży w promieniu `radius` łat od łaty obserwatora, a wychodzi dopiero, gdy obserwator jest dalej niż `radius` + 1/2 łaty od jej kwadratu (`StreamingGrid::GetDistance`); to samo dotyczy źródeł Immediate i ich pozycji. Chodzenie tam i z powrotem przez granicę łaty nie wczytuje więc niczego ponownie: `streaming_test` przesuwa obserwatora o 2 m na obie strony granicy przez 600 ticków i po pierwszym przejściu (42 wczytania w źródle Background i Immediate) nie ma ani jednego wczytania czy zwolnienia więcej. Źródło trzyma do (2 `radius` + 2)^2 łat, i tyle stron potrzebuje strumieniowany `Terrain`.
@@ -63,7 +63,7 @@ Gra czyta ląd wypieczony (`poligon/world/land.h`): poziom wskazuje swój świat
 - `NAZWA.pworld`: wiersz nagłówka `poligon-world 1`, liczbę nazywającą ustawienia, z których powstał (generatora, warstw podłoża, rozmiar łaty: gdy się zmienią, jest wypiekany od nowa), potem `LandInfo` (łaty, odstępy, rozmiar, jeziora, wysokości i wagi tła);
 - `NAZWA/X_Z.ppatch`: wiersz nagłówka `poligon-patch 1`, potem jedna `LandPatch` (jej okno map i wagi) jako surowe liczby.
 
-`LandFromFiles(library, name, world_origin)` czyta je przez `AssetLibrary`, z wypieczonego folderu albo archiwum `POLIPAK1` (czytanego plik po pliku, więc wydana gra trzyma tylko łaty, których używa), w dowolnym wątku. Odczytana łata równa się łacie wyciętej z całych map co do bitu (`land_files_test`, z folderu i z archiwum). Pliki binarne pisze `poligon/core/binary_io.h`, wspólny z plikami assetów.
+`LandFromFiles(library, name, world_origin)` czyta je przez `AssetLibrary`, z wypieczonego folderu albo archiwum `POLIPAK1` (czytanego plik po pliku, więc wydana gra trzyma tylko łaty, których używa), w dowolnym wątku. Odczytana łata równa się łacie wyciętej z całych map co do bitu (`land_files_test`, z folderu i z archiwum). Pliki binarne pisze `poligon/core/binary_io.h` (przykład `examples/core/binary_io`), wspólny z plikami assetów.
 
 ## Dalekie tło
 

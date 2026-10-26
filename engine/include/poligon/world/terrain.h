@@ -96,6 +96,7 @@ public:
     // for this frame's camera) only cast shadows. nullptr: none are hidden (the default).
     void SetOcclusion(const TerrainOcclusion* occlusion);
 
+    // Change TerrainConfig::material and TerrainConfig::detail after creation.
     void SetMaterial(const TerrainMaterial& material);
     void SetDetail(float detail);
     const TerrainStats& GetStats() const;
@@ -176,6 +177,7 @@ struct GroundLayer {
 
 // The words that begin ground layer lines, for LoadLevel's other_line_prefixes.
 const std::vector<std::string>& GetGroundLayerWords();
+// Reads ground layers from Level::other_lines; errors name the line.
 bool ParseGroundLayers(const std::vector<std::pair<int, std::string>>& lines, std::vector<GroundLayer>& layers, std::string& error);
 
 } // namespace poligon

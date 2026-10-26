@@ -39,6 +39,7 @@ struct HeightMap {
     glm::vec3 GetNormal(float x, float z) const;
     // Steepness there: 0 = level, 45 = as steep as it is far, 90 = a wall.
     float GetSlopeDegrees(float x, float z) const;
+    // The lowest and highest height of all points.
     void GetHeightRange(float& lowest, float& highest) const;
 };
 

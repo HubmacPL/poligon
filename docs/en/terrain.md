@@ -31,7 +31,7 @@ terrain.Draw(camera);
 
 ## What hills hide
 
-`TerrainOcclusion` (`poligon/world/terrain_occlusion.h`) leaves out of the picture what the land hides (occlusion culling by terrain). Our own code: no library covers a height field seen from one point and tested against boxes on the processor.
+`TerrainOcclusion` (`poligon/world/terrain_occlusion.h`) leaves out of the picture what the land hides (occlusion culling by terrain). Our own code: no library covers a height field seen from one point and tested against boxes on the processor. Example: `examples/world/terrain_occlusion`.
 
 - The horizon: from the camera, in 512 directions, the land is followed out to 4096 m in steps of half the floor's spacing (32 m), and each step keeps the steepest slope (rise over distance) of the land so far. Built on the processor, rebuilt only when the camera has moved more than 0.25 m; deterministic, nothing is read back from the graphics card.
 - It is built from `LandInfo::occlusion_floor`: at the background's points (64 m apart), the lowest height of the land within 64 m of each (over the four squares around it; `MakeOcclusionFloor`, made when the land is cooked, `poligon-world 2`). Blended between its points it never rises above the land, so the horizon may be lower than the real one, never higher, and nothing visible is left out. Ridges narrower than about 128 m are lost from it.

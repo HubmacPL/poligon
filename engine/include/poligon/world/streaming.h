@@ -133,6 +133,7 @@ public:
     void SetSynchronous(bool synchronous);
     // Waits for every queued load and attaches it (those still in their window).
     void FinishLoading();
+    // How many loaded patches Update attaches per frame at most (at least 1; 4 by default).
     void SetMaxAttachPerFrame(int count);
     // For tests: each background load waits this long first, as a slow disk would.
     void SetLoadDelayMilliseconds(int milliseconds);
