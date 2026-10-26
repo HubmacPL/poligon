@@ -149,14 +149,33 @@ struct DirectionalLight {
     Color ambient{0.15f, 0.15f, 0.15f, 1.0f};
 };
 
+// How the sky's colors are found (Environment::sky_model).
+enum class SkyModel {
+    // Three colors given by hand: sky_zenith, sky_horizon, sky_ground.
+    Simple,
+    // From a model of the atmosphere (poligon/render/sky.h): the sky drawn from scattering
+    // in the air, the sun's light reddened and dimmed by the air in front of it, and the
+    // three colors worked out from the same model (they then replace the given ones for the
+    // sky light, clouds, fog and haze).
+    Atmosphere,
+};
+
 // Everything around the scene: sky, the light it gives, shadows and fog. The default
 // (no sky, no fog, shadows on) keeps a scene looking as plain as possible.
 struct Environment {
     // Draw the sky as the background instead of the clear color.
     bool draw_sky = false;
+    SkyModel sky_model = SkyModel::Simple;
     Color sky_zenith{0.16f, 0.32f, 0.75f, 1.0f};   // straight up
     Color sky_horizon{0.60f, 0.72f, 0.88f, 1.0f};  // at eye level
     Color sky_ground{0.20f, 0.18f, 0.15f, 1.0f};   // below the horizon
+    // With SkyModel::Atmosphere and time_of_day at 0 or above: the sun stands where it does
+    // at that hour of local solar time (12 = noon) on day_of_year at `latitude` degrees north
+    // (ComputeSunDirection), instead of along DirectionalLight::direction. The light's color
+    // is then the sun's color above the air. The default place is Batorz, near Lublin.
+    float time_of_day = -1.0f;
+    float day_of_year = 172.0f;
+    float latitude = 50.86f;
 
     // Light surfaces from the sky colors (upward-facing ones from the zenith, downward-facing
     // ones from the ground) instead of DirectionalLight::ambient, and let smooth surfaces

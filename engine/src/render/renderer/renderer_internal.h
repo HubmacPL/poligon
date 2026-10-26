@@ -31,6 +31,7 @@
 #include "poligon/core/fatal_error.h"
 #include "poligon/core/texture_compression.h"
 #include "poligon/render/renderer.h"
+#include "../resources/atmosphere_state.h"
 #include "../resources/decal_state.h"
 #include "../resources/overlay_state.h"
 #include "../resources/particle_state.h"
@@ -111,6 +112,8 @@ struct SkyCaptureUniforms {
     glm::vec4 horizon;
     glm::vec4 ground;
     glm::vec4 eye;
+    glm::vec4 atmosphere;  // rgb: the sun above the air times pi and the sky light's strength, w: 1 = on
+    glm::vec4 to_sun;
 };
 
 // Must match sky_prefilter.frag.hlsl.
@@ -174,6 +177,7 @@ struct SkyUniforms {
     glm::vec4 sky_zenith;
     glm::vec4 sky_horizon;
     glm::vec4 sky_ground;
+    glm::vec4 atmosphere;  // rgb: the sun above the air times pi, w: 1 = atmosphere model
 };
 
 struct TerrainVertexUniforms {
@@ -328,6 +332,7 @@ constexpr int kTerrainGridCells = 64;
 
 // The fog is walked at most this far (meters) along each line of sight.
 constexpr float kFogWalkDistance = 1000.0f;
+constexpr float kPi = 3.14159265f;
 // Share of each smaller (blurrier) bloom image when it is mixed into the next larger one.
 constexpr float kBloomSpread = 0.65f;
 constexpr int kMaxBloomLevels = 6;
@@ -898,6 +903,8 @@ struct Renderer::Impl {
     OverlayState overlay;
     // Decals recorded this frame (resources/decals.cpp, passes/decal_pass.cpp).
     DecalState decals;
+    // The sky from the atmosphere model (resources/atmosphere.cpp, passes/atmosphere_pass.cpp).
+    AtmosphereState atmosphere;
     // Particles recorded this frame (resources/particles.cpp, passes/particle_pass.cpp).
     ParticleState particles;
     // Draws per level of detail this frame (FrameStats::mesh_lod_draws).
@@ -1111,6 +1118,13 @@ struct Renderer::Impl {
     void RenderWaterPass(FrameContext& frame);
     void RenderCloudPass(FrameContext& frame);
     void RenderFogPass(FrameContext& frame);
+    void RenderAtmospherePass(FrameContext& frame);
+    // With SkyModel::Atmosphere, sets the frame's sun and sky colors from the model (BeginFrame).
+    void ApplyAtmosphere();
+    void ReleaseAtmosphere();
+    // The textures the sky shaders bind for the atmosphere (white stand-ins when it is off).
+    SDL_GPUTexture* AtmosphereSkyView() const;
+    SDL_GPUTexture* AtmosphereTransmittance() const;
     void RenderBlendPass(FrameContext& frame);
     void RenderTemporalAaPass(FrameContext& frame);
     void RenderBloomPass(FrameContext& frame);

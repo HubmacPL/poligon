@@ -197,7 +197,7 @@ void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* fullscreen_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 0, 0, kFullscreenVertDxil, sizeof(kFullscreenVertDxil),
                      kFullscreenVertSpirv, sizeof(kFullscreenVertSpirv));
-    SDL_GPUShader* sky_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1, kSkyFragDxil, sizeof(kSkyFragDxil),
+    SDL_GPUShader* sky_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1, kSkyFragDxil, sizeof(kSkyFragDxil),
                                                kSkyFragSpirv, sizeof(kSkyFragSpirv));
     SDL_GPUShader* tonemap_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 1, kTonemapFragDxil,
                                                    sizeof(kTonemapFragDxil), kTonemapFragSpirv,
@@ -566,7 +566,7 @@ void Renderer::Impl::CreatePipelines() {
 
     // --- The sky light map: capturing the sky into cube faces and blurring it level by level. ---
     {
-        SDL_GPUShader* capture = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 2, kSkyCaptureFragDxil, sizeof(kSkyCaptureFragDxil),
+        SDL_GPUShader* capture = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 2, kSkyCaptureFragDxil, sizeof(kSkyCaptureFragDxil),
                                               kSkyCaptureFragSpirv, sizeof(kSkyCaptureFragSpirv));
         sky_capture_pipeline = CreateFullscreenPipeline(fullscreen_vertex, capture, kSceneFormat, FullscreenBlend::Replace);
         SDL_ReleaseGPUShader(device, capture);

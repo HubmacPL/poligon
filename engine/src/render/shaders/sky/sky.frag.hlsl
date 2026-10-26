@@ -1,6 +1,15 @@
-// Draws the sky behind everything: a gradient from the horizon to the zenith, the ground
-// color below the horizon, and the sun with a soft glow around it.
+// Draws the sky behind everything. Simple model: a gradient from the horizon to the zenith,
+// the ground color below the horizon, and the sun with a soft glow around it. Atmosphere
+// model (Environment::sky_model): the sky view table (atmosphere.hlsli), the sun's disc dimmed
+// and reddened by the air in front of it.
+#define ATMOSPHERE_SKY_VIEW_BINDING 0
+#define ATMOSPHERE_SKY_VIEW_T t0
+#define ATMOSPHERE_SKY_VIEW_S s0
+#define ATMOSPHERE_TRANSMITTANCE_BINDING 1
+#define ATMOSPHERE_TRANSMITTANCE_T t1
+#define ATMOSPHERE_TRANSMITTANCE_S s1
 #include "common.hlsli"
+#include "atmosphere.hlsli"
 
 cbuffer SkyUniforms : register(b0, space3) {
     float4x4 inverse_view_projection;
@@ -10,6 +19,7 @@ cbuffer SkyUniforms : register(b0, space3) {
     float4 sky_zenith;
     float4 sky_horizon;
     float4 sky_ground;
+    float4 atmosphere;       // rgb: the sun's color above the air, times pi; w: 1 = atmosphere model
 };
 
 struct FragmentInput {
@@ -22,12 +32,22 @@ float4 main(FragmentInput input) : SV_Target0 {
     // Find the world direction this pixel looks in.
     float4 far_point = mul(inverse_view_projection, float4(input.ndc, 1.0, 1.0));
     float3 direction = normalize(far_point.xyz / far_point.w - camera_position.xyz);
+    float toward_sun = dot(direction, -light_direction.xyz);
+    // The sun's disc is about half a degree wide.
+    float disc = smoothstep(0.99985, 0.99995, toward_sun);
+
+    if (atmosphere.w > 0.5) {
+        float3 to_sun = -light_direction.xyz;
+        // Below the horizon the ground's light (worked out with the sky, SkyLight::ground).
+        float3 color = lerp(AtmosphereSky(direction, to_sun) * atmosphere.rgb, sky_ground.rgb, saturate(-direction.y * 5.0));
+        // The glow around the sun is in the table (Mie scattering); the disc is the sun's own
+        // light through the air, as bright as in the simple model relative to sunlight.
+        color += atmosphere.rgb / kAtmospherePi * SunTransmittance(direction) * disc * 20.0;
+        return float4(color, 1.0);
+    }
 
     float3 color = SkyColor(direction, sky_zenith.rgb, sky_horizon.rgb, sky_ground.rgb);
-
-    // The sun's disc is about half a degree wide; the glow fades over a much wider angle.
-    float toward_sun = dot(direction, -light_direction.xyz);
-    float disc = smoothstep(0.99985, 0.99995, toward_sun);
+    // The glow fades over a much wider angle than the disc.
     float glow = pow(saturate(toward_sun), 400.0) * 0.6 + pow(saturate(toward_sun), 12.0) * 0.08;
     float above_horizon = saturate(direction.y * 20.0 + 0.5);
     color += sun_color.rgb * (disc * 20.0 + glow) * above_horizon;

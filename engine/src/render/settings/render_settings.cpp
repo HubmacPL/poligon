@@ -21,6 +21,13 @@ void VisitRenderSettings(RenderSettings& settings, RenderSettingsVisitor& visito
 
     visitor.Section("sky");
     visitor.Bool("sky.draw", environment.draw_sky);
+    static const char* const kSkyModels[] = {"simple", "atmosphere"};
+    int sky_model = static_cast<int>(environment.sky_model);
+    visitor.Choice("sky.model", sky_model, kSkyModels, 2);
+    environment.sky_model = static_cast<SkyModel>(sky_model);
+    visitor.Float("sky.time_of_day", environment.time_of_day, -1.0f, 24.0f);
+    visitor.Float("sky.day_of_year", environment.day_of_year, 1.0f, 365.0f);
+    visitor.Float("sky.latitude", environment.latitude, -90.0f, 90.0f);
     visitor.ColorValue("sky.zenith", environment.sky_zenith);
     visitor.ColorValue("sky.horizon", environment.sky_horizon);
     visitor.ColorValue("sky.ground", environment.sky_ground);

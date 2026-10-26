@@ -169,6 +169,7 @@ Renderer::~Renderer() {
         }
         impl_->ReleaseOverlay();
         impl_->ReleaseDecals();
+        impl_->ReleaseAtmosphere();
         impl_->ReleaseParticles();
         SDL_ReleaseGPUSampler(impl_->device, impl_->texture_sampler);
         SDL_ReleaseGPUSampler(impl_->device, impl_->shadow_sampler);
@@ -281,6 +282,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->origin = camera.position;
     impl_->light = light;
     impl_->environment = environment;
+    impl_->ApplyAtmosphere();
     impl_->draw_commands.clear();
     impl_->blended_commands.clear();
     impl_->water_commands.clear();
@@ -914,6 +916,7 @@ void Renderer::EndFrame() {
 
     impl.RenderShadowPass(frame);
     impl.RenderCloudShadowPass(frame);
+    impl.RenderAtmospherePass(frame);
     impl.RenderSkyLightPass(frame);
     impl.RenderDepthPass(frame);
     impl.RenderScenePass(frame);

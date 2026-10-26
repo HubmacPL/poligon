@@ -18,7 +18,7 @@ void Renderer::Impl::RenderBloomPass(FrameContext& frame) {
     SDL_GPUTexture*& scene_image = frame.scene_image;
 
     // --- Pass 6: bloom. A chain of ever smaller blurred copies of the scene, then mixed
-    // back together from the smallest up. Automatic exposure reads the smallest copy. ---
+    // back together from the smallest up. Automatic exposure reads the largest copy. ---
     if (bloom_on || impl.post.auto_exposure) {
         SDL_GPUTexture* source = scene_image;
         float source_width = taa_on ? output_width : width;
@@ -52,7 +52,7 @@ void Renderer::Impl::RenderBloomPass(FrameContext& frame) {
         uniforms.parameters = glm::vec4(share(impl.post.auto_exposure_brighter_seconds), share(impl.post.auto_exposure_darker_seconds),
                                         impl.has_luminance_history ? 0.0f : 1.0f, 0.0f);
         SDL_GPUTextureSamplerBinding bindings[2]{};
-        bindings[0].texture = impl.bloom_levels.back().texture;
+        bindings[0].texture = impl.bloom_levels.front().texture;
         bindings[0].sampler = impl.linear_clamp_sampler;
         bindings[1].texture = impl.luminance_targets[previous];
         bindings[1].sampler = impl.clamp_sampler;

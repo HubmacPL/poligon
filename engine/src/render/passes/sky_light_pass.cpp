@@ -40,19 +40,25 @@ void Renderer::Impl::RenderSkyLightPass(FrameContext& frame) {
     capture.horizon = ToVec4(environment.sky_horizon) * intensity;
     capture.ground = ToVec4(environment.sky_ground) * intensity;
     capture.eye = glm::vec4(glm::vec3(camera.position), 0.0f);  // world float: the clouds' noise is kilometers wide
-    SDL_GPUTextureSamplerBinding capture_bindings[3]{};
+    capture.atmosphere = glm::vec4(atmosphere.sun_above_air * (kPi * intensity), atmosphere.on ? 1.0f : 0.0f);
+    capture.to_sun = glm::vec4(-glm::normalize(light.direction), 0.0f);
+    SDL_GPUTextureSamplerBinding capture_bindings[5]{};
     capture_bindings[0].texture = clouds ? cloud_shape : dummy_volume;
     capture_bindings[0].sampler = repeat_sampler;
     capture_bindings[1].texture = clouds ? cloud_detail : dummy_volume;
     capture_bindings[1].sampler = repeat_sampler;
     capture_bindings[2].texture = clouds ? cloud_weather : textures[white_texture.id - 1];
     capture_bindings[2].sampler = repeat_sampler;
+    capture_bindings[3].texture = AtmosphereSkyView();
+    capture_bindings[3].sampler = linear_clamp_sampler;
+    capture_bindings[4].texture = AtmosphereTransmittance();
+    capture_bindings[4].sampler = linear_clamp_sampler;
 
     const auto capture_face = [&](int face) {
         // The clouds are walked with fixed steps: the map is small and blurred, so fewer than
         // the view's are enough, and no frame-to-frame offset is needed.
         capture.capture = glm::vec4(static_cast<float>(face), clouds ? 1.0f : 0.0f, 24.0f, 3.0f);
-        DrawFullscreenToCube(commands, sky_capture, face, 0, sky_capture_pipeline, capture_bindings, 3, &frame.cloud_uniforms,
+        DrawFullscreenToCube(commands, sky_capture, face, 0, sky_capture_pipeline, capture_bindings, 5, &frame.cloud_uniforms,
                              sizeof(frame.cloud_uniforms), &capture, sizeof(capture));
     };
     const auto blur_levels = [&]() {

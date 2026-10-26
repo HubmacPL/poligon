@@ -1,9 +1,13 @@
 // Automatic exposure, measuring part. Writes one pixel: the brightness the eye is currently
-// adapted to. It is the average brightness of the scene (taken from the smallest image of
-// the bloom chain), approached gradually from the value of the previous frame.
+// adapted to. It is the average brightness of the scene, approached gradually from the value
+// of the previous frame.
 //
-// The average is taken of logarithms, so that a small very bright area (the sun) does not
-// outweigh everything else.
+// The average is taken of logarithms (the log average), so that a small very bright area
+// (the sun, a bright sky between trees) does not outweigh everything else: over 64 x 64
+// points of the half-size image (the first level of the bloom chain, each of its pixels a
+// blurred mean of the scene pixels around it). The smallest level of the chain was read
+// before; its pixels average linearly over large areas, so the sun weighed in before the
+// logarithm.
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
 Texture2D<float4> scene_texture : register(t0, space2);
@@ -26,7 +30,7 @@ struct FragmentInput {
 };
 
 float main(FragmentInput input) : SV_Target0 {
-    static const int kGrid = 8;
+    static const int kGrid = 64;
     float log_sum = 0.0;
     for (int y = 0; y < kGrid; ++y) {
         for (int x = 0; x < kGrid; ++x) {

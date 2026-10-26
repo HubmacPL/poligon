@@ -10,8 +10,15 @@
 #define CLOUDS_WEATHER_BINDING 2
 #define CLOUDS_WEATHER_T t2
 #define CLOUDS_WEATHER_S s2
+#define ATMOSPHERE_SKY_VIEW_BINDING 3
+#define ATMOSPHERE_SKY_VIEW_T t3
+#define ATMOSPHERE_SKY_VIEW_S s3
+#define ATMOSPHERE_TRANSMITTANCE_BINDING 4
+#define ATMOSPHERE_TRANSMITTANCE_T t4
+#define ATMOSPHERE_TRANSMITTANCE_S s4
 #include "common.hlsli"
 #include "clouds.hlsli"
+#include "atmosphere.hlsli"
 
 cbuffer SkyCaptureUniforms : register(b1, space3) {
     float4 capture;      // x: face 0..5, y: 1 = clouds, z: steps through the clouds, w: steps towards the sun
@@ -19,6 +26,8 @@ cbuffer SkyCaptureUniforms : register(b1, space3) {
     float4 horizon;
     float4 ground;
     float4 eye;          // xyz: where the sky is seen from
+    float4 atmosphere;   // rgb: the sun's color above the air times pi and the sky light's strength; w: 1 = atmosphere model
+    float4 to_sun;       // xyz: the way to the sun
 };
 
 struct FragmentInput {
@@ -30,6 +39,10 @@ struct FragmentInput {
 float4 main(FragmentInput input) : SV_Target0 {
     float3 direction = CubeFaceDirection((int)capture.x, input.uv);
     float3 color = SkyColor(direction, zenith.rgb, horizon.rgb, ground.rgb);
+    if (atmosphere.w > 0.5) {
+        // Below the horizon the ground's light (worked out with the sky, SkyLight::ground).
+        color = lerp(AtmosphereSky(direction, to_sun.xyz) * atmosphere.rgb, ground.rgb, saturate(-direction.y * 5.0));
+    }
     if (capture.y > 0.5) {
         float enter;
         float leave;

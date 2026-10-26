@@ -1296,15 +1296,19 @@ private:
     std::unique_ptr<poligon::WorldStreamer> streamer_;
 };
 
-// The look the forest starts with: late afternoon, a warm and fairly low sun, so that
-// trunks throw long shadows through the haze.
+// The look the forest starts with: a fairly low sun, 29 degrees up, so that trunks throw
+// long shadows through the haze. Sky and sunlight come from the atmosphere model, which
+// warms and dims the sun by itself; sky.time_of_day in a settings file moves the sun to an
+// hour of the day instead.
 poligon::RenderSettings MakeForestSettings() {
     poligon::RenderSettings settings;
     settings.sun.direction = {-0.62f, -0.48f, -0.62f};
-    settings.sun.color = {3.4f, 2.9f, 2.2f, 1.0f};
+    // The sun's color above the air.
+    settings.sun.color = {3.6f, 3.6f, 3.6f, 1.0f};
 
     poligon::Environment& environment = settings.environment;
     environment.draw_sky = true;
+    environment.sky_model = poligon::SkyModel::Atmosphere;
     environment.sky_light = true;
     environment.sky_zenith = {0.18f, 0.34f, 0.72f, 1.0f};
     environment.sky_horizon = {0.72f, 0.76f, 0.80f, 1.0f};

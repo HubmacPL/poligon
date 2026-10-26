@@ -62,7 +62,14 @@ void Renderer::Impl::RenderScenePass(FrameContext& frame) {
             sky_uniforms.sky_zenith = ToVec4(environment.sky_zenith);
             sky_uniforms.sky_horizon = ToVec4(environment.sky_horizon);
             sky_uniforms.sky_ground = ToVec4(environment.sky_ground);
+            sky_uniforms.atmosphere = glm::vec4(impl.atmosphere.sun_above_air * kPi, impl.atmosphere.on ? 1.0f : 0.0f);
             SDL_BindGPUGraphicsPipeline(pass, impl.sky_pipeline);
+            SDL_GPUTextureSamplerBinding sky_bindings[2]{};
+            sky_bindings[0].texture = impl.AtmosphereSkyView();
+            sky_bindings[0].sampler = impl.linear_clamp_sampler;
+            sky_bindings[1].texture = impl.AtmosphereTransmittance();
+            sky_bindings[1].sampler = impl.linear_clamp_sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, sky_bindings, 2);
             SDL_PushGPUFragmentUniformData(commands, 0, &sky_uniforms, sizeof(sky_uniforms));
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
         }

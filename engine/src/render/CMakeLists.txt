@@ -3,6 +3,7 @@
 # and drawing inside a pass, around Renderer::Impl in renderer/renderer_internal.h.
 # resources/: what lives on the graphics card. passes/: one file per pass of a frame.
 add_library(poligon_render STATIC
+  passes/atmosphere_pass.cpp
   passes/blend_pass.cpp
   passes/bloom_pass.cpp
   passes/cloud_pass.cpp
@@ -22,6 +23,7 @@ add_library(poligon_render STATIC
   renderer/renderer.cpp
   renderer/render_targets.cpp
   renderer/targets.cpp
+  resources/atmosphere.cpp
   resources/cloud_noise.cpp
   resources/cloud_textures.cpp
   resources/decals.cpp
@@ -38,6 +40,7 @@ add_library(poligon_render STATIC
   resources/uploads.cpp
   settings/graphics_quality.cpp
   settings/render_settings.cpp
+  sky/sky.cpp
 )
 target_link_libraries(poligon_render PUBLIC poligon_core)
 target_link_libraries(poligon_render PRIVATE poligon_build_options SDL3::SDL3)
@@ -53,6 +56,7 @@ set(POLIGON_SHADER_SHARED
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/lighting.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/impostor.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/clouds.hlsli
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/atmosphere.hlsli
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh/mesh.frag.hlsl
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vegetation/impostor.frag.hlsl)
 
@@ -120,6 +124,7 @@ poligon_embed_shader(shaders/sky/clouds_resolve.frag.hlsl fragment kCloudsResolv
 poligon_embed_shader(shaders/sky/sky_capture.frag.hlsl fragment kSkyCaptureFrag sky_capture_frag)
 poligon_embed_shader(shaders/sky/sky_prefilter.frag.hlsl fragment kSkyPrefilterFrag sky_prefilter_frag)
 poligon_embed_shader(shaders/sky/sky.frag.hlsl fragment kSkyFrag sky_frag)
+poligon_embed_shader(shaders/sky/atmosphere_sky_view.frag.hlsl fragment kAtmosphereSkyViewFrag atmosphere_sky_view_frag)
 # water
 poligon_embed_shader(shaders/water/water.frag.hlsl fragment kWaterFrag water_frag)
 poligon_embed_shader(shaders/water/depth_copy.frag.hlsl fragment kDepthCopyFrag depth_copy_frag)
