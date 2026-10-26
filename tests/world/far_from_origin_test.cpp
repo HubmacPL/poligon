@@ -1,10 +1,11 @@
 // Checks that world positions in double and the camera-relative renderer make a scene far
 // from the origin look the same as near it: one scene with terrain, meshes, plants, water,
 // a decal, particles and a skinned mesh is drawn at the origin and again moved by
-// (20000, 0, 20000), and the two pictures are saved for image_compare (see CMakeLists.txt).
-// Wind and waves are off: their noise is anchored to a 4096 m grid (see docs/en/rendering.md),
-// so a shift that is not a multiple of 4096 m shows other gusts and other waves. Clouds are
-// off too: they are fixed to the world, and 28 km away the sky holds other clouds.
+// (20480, 0, 20480), and the two pictures are saved for image_compare (see CMakeLists.txt).
+// The wind blows and the water has waves. Their noise repeats every 4096 m (see
+// docs/en/rendering.md), so the shift is five such squares, about 20 km: a shift that is not a
+// multiple of 4096 m shows other gusts and other waves. Clouds are off: they are fixed to the
+// world, and 29 km away the sky holds other clouds.
 // Usage: far_from_origin_test d3d12|vulkan OUTPUT_DIRECTORY
 #include <cmath>
 #include <cstdio>
@@ -71,7 +72,7 @@ bool DrawScene(poligon::GraphicsBackend backend, const glm::dvec3& center, const
     const poligon::HeightMap map = poligon::MakeNoiseHeightMap(129, 129, 1.0f, 7u, 40.0f, 3.0f);
     poligon::TerrainConfig terrain_config;
     // A checker texture repeating every 4 m. Textures are fixed to the world, so the shift is a
-    // whole number of repeats (20000 = 5000 x 4), and the picture must not change. The repeat
+    // whole number of repeats (20480 = 5120 x 4), and the picture must not change. The repeat
     // works out in double; in float at 20 km it would be off by about 2 mm.
     const std::uint8_t grass[4] = {70, 110, 50, 255};
     const std::uint8_t soil[4] = {110, 90, 60, 255};
@@ -90,6 +91,9 @@ bool DrawScene(poligon::GraphicsBackend backend, const glm::dvec3& center, const
     poligon::Material green = red;
     green.color = {0.2f, 0.6f, 0.2f, 1.0f};
     poligon::Material white = red;
+    // The plants move in the wind: lean and flutter.
+    green.wind_bend = 1.0f;
+    green.wind_flutter = 1.0f;
     white.color = {0.9f, 0.9f, 0.9f, 1.0f};
 
     // Plants: a green box species, placed in a ring.
@@ -134,8 +138,10 @@ bool DrawScene(poligon::GraphicsBackend backend, const glm::dvec3& center, const
     environment.draw_sky = true;
     environment.shadow_distance = 60.0f;
     environment.fog_density = 0.004f;
+    // A fresh wind, a few seconds into it: the plants lean and their leaves shiver.
+    environment.wind_strength = 1.0f;
+    environment.wind_time = 3.7f;
     poligon::WaterMaterial water;
-    water.wave_strength = 0.0f;
     poligon::DecalMaterial blood;
     blood.color = {0.5f, 0.0f, 0.0f, 1.0f};
     blood.roughness = 1.0f;
@@ -181,6 +187,6 @@ int main(int argc, char** argv) {
     }
     const std::string prefix = std::string(argv[2]) + "/far_from_origin_" + argv[1];
     Expect(DrawScene(backend, glm::dvec3(0.0), prefix + "_near.png"), "the scene at the origin is drawn and saved");
-    Expect(DrawScene(backend, glm::dvec3(20000.0, 0.0, 20000.0), prefix + "_far.png"), "the scene 28 km away is drawn and saved");
+    Expect(DrawScene(backend, glm::dvec3(20480.0, 0.0, 20480.0), prefix + "_far.png"), "the scene 29 km away, in the wind, is drawn and saved");
     return test::ExitCode();
 }

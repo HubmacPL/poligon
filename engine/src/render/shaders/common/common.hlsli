@@ -99,6 +99,20 @@ bool KeptByFade(float fade, float2 pixel) {
 // `local` the vertex in the model's own coordinates. Positions are relative to the camera;
 // `noise_shift` added to them gives world-fixed ones for the gusts (see NoiseShift in
 // renderer_internal.h). Returns the moved position.
+// Smooth noise in 0..1 with features about one unit apart: random values at whole
+// coordinates, blended in between. A small change of `place` changes the value a little
+// (a hash of `place` itself would jump), so float rounding of positions cannot show.
+float WindNoise(float2 place) {
+    float2 cell = floor(place);
+    float2 f = place - cell;
+    f = f * f * (3.0 - 2.0 * f);
+    float a = frac(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+    float b = frac(sin(dot(cell + float2(1.0, 0.0), float2(12.9898, 78.233))) * 43758.5453);
+    float c = frac(sin(dot(cell + float2(0.0, 1.0), float2(12.9898, 78.233))) * 43758.5453);
+    float d = frac(sin(dot(cell + float2(1.0, 1.0), float2(12.9898, 78.233))) * 43758.5453);
+    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+
 float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, float2 response, float3 noise_shift) {
     if (wind.z <= 0.0 || (response.x <= 0.0 && response.y <= 0.0)) {
         return world_position;  // no wind, or a material that does not move (rock, bark of a stump)
@@ -106,9 +120,11 @@ float3 ApplyWind(float3 world_position, float3 foot, float3 local, float4 wind, 
     float2 direction = wind.xy;
     float height = max(world_position.y - foot.y, 0.0);
     // Gusts travel over the land as two waves; every plant starts them at a slightly
-    // different moment, so that a forest does not move as one.
+    // different moment, so that a forest does not move as one: the moment comes from smooth
+    // noise over the land (two turns over a few meters), so it does not depend on how the
+    // plant's position was rounded.
     float2 fixed_foot = foot.xz + noise_shift.xz;
-    float phase = frac(sin(dot(fixed_foot, float2(12.9898, 78.233))) * 43758.5453) * 6.2832;
+    float phase = WindNoise(fixed_foot * 0.45) * 12.566;
     float along = dot(fixed_foot, direction);
     float gust = (0.5 + 0.5 * sin(along * 0.08 - wind.w * 1.2 + phase)) *
                  (0.7 + 0.3 * sin(along * 0.31 - wind.w * 2.7 + phase * 2.0));

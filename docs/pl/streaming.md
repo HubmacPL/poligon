@@ -99,7 +99,13 @@ Zmierzone na GTX 980 w 1920 x 1080, high, w czterech stałych widokach (przed: l
 | procesor na klatkę | 2,6-5,0 ms | 2,7-5,0 ms |
 | krok fizyki | 0,048-0,055 ms | 0,061-0,071 ms |
 
-Obrazy czterech widoków zgadzają się z lądem trzymanym w całości poza 0,2 do 3% pikseli różniących się o więcej niż 12 na 255, na nasłonecznionych liściach i źdźbłach: siatka zasłonięcia nieba zaczyna się teraz w rogach łat, metr od miejsca, w którym zaczynała się wcześniej, a cienkie krawędzie koron i źdźbeł to pokazują. Krok fizyki urósł, bo kolizje obejmują teraz 3 x 3 łaty wokół gracza (2,4 km², około 13 000 pni i kamieni) zamiast stałego kwadratu 1 km wokół startu; `forest_scene` tworzy świat fizyki z miejscem na 65 536 ciał.
+W porównaniu z lądem trzymanym w całości obrazy czterech widoków różniły się na 0,2 do 2,6% pikseli o więcej niż 12 na 255, przy 200 tickach i tak samo przy 600 (więc nie chodziło o to, co zdążyło się wczytać: przebiegi bez okna wczytują synchronicznie). Trzy przyczyny, znalezione przez porównanie z wersją z lądem trzymanym w całości przy tych samych shaderach:
+
+- Wiatr: faza podmuchu każdej rośliny była skrótem jej pozycji, a komórki roślinności, przesunięte, żeby pasowały do łat, zaokrąglają pozycje inaczej (przy wyłączonym wietrze widok lasu spadł z 2,6 do 0,42%). Faza pochodzi teraz z gładkiego szumu (patrz rendering.md).
+- Woda: szum fal był kotwiczony do początku każdej powierzchni wody zaokrąglonego do siatki 4096 m; jezioro, teraz po jednej powierzchni na łatę, dostawało różne kotwice na różnych łatach, co dawało też szwy w falach na niektórych granicach łat. Cała woda klatki ma teraz wspólną kotwicę kamery (widok brzegu: z 1,7 do 0,17%).
+- Fizyka: ląd koliduje jako pola wysokości na łatę zamiast jednego, a gracz (z kamerą) i skrzynie spoczywają o ułamek milimetra inaczej (kamera 0,12 mm); krawędzie skrzyń i źdźbeł przesuwają się o ułamek piksela. To zostaje.
+
+Co zostało wobec lądu trzymanego w całości przy tych samych shaderach: 0,18% (start), 0,31% (las), 0,17% (brzeg), 1,39% (tył: stos skrzyń i trawa przed kamerą) pikseli różniących się o więcej niż 12 na 255; poza fizyką gładkie różnice cieniowania siatki zasłonięcia nieba (zaczyna się w rogach łat, metr od dawnego miejsca) i pojedyncze piksele na krawędziach wycinanych liści. Krok fizyki urósł, bo kolizje obejmują teraz 3 x 3 łaty wokół gracza (2,4 km², około 13 000 pni i kamieni) zamiast stałego kwadratu 1 km wokół startu; `forest_scene` tworzy świat fizyki z miejscem na 65 536 ciał.
 
 ## Znane ograniczenia
 

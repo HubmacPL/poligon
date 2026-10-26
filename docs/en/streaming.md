@@ -99,7 +99,13 @@ Measured on the GTX 980 at 1920 x 1080, high, the four fixed views (before: the 
 | processor per frame | 2.6-5.0 ms | 2.7-5.0 ms |
 | physics step | 0.048-0.055 ms | 0.061-0.071 ms |
 
-The pictures of the four views match the land held whole except on 0.2 to 3% of pixels by more than 12 of 255, on sunlit leaves and grass blades: the sky occlusion grid now starts at patch corners, a meter away from where it started before, and crowns' and grass blades' thin edges show it. The physics step grew because collisions now cover 3 x 3 patches around the player (2.4 km², about 13 000 trunks and rocks) instead of a fixed square of 1 km around the start; `forest_scene` makes its physics world with room for 65 536 bodies.
+Compared with the land held whole, the pictures of the four views differed on 0.2 to 2.6% of pixels by more than 12 of 255, at 200 ticks and the same at 600 (so not a matter of what had loaded: headless runs load synchronously). Three causes, found by comparing with the land-held-whole build given the same shaders:
+
+- The wind: each plant's gust phase was a hash of its position, and the vegetation's cells, moved to fit the patches, round positions differently (with the wind off the forest view fell from 2.6 to 0.42%). The phase now comes from smooth noise (see rendering.md).
+- The water: the waves' noise was anchored to each water surface's own origin rounded to the 4096 m grid; the lake, now one surface per patch, got different anchors on different patches, which also put seams in the waves at some patch borders. All water of a frame now shares the camera's anchor (shore view: 1.7 to 0.17%).
+- The physics: the land collides as height fields per patch instead of one, and the player (with the camera) and the crates come to rest a fraction of a millimeter differently (the camera 0.12 mm); crate and grass edges move by a fraction of a pixel. This stays.
+
+What is left against the land held whole with the same shaders: 0.18% (start), 0.31% (forest), 0.17% (shore), 1.39% (back, the crate pile and the grass in front of the camera) of pixels by more than 12 of 255; besides the physics, smooth shading differences of the sky occlusion grid (it starts at patch corners, a meter from where it started before) and single pixels on the edges of cut-out leaves. The physics step grew because collisions now cover 3 x 3 patches around the player (2.4 km², about 13 000 trunks and rocks) instead of a fixed square of 1 km around the start; `forest_scene` makes its physics world with room for 65 536 bodies.
 
 ## Known limits
 

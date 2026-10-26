@@ -654,7 +654,10 @@ void Renderer::DrawWater(MeshHandle mesh, const glm::dvec3& origin, const glm::m
     command.mesh_id = mesh.id;
     command.transform = RelativeTo(origin, local, impl_->origin);
     command.material = material;
-    command.noise_shift = NoiseShift(impl_->origin, origin);
+    // All water of a frame shares one anchor for its waves (the camera's square of the 4096 m
+    // grid), as the plants do: pieces of one lake drawn as separate surfaces (the patches of a
+    // streamed world) must meet without a seam in the waves.
+    command.noise_shift = NoiseShift(impl_->origin, impl_->origin);
     impl_->water_commands.push_back(command);
 }
 
