@@ -61,6 +61,22 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 - `LoadedModel` holds the model data (vertices for physics and placement, skeleton, clips), its `RenderModel`, the simpler levels' meshes (skinned ones too, posed by the full model's skeleton) and the impostor. `MakeMeshLodGroup(loaded, instance, distances)` turns one mesh and its simpler levels into a `MeshLodGroup` for `Renderer::DrawMesh` or `DrawSkinnedMesh` (see rendering.md).
 - `Renderer::CreateTexture(const CompressedImage&)` and `CreateTextureArray(const CompressedImage*, count)` take cooked images as they are; `CreateImpostor` has an overload for compressed pictures.
 
+## The release asset archive
+
+`tools\package_assets.ps1` makes `poligon-VERSION-assets.zip` for a release: the assets of
+`tools\forest_scene\assets.txt` without those named in `-Exclude` (assets whose license does
+not allow them to be given away; by default `animals/fox`, whose license is unclear), cooked
+fresh from `poligon-assets\source` with the land of `forest.level` and packed into
+`poligon-assets\cooked\assets.pak`, with `ATTRIBUTION.md` (from `tools\assets\ATTRIBUTION.md`:
+author, title, link and license of every asset) and `README.txt`. Without `-Zip` it stops after
+the folder, so the list can be checked first.
+
+A released copy has no sources: `forest_scene` and `model_viewer` find `poligon-assets` in
+their own folder or a folder above it, see that `source` is missing and open
+`cooked\assets.pak` as it is; `forest_scene` then neither cooks assets nor generates the land,
+and reads `assets.txt` and `forest.level` next to itself. `model_viewer` without arguments
+shows the models that `assets.txt` next to it names.
+
 ## Plants from models
 
 `MakePlantKind(model, settings, vegetation)` (`poligon/world/plants.h`) turns a loaded model into a kind of plant, rock or dead wood and adds its variants to a `Vegetation`:

@@ -5,11 +5,14 @@
 // loaded from build/terrain_cache. The models and textures are named in assets.txt (next to
 // this file); their sources are in poligon-assets/source, and they are cooked into
 // poligon-assets/cooked when the program starts, whenever the list or a source changed
-// (poligon/assets/assets.h). The land's settings, its ground layers, the player's start,
-// things put by hand and the rules that plant the forest, the shore and the ground cover are
-// in forest.level (poligon/world/level.h, poligon/world/plant_rules.h). The land is streamed
-// (poligon/world/streaming.h): cooked into 512 m patches with the other assets, and loaded
-// in a window around the camera. Walking flattens grass into paths (poligon/world/trample.h).
+// (poligon/assets/assets.h). A released copy has no sources: then poligon-assets/cooked holds
+// one archive, assets.pak (made by tools/package_assets.ps1), with the land already cooked,
+// and assets.txt and forest.level lie next to the program. The land's settings, its ground
+// layers, the player's start, things put by hand and the rules that plant the forest, the
+// shore and the ground cover are in forest.level (poligon/world/level.h,
+// poligon/world/plant_rules.h). The land is streamed (poligon/world/streaming.h): cooked into
+// 512 m patches with the other assets, and loaded in a window around the camera. Walking
+// flattens grass into paths (poligon/world/trample.h).
 //
 // Usage: forest_scene [X Z TURN TILT [collision] [lights]] [standard Poligon options]
 //   X Z         where to stand, in meters from the start (default 0 0): a slope above
@@ -615,10 +618,20 @@ private:
     }
 
     // Cooks what changed since the last run (sources in poligon-assets/source, cooked files
-    // in poligon-assets/cooked) and opens the cooked folder.
+    // in poligon-assets/cooked) and opens the cooked folder. Without sources it opens the
+    // archive cooked/assets.pak instead.
     void OpenAssets(const std::filesystem::path& list_path, const std::filesystem::path& cooked) {
         poligon::AssetList list;
         std::string error;
+        std::error_code exists_error;
+        cooked_only_ = !std::filesystem::is_directory(sources_, exists_error);
+        if (cooked_only_) {
+            const std::filesystem::path archive = cooked / "assets.pak";
+            if (!library_.Open(archive.string().c_str(), error)) {
+                std::printf("forest_scene: %s\n", error.c_str());
+            }
+            return;
+        }
         if (!poligon::LoadAssetList(list_path.string().c_str(), list, error)) {
             std::printf("forest_scene: %s\n", error.c_str());
         } else {
@@ -678,7 +691,9 @@ private:
         std::string error;
         bool cooked = false;
         const auto started = std::chrono::steady_clock::now();
-        if (!poligon::CookLevelWorld(level_, ground_layers_, cooked_.string().c_str(), terrain_cache_.string().c_str(), cooked, error)) {
+        // A released copy has the land in its archive already.
+        if (!cooked_only_ &&
+            !poligon::CookLevelWorld(level_, ground_layers_, cooked_.string().c_str(), terrain_cache_.string().c_str(), cooked, error)) {
             poligon::FatalError(("forest_scene: " + error).c_str());
         }
         std::printf("forest_scene: land %s in %.1f s\n", cooked ? "generated and cooked into patches" : "cooked already",
@@ -1152,6 +1167,8 @@ private:
 
     poligon::Renderer& renderer_;
     std::filesystem::path sources_;
+    // No sources: the cooked archive is used as it is (a released copy).
+    bool cooked_only_ = false;
     const poligon::Input& input_;
     ForestActions actions_;
 
@@ -1482,8 +1499,10 @@ int main(int argc, char** argv) {
 
     const std::filesystem::path assets = FindAssetsFolder(argv[0]);
     std::error_code assets_error;
-    if (assets.empty() || !std::filesystem::is_directory(assets / "source", assets_error)) {
-        const char* message = "No folder named poligon-assets, with the asset sources in its folder source, found next to the project folder.";
+    if (assets.empty() || (!std::filesystem::is_directory(assets / "source", assets_error) &&
+                           !std::filesystem::is_regular_file(assets / "cooked" / "assets.pak", assets_error))) {
+        const char* message = "No folder named poligon-assets found next to the program or the project folder, with the asset "
+                              "sources in its folder source or the cooked archive cooked/assets.pak.";
         std::fprintf(stderr, "forest_scene: %s\n", message);
         if (started_by_hand) {
             poligon::ShowMessageBox("Poligon forest scene", message);
@@ -1544,11 +1563,15 @@ int main(int argc, char** argv) {
 
     const auto load_start = std::chrono::steady_clock::now();
     // Generated land is kept in the build folder (the program runs from build/PRESET/bin);
-    // the asset list is in the project's tools/forest_scene.
+    // the asset list and the level are in the project's tools/forest_scene, or, in a released
+    // copy, next to the program.
     std::error_code path_error;
-    const std::filesystem::path build_folder =
-        std::filesystem::absolute(argv[0], path_error).parent_path().parent_path().parent_path();
-    const std::filesystem::path scene_folder = build_folder.parent_path() / "tools" / "forest_scene";
+    const std::filesystem::path program_folder = std::filesystem::absolute(argv[0], path_error).parent_path();
+    const std::filesystem::path build_folder = program_folder.parent_path().parent_path();
+    std::filesystem::path scene_folder = build_folder.parent_path() / "tools" / "forest_scene";
+    if (std::filesystem::is_regular_file(program_folder / "forest.level", path_error)) {
+        scene_folder = program_folder;
+    }
     ForestGame game(renderer, assets, build_folder, scene_folder / "assets.txt", scene_folder / "forest.level", input, actions, view,
                     options.positional.size() >= 3, settings, settings_path, options.headless);
     const auto has_word = [&options](const char* word) {

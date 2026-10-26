@@ -4,7 +4,10 @@
 // CLIP is the name of the animation clip to play (default: the model's first one); C
 // switches to the next clip. With --headless, --ticks N plays N sixtieths of a second
 // before the picture is taken.
-//   Double click (no arguments): browse the models in poligon-assets/source next to the project.
+//   Double click (no arguments): browse the models in poligon-assets/source next to the project,
+//                                or, in a released copy without sources, the models of the
+//                                cooked archive poligon-assets/cooked/assets.pak, by the names
+//                                in assets.txt next to the program.
 //   A folder:                    browse every model in it.
 //   One picture:                 model_viewer tree.glb --headless --dump-frame tree.png
 //
@@ -20,6 +23,8 @@
 #include <vector>
 
 #include "poligon/animation/animation_build.h"
+#include "poligon/assets/assets.h"
+#include "poligon/assets/cooking.h"
 #include "poligon/core/command_line.h"
 #include "poligon/core/crash_handler.h"
 #include "poligon/core/game_loop.h"
@@ -127,6 +132,23 @@ std::vector<std::string> FindDefaultModels(const std::filesystem::path& source) 
     return models;
 }
 
+// The model names of an asset list (released copies: the models of the cooked archive).
+std::vector<std::string> FindListedModels(const std::filesystem::path& list_path) {
+    poligon::AssetList list;
+    std::string error;
+    std::vector<std::string> names;
+    if (!poligon::LoadAssetList(list_path.string().c_str(), list, error)) {
+        std::fprintf(stderr, "model_viewer: %s\n", error.c_str());
+        return names;
+    }
+    for (const poligon::AssetEntry& entry : list.entries) {
+        if (entry.kind == poligon::AssetKind::Model) {
+            names.push_back(entry.name);
+        }
+    }
+    return names;
+}
+
 void PrintModelSummary(const char* path, const poligon::Model& model) {
     const glm::vec3 size = model.bounds_max - model.bounds_min;
     std::printf("model: %s\n", path);
@@ -161,9 +183,12 @@ void PrintModelSummary(const char* path, const poligon::Model& model) {
 
 class ViewerGame : public poligon::Game {
 public:
+    // `library`: when given, model_paths are asset names in it, not files.
     ViewerGame(poligon::Renderer& renderer, const std::vector<std::string>& model_paths, const poligon::Input& input,
-               const ViewerActions& actions, const float view[3], const std::string& start_clip)
-        : renderer_(renderer), model_paths_(model_paths), input_(input), actions_(actions), start_clip_(start_clip) {
+               const ViewerActions& actions, const float view[3], const std::string& start_clip,
+               poligon::AssetLibrary* library = nullptr)
+        : renderer_(renderer), model_paths_(model_paths), input_(input), actions_(actions), start_clip_(start_clip),
+          library_(library) {
         start_view_[0] = view[0];
         start_view_[1] = view[1];
         start_view_[2] = view[2];
@@ -177,24 +202,37 @@ public:
     // current model) if the file cannot be loaded.
     bool ShowModel(size_t index) {
         const std::string& path = model_paths_[index];
-        poligon::Model model;
+        poligon::Model loaded_from_file;
+        const poligon::LoadedModel* cooked = nullptr;
         std::string error;
-        if (!poligon::LoadModelFromFile(path.c_str(), model, error)) {
+        if (library_ != nullptr) {
+            cooked = library_->LoadModel(renderer_, path, error);
+        }
+        if (library_ != nullptr ? cooked == nullptr : !poligon::LoadModelFromFile(path.c_str(), loaded_from_file, error)) {
             std::fprintf(stderr, "model_viewer: %s\n", error.c_str());
             return false;
         }
+        const poligon::Model& model = cooked != nullptr ? cooked->model : loaded_from_file;
         PrintModelSummary(path.c_str(), model);
 
-        poligon::DestroyRenderModel(renderer_, render_model_);
-        render_model_ = poligon::UploadModel(renderer_, model);
+        // A cooked model's render model belongs to the library.
+        player_.reset();
+        if (render_model_owned_) {
+            poligon::DestroyRenderModel(renderer_, render_model_);
+        }
+        render_model_ = cooked != nullptr ? cooked->render : poligon::UploadModel(renderer_, model);
+        render_model_owned_ = cooked == nullptr;
         current_index_ = index;
 
-        // A model with animation clips plays one of them.
-        player_.reset();
+        // A model with animation clips plays one of them (cooked ones come built).
         animations_.reset();
         clip_name_.clear();
-        if (!model.animations.empty()) {
+        if (cooked != nullptr) {
+            animations_ = cooked->animations;
+        } else if (!model.animations.empty()) {
             animations_ = poligon::BuildAnimationSet(model.skeleton, model.animations);
+        }
+        if (animations_ != nullptr) {
             player_ = std::make_unique<poligon::AnimationPlayer>(*animations_);
             const int wanted = animations_->FindClip(start_clip_.c_str());
             if (!start_clip_.empty() && wanted < 0) {
@@ -318,10 +356,12 @@ private:
     const poligon::Input& input_;
     ViewerActions actions_;
     poligon::RenderModel render_model_;
+    bool render_model_owned_ = true;
     std::string start_clip_;
+    poligon::AssetLibrary* library_ = nullptr;
     std::string clip_name_;
     // The player refers to the set, so it is declared after it and destroyed before it.
-    std::unique_ptr<poligon::AnimationSet> animations_;
+    std::shared_ptr<const poligon::AnimationSet> animations_;
     std::unique_ptr<poligon::AnimationPlayer> player_;
     poligon::MeshHandle floor_mesh_;
     poligon::TextureHandle floor_texture_;
@@ -376,13 +416,25 @@ int main(int argc, char** argv) {
     // What to show: one file, every model in a folder, or the default set from poligon-assets.
     std::vector<std::string> model_paths;
     std::error_code file_error;
+    poligon::AssetLibrary library;
+    bool use_library = false;
     if (options.positional.empty()) {
         const std::filesystem::path assets = FindAssetsFolder(argv[0]);
-        if (!assets.empty()) {
+        const std::filesystem::path archive = assets / "cooked" / "assets.pak";
+        const std::filesystem::path list = std::filesystem::absolute(argv[0], file_error).parent_path() / "assets.txt";
+        if (!assets.empty() && std::filesystem::is_directory(assets / "source", file_error)) {
             model_paths = FindDefaultModels(assets / "source");
+        } else if (!assets.empty() && std::filesystem::is_regular_file(archive, file_error) &&
+                   std::filesystem::is_regular_file(list, file_error)) {
+            if (library.Open(archive.string().c_str(), error)) {
+                model_paths = FindListedModels(list);
+                use_library = true;
+            }
+            error.clear();
         }
         if (model_paths.empty()) {
-            error = "No models found. Expected a folder named poligon-assets (with source inside) next to the project folder, "
+            error = "No models found. Expected a folder named poligon-assets next to the project folder (with source inside) "
+                    "or next to the program (with cooked/assets.pak inside, and assets.txt next to the program), "
                     "or start the viewer with a model file: drag a .gltf or .glb file onto model_viewer.exe.";
         }
     } else if (std::filesystem::is_directory(options.positional[0], file_error)) {
@@ -424,7 +476,7 @@ int main(int argc, char** argv) {
     loop_config.input = &input;
 
     const std::string start_clip = options.positional.size() > 4 ? options.positional[4] : std::string();
-    ViewerGame game(renderer, model_paths, input, actions, view, start_clip);
+    ViewerGame game(renderer, model_paths, input, actions, view, start_clip, use_library ? &library : nullptr);
     // Show the first model that loads.
     size_t first = 0;
     while (first < model_paths.size() && !game.ShowModel(first)) {

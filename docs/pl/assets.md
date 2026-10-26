@@ -61,6 +61,22 @@ const poligon::CompressedImage* layer = library.LoadImage("ground/litter_color",
 - `LoadedModel` trzyma dane modelu (wierzchołki dla fizyki i rozstawiania, szkielet, klipy), jego `RenderModel`, siatki prostszych poziomów (także ze szkieletem, pozowane szkieletem pełnego modelu) i impostor. `MakeMeshLodGroup(loaded, instance, distances)` zamienia jedną siatkę i jej prostsze poziomy w `MeshLodGroup` dla `Renderer::DrawMesh` lub `DrawSkinnedMesh` (patrz rendering.md).
 - `Renderer::CreateTexture(const CompressedImage&)` i `CreateTextureArray(const CompressedImage*, count)` przyjmują wypieczone obrazy tak, jak są; `CreateImpostor` ma wersję dla skompresowanych obrazów.
 
+## Archiwum zasobów wydania
+
+`tools\package_assets.ps1` robi `poligon-WERSJA-assets.zip` do wydania: zasoby z
+`tools\forest_scene\assets.txt` bez tych wymienionych w `-Exclude` (zasobów, których licencja
+nie pozwala ich rozdawać; domyślnie `animals/fox`, którego licencja jest niejasna), wypieczone
+od nowa z `poligon-assets\source` razem z lądem z `forest.level` i spakowane do
+`poligon-assets\cooked\assets.pak`, z `ATTRIBUTION.md` (z `tools\assets\ATTRIBUTION.md`:
+autor, tytuł, odnośnik i licencja każdego zasobu) i `README.txt`. Bez `-Zip` kończy na
+folderze, żeby listę można było najpierw sprawdzić.
+
+Wydana kopia nie ma źródeł: `forest_scene` i `model_viewer` znajdują `poligon-assets` we
+własnym folderze albo w folderze nad nim, widzą, że brak `source`, i otwierają
+`cooked\assets.pak` tak, jak jest; `forest_scene` nie wypieka wtedy zasobów ani nie generuje
+lądu, a `assets.txt` i `forest.level` czyta obok siebie. `model_viewer` bez argumentów pokazuje
+modele, które wymienia `assets.txt` obok niego.
+
 ## Rośliny z modeli
 
 `MakePlantKind(model, settings, vegetation)` (`poligon/world/plants.h`) zamienia wczytany model w rodzaj rośliny, kamienia albo martwego drewna i dodaje jego odmiany do `Vegetation`:
