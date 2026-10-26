@@ -55,6 +55,12 @@ Sources, each with its own window:
 - **Ground cover** is not a source (it is grown in small cells around the camera anyway): `GroundCover::SetLand(&land)` makes it read each place's maps from the held land patch, and a cell grows only once every patch it touches is held by the land and the terrain; until then it is tried again on every `Update`.
 - **Trample map**: it is game state that follows the player, not loaded data. `TrampleMap::SetRememberOutside(true)` keeps the values of cells that leave its grid and gives them back, less what they would have recovered meanwhile, when the grid comes back.
 
+## The far background
+
+Beyond the window the land is still there: a streamed `Terrain` draws it from `LandInfo::background` (the whole land's heights a point every 64 m, with ground layer weights at the same points) wherever no patch is held. The coarse heights are brought to 64 cells per patch (8 m for 512 m patches), so that the background's smallest square is exactly one patch; a square with held patches inside is split down to single patches and those are left out, and far squares grow to 2, 4, 8... patches by the same distance rule as the patches' own squares. It is one more `DrawTerrain` call, so one more draw call per pass; the haze and fog of the renderer cover it like any land. `SetBackgroundVisible(false)` turns it off; `TerrainStats::background_patches` counts its squares.
+
+Forest impostors on far patches are not drawn yet (see Known limits).
+
 What `terrain_streaming_test` checks, on 512 m of generated land cut into 4 x 4 patches of 128 m, on both backends:
 
 - heights and normals of the streamed terrain equal the whole terrain's to the bit, on patch borders too; the largest step across a border over 2 mm is 0.5 mm (the slope, not a seam);
@@ -64,7 +70,8 @@ What `terrain_streaming_test` checks, on 512 m of generated land cut into 4 x 4 
 - water from patches covers the same squares as `CreateLakeSurfaces` over the whole land (no pixel differs);
 - sky occlusion joined from patches equals the whole land's point for point, also with the crowns of the plants (973 points under crowns, no difference);
 - ground cover on the streamed terrain grows the whole land's tufts (4611, the same transforms), standing on a corner of four patches;
-- a trampled path left behind is there again on return, less what it recovered.
+- a trampled path left behind is there again on return, less what it recovered;
+- with a window of 2 x 2 patches, the rest of the land is drawn from the background (16 m points there): 12 squares, and 0.07% of the pixels of a wide view from above differ from the whole land by more than 16 of 255.
 
 ## Known limits
 
@@ -72,4 +79,6 @@ What `terrain_streaming_test` checks, on 512 m of generated land cut into 4 x 4 
 - No hysteresis yet: walking back and forth over a patch border loads and lets go the same row of patches each time.
 - A streamed terrain's pages are fixed when it is made; a window larger than its pages ends the program with a message.
 - Sky occlusion looks at most one patch far (`reach` up to the patch size).
+- No forest beyond the plants' window: far patches show bare background land. Impostors placed from a forest density map were not built: in `forest_scene`, the only measured scene, the rules plant trees only within 1.2 km of the start, so there is no far forest whose cost could be measured against the limit of 1 ms in high.
+- Where a held patch meets the background, the fine and the coarse land may differ by up to a few meters; the patches' skirts hide the gap, not the step.
 - A patch's plants are placed twice when both the drawn plants and their colliders are streamed (the planter runs once per source); it costs loading time, not memory.

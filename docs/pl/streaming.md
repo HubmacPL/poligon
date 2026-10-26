@@ -55,6 +55,12 @@ Generator terenu symuluje cały ląd naraz (rzeki i erozja nie są lokalne), wi�
 - **Pokrycie terenu (runo)** nie jest źródłem (i tak rośnie w małych komórkach wokół kamery): `GroundCover::SetLand(&land)` sprawia, że mapy każdego miejsca czyta z trzymanej łaty lądu, a komórka wyrasta dopiero, gdy każda łata, której dotyka, jest trzymana przez ląd i teren; do tego czasu jest próbowana przy każdym `Update`.
 - **Mapa wydeptania** to stan gry idący za graczem, nie wczytywane dane. `TrampleMap::SetRememberOutside(true)` zachowuje wartości komórek, które wychodzą z jej siatki, i oddaje je, pomniejszone o to, co by przez ten czas odrosło, gdy siatka wróci.
 
+## Dalekie tło
+
+Za oknem ląd nadal jest: strumieniowany `Terrain` rysuje go z `LandInfo::background` (wysokości całego lądu co 64 m, z wagami warstw podłoża w tych samych punktach) wszędzie tam, gdzie żadna łata nie jest trzymana. Zgrubne wysokości są doprowadzone do 64 komórek na łatę (8 m przy łatach 512 m), żeby najmniejszy kwadrat tła był dokładnie jedną łatą; kwadrat z trzymanymi łatami w środku jest dzielony aż do pojedynczych łat, a te są pomijane, a dalekie kwadraty rosną do 2, 4, 8... łat według tej samej reguły odległości co kwadraty samych łat. To jedno wywołanie `DrawTerrain` więcej, czyli jedno rysowanie więcej na przebieg; mgiełka i mgła renderera kryją je jak każdy ląd. `SetBackgroundVisible(false)` je wyłącza; `TerrainStats::background_patches` liczy jego kwadraty.
+
+Impostory lasu na dalekich łatach nie są jeszcze rysowane (patrz Znane ograniczenia).
+
 Co sprawdza `terrain_streaming_test` na 512 m wygenerowanego lądu pociętego na 4 x 4 łaty po 128 m, na obu backendach:
 
 - wysokości i normalne strumieniowanego terenu są równe tym z całego terenu co do bitu, także na granicach łat; największy skok przez granicę na 2 mm to 0,5 mm (spadek terenu, nie szew);
@@ -64,7 +70,8 @@ Co sprawdza `terrain_streaming_test` na 512 m wygenerowanego lądu pociętego na
 - woda z łat pokrywa te same kwadraty co `CreateLakeSurfaces` na całym lądzie (żaden piksel się nie różni);
 - zasłonięcie nieba złożone z łat równa się temu z całego lądu punkt w punkt, także z koronami roślin (973 punkty pod koronami, bez różnicy);
 - runo na strumieniowanym terenie wyrasta takie jak na całym lądzie (4611 kęp, te same przekształcenia), stojąc na rogu czterech łat;
-- wydeptana i opuszczona ścieżka jest po powrocie znowu na miejscu, pomniejszona o to, co odrosło.
+- wydeptana i opuszczona ścieżka jest po powrocie znowu na miejscu, pomniejszona o to, co odrosło;
+- przy oknie 2 x 2 łat reszta lądu jest rysowana z tła (tu punkty co 16 m): 12 kwadratów, a 0,07% pikseli szerokiego widoku z góry różni się od całego lądu o więcej niż 16 na 255.
 
 ## Znane ograniczenia
 
@@ -72,4 +79,6 @@ Co sprawdza `terrain_streaming_test` na 512 m wygenerowanego lądu pociętego na
 - Na razie bez histerezy: chodzenie tam i z powrotem przez granicę łaty za każdym razem wczytuje i zwalnia ten sam rząd łat.
 - Strony strumieniowanego terenu są ustalane przy jego tworzeniu; okno większe niż liczba stron kończy program komunikatem.
 - Zasłonięcie nieba sięga najdalej o jedną łatę (`reach` do rozmiaru łaty).
+- Bez lasu poza oknem roślin: dalekie łaty pokazują goły ląd tła. Impostory stawiane z mapy gęstości lasu nie zostały zbudowane: w `forest_scene`, jedynej mierzonej scenie, reguły sadzą drzewa tylko do 1,2 km od startu, więc nie ma dalekiego lasu, którego koszt dałoby się zmierzyć wobec granicy 1 ms w high.
+- Tam, gdzie trzymana łata styka się z tłem, drobny i zgrubny ląd mogą różnić się o kilka metrów; fartuchy łat kryją szczelinę, nie stopień.
 - Rośliny łaty są sadzone dwa razy, gdy strumieniowane są i rośliny rysowane, i ich kolizje (planter działa raz na źródło); kosztuje to czas wczytywania, nie pamięć.

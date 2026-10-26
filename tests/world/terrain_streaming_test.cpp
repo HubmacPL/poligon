@@ -206,8 +206,23 @@ int main(int argc, char** argv) {
 
         poligon::Camera wide = above;
         wide.position = {0.0, 700.0, 0.0};
-        Draw(renderer, windowed, wide);
+        const poligon::Image windowed_picture = Draw(renderer, windowed, wide);
         Expect(windowed.GetStats().patches > 0, "the window's patches are drawn");
+        // Beyond the window the land is drawn from the coarse background heights (16 m here).
+        const poligon::Image whole_picture = Draw(renderer, whole, wide);
+        int background_differs = 0;
+        for (size_t i = 0; i < whole_picture.pixels.size(); i += 4) {
+            background_differs += std::abs(static_cast<int>(whole_picture.pixels[i + 1]) - static_cast<int>(windowed_picture.pixels[i + 1])) > 16 ? 1 : 0;
+        }
+        const double background_share = 100.0 * background_differs / (whole_picture.width * whole_picture.height);
+        std::printf("  far background: %d squares, %.2f%% of pixels differ from the whole land by more than 16\n",
+                    windowed.GetStats().background_patches, background_share);
+        Expect(windowed.GetStats().background_patches > 0 && background_share < 5.0,
+               "beyond the window the background draws the land, coarse but in place");
+        windowed.SetBackgroundVisible(false);
+        Draw(renderer, windowed, wide);
+        Expect(windowed.GetStats().background_patches == 0, "the background can be switched off");
+        windowed.SetBackgroundVisible(true);
         // Move the window to the opposite corner: the old patches go, drawing and collisions with them.
         const glm::dvec3 other(200.0, 0.0, 200.0);
         streamer.Update(other);

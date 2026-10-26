@@ -36,6 +36,7 @@ struct TerrainConfig {
 // What the last Draw did.
 struct TerrainStats {
     int patches = 0;
+    int background_patches = 0;  // of a streamed terrain: squares drawn from the background
     // Patches by size: index 0 = smallest (finest). Up to 16 sizes.
     int patches_per_level[16] = {};
 };
@@ -49,7 +50,9 @@ public:
     // land is cut and where it lies (config.origin is not used: LandInfo::world_origin is);
     // `pages`: how many patches it can hold at once. Each patch is its own tree of squares;
     // all of them are drawn by one draw call per pass. The patch size must be 64, 128, 256,
-    // 512... height points. Heights where no patch is held come from LandInfo::background.
+    // 512... height points. Heights where no patch is held come from LandInfo::background,
+    // and there the land is drawn from it too (the far background: squares of a patch's size
+    // or larger, 64 x 64 cells each, one more draw call per pass).
     Terrain(Renderer& renderer, const LandInfo& land, const TerrainConfig& config, int pages);
     ~Terrain();
     Terrain(const Terrain&) = delete;
@@ -79,6 +82,8 @@ public:
     void RemovePatch(PatchCoord patch);
     bool HasPatch(PatchCoord patch) const;
     int GetPatchCount() const;
+    // Whether the background is drawn where no patch is held (on by default).
+    void SetBackgroundVisible(bool visible);
 
     void SetMaterial(const TerrainMaterial& material);
     void SetDetail(float detail);

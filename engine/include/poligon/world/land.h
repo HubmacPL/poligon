@@ -49,6 +49,9 @@ struct LandInfo {
     // The whole land's heights, a point every `background_spacing` meters, for drawing it far
     // away where no patch is loaded and for heights outside the loaded patches.
     HeightMap background;
+    // Its ground layer weights at the same points (TerrainMaterial::weights' layout), or
+    // empty images when the land has no layer rules.
+    Image background_weights[2];
 };
 
 // Hands out patches of land. GetPatch may be called from several threads at once.

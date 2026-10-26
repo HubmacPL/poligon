@@ -73,6 +73,27 @@ LandFromMaps::LandFromMaps(const TerrainMaps& maps, double patch_size, const glm
     info.map_spacing = maps.map_spacing;
     info.lakes = maps.lakes;
     info.background = MakeCoarseHeightMap(height, step);
+    if (rule_count > 0) {
+        // The whole land's weights, at the background's points (the last ones repeat the edge).
+        Image whole[2];
+        MakeTerrainLayerWeights(maps, rules, rule_count, weight_seed, whole);
+        const int map_step = static_cast<int>(std::lround(background_spacing / maps.map_spacing));
+        for (int i = 0; i < 2; ++i) {
+            Image& image = info.background_weights[i];
+            image = MakeSolidImage(info.background.width, info.background.depth, 0, 0, 0, 0);
+            for (int z = 0; z < image.height; ++z) {
+                const int from_z = std::min(z * map_step, whole[i].height - 1);
+                for (int x = 0; x < image.width; ++x) {
+                    const int from_x = std::min(x * map_step, whole[i].width - 1);
+                    const size_t from = (static_cast<size_t>(from_z) * static_cast<size_t>(whole[i].width) + static_cast<size_t>(from_x)) * 4;
+                    const size_t to = (static_cast<size_t>(z) * static_cast<size_t>(image.width) + static_cast<size_t>(x)) * 4;
+                    std::copy(whole[i].pixels.begin() + static_cast<std::ptrdiff_t>(from),
+                              whole[i].pixels.begin() + static_cast<std::ptrdiff_t>(from + 4),
+                              image.pixels.begin() + static_cast<std::ptrdiff_t>(to));
+                }
+            }
+        }
+    }
 }
 
 LandFromMaps::~LandFromMaps() = default;

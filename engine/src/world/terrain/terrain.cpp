@@ -104,6 +104,59 @@ struct Terrain::Impl {
     glm::vec2 land_size{0.0f};
     std::map<PatchCoord, HeldPatch> held;
     std::vector<int> free_pages;
+    // The far background: the coarse heights brought to a point every patch_size / 64
+    // meters, so that its smallest square is one patch, on a terrain of its own.
+    TerrainHandle background_handle;
+    HeightMap background_drawn;
+    std::vector<LevelRanges> background_levels;
+    TerrainMaterial background_material;
+    std::vector<TerrainPatch> background_patches;
+    bool background_visible = true;
+
+    // Squares of the background where no patch is held: a square with held patches inside
+    // is split, down to single patches, which are left out.
+    void SelectBackground(int level, int column, int row, const glm::dvec3& eye) {
+        const LevelRanges& ranges = background_levels[static_cast<size_t>(level)];
+        if (column >= ranges.columns || row >= ranges.rows) {
+            return;
+        }
+        const int first_x = column << level;
+        const int first_z = row << level;
+        const int end_x = (column + 1) << level;
+        const int end_z = (row + 1) << level;
+        bool holds = false;
+        for (const auto& [coord, patch] : held) {
+            if (coord.x >= first_x && coord.x < end_x && coord.z >= first_z && coord.z < end_z) {
+                holds = true;
+                break;
+            }
+        }
+        const float size = static_cast<float>(patch_size) * static_cast<float>(1 << level);
+        const size_t index = static_cast<size_t>(row) * static_cast<size_t>(ranges.columns) + static_cast<size_t>(column);
+        TerrainPatch square;
+        square.x = config.origin.x + static_cast<double>(column) * static_cast<double>(size);
+        square.z = config.origin.z + static_cast<double>(row) * static_cast<double>(size);
+        square.size = size;
+        square.min_height = static_cast<float>(config.origin.y + static_cast<double>(ranges.lowest[index]));
+        square.max_height = static_cast<float>(config.origin.y + static_cast<double>(ranges.highest[index]));
+        bool split = holds;
+        if (!split && level > 0) {
+            const glm::dvec3 nearest = glm::clamp(eye, glm::dvec3(square.x, square.min_height, square.z),
+                                                  glm::dvec3(square.x + size, square.max_height, square.z + size));
+            split = glm::distance(eye, nearest) < static_cast<double>(size * config.detail);
+        }
+        if (split) {
+            if (level == 0) {
+                return;  // a held patch: drawn from its page
+            }
+            for (int quarter = 0; quarter < 4; ++quarter) {
+                SelectBackground(level - 1, column * 2 + (quarter & 1), row * 2 + (quarter >> 1), eye);
+            }
+            return;
+        }
+        background_patches.push_back(square);
+        ++stats.background_patches;
+    }
 
     float GetSquareSize(int level, float point_spacing) const { return static_cast<float>(kPatchCells << level) * point_spacing; }
 
@@ -199,10 +252,43 @@ Terrain::Terrain(Renderer& renderer, const LandInfo& land, const TerrainConfig& 
     for (int page = pages - 1; page >= 0; --page) {
         impl.free_pages.push_back(page);
     }
+
+    // The background, brought to 64 cells per patch, blended from the coarse points.
+    const HeightMap& coarse = land.background;
+    const float drawn_spacing = static_cast<float>(land.grid.patch_size / static_cast<double>(kPatchCells));
+    const int ratio = std::max(static_cast<int>(std::lround(coarse.spacing / drawn_spacing)), 1);
+    HeightMap& drawn = impl.background_drawn;
+    drawn.spacing = coarse.spacing / static_cast<float>(ratio);
+    drawn.width = (coarse.width - 1) * ratio + 1;
+    drawn.depth = (coarse.depth - 1) * ratio + 1;
+    drawn.heights.resize(static_cast<size_t>(drawn.width) * static_cast<size_t>(drawn.depth));
+    for (int z = 0; z < drawn.depth; ++z) {
+        for (int x = 0; x < drawn.width; ++x) {
+            drawn.heights[static_cast<size_t>(z) * static_cast<size_t>(drawn.width) + static_cast<size_t>(x)] =
+                coarse.GetHeight(static_cast<float>(x) * drawn.spacing, static_cast<float>(z) * drawn.spacing);
+        }
+    }
+    impl.background_handle = renderer.CreateTerrain(drawn.heights.data(), drawn.width, drawn.depth, drawn.spacing, impl.config.origin);
+    impl.background_levels = BuildLevels(drawn, 0, 0, drawn.width - 1, drawn.depth - 1, kMaxLevels);
+    impl.background_material = impl.config.material;
+    if (!land.background_weights[0].pixels.empty()) {
+        TextureOptions plain;
+        plain.is_color = false;
+        plain.generate_mipmaps = false;
+        impl.background_material.weights[0] = renderer.CreateTexture(land.background_weights[0], plain);
+        impl.background_material.weights[1] = renderer.CreateTexture(land.background_weights[1], plain);
+    }
 }
 
 Terrain::~Terrain() {
     impl_->renderer->DestroyTerrain(impl_->handle);
+    if (impl_->background_handle.id != 0) {
+        impl_->renderer->DestroyTerrain(impl_->background_handle);
+    }
+}
+
+void Terrain::SetBackgroundVisible(bool visible) {
+    impl_->background_visible = visible;
 }
 
 void Terrain::SetPatch(PatchCoord patch, const HeightMap& heights, const Image* weights) {
@@ -282,6 +368,24 @@ void Terrain::Draw(const Camera& camera) {
             const glm::dvec3 corner = impl.config.origin + glm::dvec3(static_cast<double>(coord.x) * impl.patch_size, 0.0,
                                                                       static_cast<double>(coord.z) * impl.patch_size);
             impl.Select(held.levels, corner, impl.spacing, held.page, static_cast<int>(held.levels.size()) - 1, 0, 0, camera.position);
+        }
+        impl.background_patches.clear();
+        if (impl.background_visible) {
+            const int top = static_cast<int>(impl.background_levels.size()) - 1;
+            const LevelRanges& roots = impl.background_levels[static_cast<size_t>(top)];
+            for (int row = 0; row < roots.rows; ++row) {
+                for (int column = 0; column < roots.columns; ++column) {
+                    impl.SelectBackground(top, column, row, camera.position);
+                }
+            }
+        }
+        if (!impl.background_patches.empty()) {
+            // Keep the ground layer textures of the material in step with the patches'.
+            TerrainMaterial look = impl.config.material;
+            look.weights[0] = impl.background_material.weights[0];
+            look.weights[1] = impl.background_material.weights[1];
+            impl.renderer->DrawTerrain(impl.background_handle, look, impl.background_patches.data(),
+                                       static_cast<int>(impl.background_patches.size()));
         }
     } else {
         const int top = static_cast<int>(impl.levels.size()) - 1;
