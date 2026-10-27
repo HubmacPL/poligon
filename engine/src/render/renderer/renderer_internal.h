@@ -701,6 +701,8 @@ struct Renderer::Impl {
     PostSettings post;
     bool debug_ui_active = false;
     SDL_Window* window = nullptr;
+    bool mouse_capture_wanted = false;  // Renderer::SetMouseCaptured
+    bool mouse_captured = false;        // relative mouse mode is on
     SDL_GPUDevice* device = nullptr;
     int msaa_samples = 1;
 
@@ -988,6 +990,8 @@ struct Renderer::Impl {
     // A terrain's weight arrays for drawing with `material`: a terrain of one map copies the
     // material's weight images into its arrays when they changed.
     void PrepareTerrainWeights(TerrainData& terrain, const TerrainMaterial& material);
+    // Captures or lets go of the mouse as the game wants, the window's focus and the debug windows allow.
+    void UpdateMouseCapture();
     // Fills one page of a terrain's height array (16-bit, between the page's lowest and highest point).
     void SetTerrainHeights(TerrainData& terrain, int page, const float* heights, const glm::dvec3& first_point);
 

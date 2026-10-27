@@ -908,6 +908,15 @@ public:
     int GetRenderHeight() const;
     // Changes the text in the window's title bar. Does nothing in headless mode.
     void SetWindowTitle(const char* title);
+    // First-person mouse look: hides the cursor and keeps it in the window, so the mouse
+    // turns the view without ever reaching an edge (SDL's relative mouse mode; Input reads the
+    // motion as before, and recordings do not change). The renderer remembers what the game
+    // asked for and lets the mouse go by itself while the window has no focus or a debug
+    // window wants the mouse (Dear ImGui's WantCaptureMouse), taking it back once neither
+    // holds; it checks once per frame, in BeginFrame. Does nothing in headless mode.
+    void SetMouseCaptured(bool captured);
+    // Whether the mouse is captured now: false in headless mode, or while let go as above.
+    bool IsMouseCaptured() const;
     // Shows the game in a window of width x height, or fullscreen with the display switched
     // to that resolution (WindowMode::Fullscreen). The picture is drawn at the new size from
     // the next frame on (every image that depends on it is made again). Call outside

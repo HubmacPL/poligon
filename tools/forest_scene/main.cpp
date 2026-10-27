@@ -26,7 +26,8 @@
 //   --render-settings FILE   the look to start with, as saved from the settings window
 //   --record FILE, --replay FILE   write or play back the input (docs/en/input.md)
 //
-// Mouse: hold the left button and move to look around.
+// Mouse: walking with the debug windows hidden (Tab), the mouse is captured (no cursor) and
+//        turns the view; flying or with the windows shown, hold the left button and move.
 // Keys:  W/S walk, A/D step sideways, Left/Right turn, Up/Down look up and down, hold
 //        Left Shift to run, Space to jump. F switches between walking and flying (then E/Q
 //        rise and sink). T throws a crate, B shows the collision shapes as colored boxes.
@@ -403,6 +404,8 @@ public:
         if (!poligon::ProcessPlatformEvents()) {
             loop.RequestQuit();
         }
+        // First-person look while walking; the debug windows and the free camera need the cursor.
+        renderer_.SetMouseCaptured(IsMouseLook());
         // F11 was pressed during the last ticks: the window mode changes between frames.
         if (fullscreen_toggle_pending_) {
             fullscreen_toggle_pending_ = false;
@@ -417,6 +420,9 @@ public:
             }
         }
     }
+
+    // Walking with the debug windows hidden: the mouse is captured and turns the view as it moves.
+    bool IsMouseLook() const { return !flying_ && !show_windows_; }
 
     void FixedUpdate(poligon::GameLoop& /*loop*/, const poligon::TickInfo& tick) override {
         if (input_.WasPressed(actions_.toggle_fly)) {
@@ -439,7 +445,9 @@ public:
         }
         float yaw_change = input_.GetValue(actions_.turn) * 90.0f * delta;
         float pitch_change = input_.GetValue(actions_.tilt) * 60.0f * delta;
-        if (input_.IsDown(actions_.drag_hold)) {
+        // By game state only (recorded keys), never by whether the window holds the mouse, so
+        // that a replay turns the view the same way.
+        if (IsMouseLook() || input_.IsDown(actions_.drag_hold)) {
             yaw_change -= input_.GetValue(actions_.drag_x) * 0.2f;
             pitch_change -= input_.GetValue(actions_.drag_y) * 0.2f;
         }
@@ -1652,7 +1660,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 #ifdef NDEBUG
-    renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, F fly, Tab windows, F11 full screen, drag the mouse to look)");
+    renderer.SetWindowTitle("Poligon forest scene  (W/S/A/D walk, Shift run, F fly, Tab windows, F11 full screen, mouse to look)");
 #else
     renderer.SetWindowTitle("Poligon forest scene  [DEBUG BUILD, slow: use build/release/bin]");
 #endif

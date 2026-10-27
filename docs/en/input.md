@@ -51,5 +51,5 @@ end 480
 
 - Keyboard and mouse, no gamepad.
 - Key state is sampled once per tick; a press and release within one frame can be missed.
-- Mouse motion is read without capturing the cursor.
+- Mouse motion is relative (the movement since the previous tick), with or without the cursor captured. For first-person look a game calls `Renderer::SetMouseCaptured(true)` (SDL's relative mouse mode: no cursor, no window edge); the renderer lets the mouse go while the window has no focus or a debug window wants it, and takes it back after ([debug_tools.md](debug_tools.md)). What turns the view must depend on the game's state and recorded actions only, never on whether the mouse is captured at the moment, or replays would differ. `forest_scene` captures it while walking with the debug windows hidden; the toy while the right button is held.
 - A recording holds input only. It assumes the same starting state of the game; it stores neither a seed nor the game version.

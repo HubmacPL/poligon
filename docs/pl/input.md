@@ -51,5 +51,5 @@ end 480
 
 - Klawiatura i mysz, bez pada.
 - Stan klawiszy jest próbkowany raz na tick; naciśnięcie i puszczenie w obrębie jednej klatki może zostać pominięte.
-- Ruch myszy jest liczony bez przechwytywania kursora.
+- Ruch myszy jest względny (przesunięcie od poprzedniego ticku), z przechwyconym kursorem albo bez. Do rozglądania się z pierwszej osoby gra woła `Renderer::SetMouseCaptured(true)` (względny tryb myszy SDL: bez kursora, bez krawędzi okna); renderer puszcza mysz, gdy okno nie ma fokusu albo okno debugowe jej chce, i przechwytuje ją z powrotem później ([debug_tools.md](debug_tools.md)). To, co obraca widok, ma zależeć tylko od stanu gry i nagranych akcji, nigdy od tego, czy mysz jest akurat przechwycona, bo inaczej odtworzenia by się różniły. `forest_scene` przechwytuje ją przy chodzeniu ze schowanymi oknami debugowymi; zabawka, gdy trzymany jest prawy przycisk.
 - Nagranie zawiera tylko wejście. Zakłada ten sam stan początkowy gry; nie ma w nim ziarna ani wersji gry.

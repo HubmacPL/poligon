@@ -282,6 +282,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
             Resize(window_width, window_height);
         }
     }
+    impl_->UpdateMouseCapture();
     impl_->in_frame = true;
     impl_->camera = camera;
     impl_->origin = camera.position;
@@ -1147,6 +1148,28 @@ int Renderer::GetMsaaSamples() const {
 void Renderer::SetWindowTitle(const char* title) {
     if (impl_->window != nullptr) {
         SDL_SetWindowTitle(impl_->window, title);
+    }
+}
+
+void Renderer::SetMouseCaptured(bool captured) {
+    impl_->mouse_capture_wanted = captured;
+    impl_->UpdateMouseCapture();
+}
+
+bool Renderer::IsMouseCaptured() const {
+    return impl_->mouse_captured;
+}
+
+void Renderer::Impl::UpdateMouseCapture() {
+    if (window == nullptr) {
+        return;
+    }
+    // Dear ImGui's answer is from the last frame, which is when the mouse was over its windows.
+    const bool focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    const bool windows_want_mouse = debug_ui_active && ImGui::GetIO().WantCaptureMouse;
+    const bool capture = mouse_capture_wanted && focused && !windows_want_mouse;
+    if (capture != mouse_captured && SDL_SetWindowRelativeMouseMode(window, capture)) {
+        mouse_captured = capture;
     }
 }
 

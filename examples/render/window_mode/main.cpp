@@ -56,6 +56,14 @@ int main(int argc, char** argv) {
     renderer.SetWindowMode(poligon::WindowMode::Windowed, 1280, 720);
     std::printf("saved %s; back to a window of %d x %d\n", argv[1], renderer.GetWidth(), renderer.GetHeight());
 
+    // First-person mouse look: the cursor is hidden and the mouse turns the view without
+    // reaching the window's edge. The renderer lets it go while the window is not in front or
+    // a debug window wants the mouse, and takes it back after. Without a window (as here) it
+    // does nothing; a game calls it once per frame with what it wants, as forest_scene does.
+    renderer.SetMouseCaptured(true);
+    std::printf("mouse captured: %s\n", renderer.IsMouseCaptured() ? "yes" : "no (no window)");
+    renderer.SetMouseCaptured(false);
+
     // The player drags the window's corner or maximizes it: with a window, BeginFrame sees the
     // new size and calls Resize by itself. Called directly here, as there is no window.
     renderer.Resize(1600, 900);

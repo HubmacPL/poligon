@@ -74,6 +74,8 @@ public:
         if (!poligon::ProcessPlatformEvents()) {
             loop.RequestQuit();
         }
+        // While the right button turns the camera, the cursor is hidden and held in the window.
+        renderer_.SetMouseCaptured(input_.IsDown(actions_.look_hold));
     }
 
     void FixedUpdate(poligon::GameLoop& /*loop*/, const poligon::TickInfo& tick) override {
@@ -214,7 +216,8 @@ int main(int argc, char** argv) {
                      "           [--dump-frame PATH.png] [--dump-state PATH.json]\n"
                      "           [--hash-log PATH] [--hash-interval N] [--render-settings PATH]\n"
                      "keys: A/D/W/S or arrows move the red box, Space jumps,\n"
-                     "      hold the right mouse button and move the mouse to turn the camera, Escape quits,\n"
+                     "      hold the right mouse button and move the mouse to turn the camera (the cursor\n"
+                     "      hides while it is held), Escape quits,\n"
                      "      Tab hides the debug windows, F switches the free camera\n",
                      error.c_str());
         return 2;

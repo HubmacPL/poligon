@@ -10,6 +10,7 @@ Nagłówki: `poligon/debug/debug_ui.h`, `poligon/render/render_settings.h`, `pol
 - Włącza je `RendererConfig::debug_ui = true`. Renderer zaczyna klatkę Dear ImGui w `BeginFrame` i rysuje ją na końcu `EndFrame`, na gotowym obrazie. Wywołania Dear ImGui są dozwolone tylko między nimi.
 - **W trybie bez okna (headless) okien nie ma.** `Renderer::IsDebugUiActive()` zwraca wtedy fałsz, gotowe okna nic nie robią, a własne wywołania `ImGui::` trzeba pominąć przez `if (renderer.IsDebugUiActive())`. Zrzut klatki z trybu bez okna nigdy więc nie zawiera okien; zrzut z uruchomienia z oknem zawiera.
 - Gdy mysz jest nad oknem albo trwa pisanie w polu tekstowym, `Input` zgłasza mysz lub klawiaturę jako nietknięte, więc przeciąganie suwaka nie obraca przy okazji kamery. `ProcessPlatformEvents` przekazuje zdarzenia okna do Dear ImGui.
+- Przechwyconą mysz (`Renderer::SetMouseCaptured`, rozglądanie się z pierwszej osoby) renderer puszcza, gdy okno debugowe chce myszy (`WantCaptureMouse`) albo okno gry nie ma fokusu, i przechwytuje ją z powrotem później; sprawdza to raz na klatkę w `BeginFrame`. Ukryty kursor rzadko trafia nad okno, więc gra, która pokazuje okna debugowe, powinna też przestać prosić o przechwycenie (`forest_scene` robi to klawiszem Tab).
 - Plik ustawień (`imgui.ini`) nie jest zapisywany: okna otwierają się w tym samym miejscu przy każdym starcie.
 
 Gotowe okna:

@@ -10,6 +10,7 @@ Headers: `poligon/debug/debug_ui.h`, `poligon/render/render_settings.h`, `poligo
 - Turn them on with `RendererConfig::debug_ui = true`. The renderer starts a Dear ImGui frame in `BeginFrame` and draws it at the end of `EndFrame`, over the finished picture. Dear ImGui calls are allowed only between the two.
 - **Headless mode has no debug windows.** `Renderer::IsDebugUiActive()` is then false, the ready-made windows do nothing, and your own `ImGui::` calls must be skipped with `if (renderer.IsDebugUiActive())`. A headless frame dump therefore never contains windows; a dump from a run with a window does.
 - While the mouse is over a window, or a text field is being typed into, `Input` reports mouse or keyboard as untouched, so dragging a slider does not also turn the camera. `ProcessPlatformEvents` passes window events on to Dear ImGui.
+- A captured mouse (`Renderer::SetMouseCaptured`, first-person look) is let go by the renderer while a window wants the mouse (`WantCaptureMouse`) or the game's window has no focus, and taken back after; checked once per frame in `BeginFrame`. A hidden cursor rarely hovers over a window, so a game that shows its debug windows should stop asking for the capture too (`forest_scene` does it with Tab).
 - No settings file is written (`imgui.ini`): windows open at the same place on every start.
 
 Ready-made windows:
