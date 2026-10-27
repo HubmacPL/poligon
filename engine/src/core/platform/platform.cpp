@@ -13,7 +13,14 @@
 
 namespace poligon {
 
-bool ProcessPlatformEvents() {
+namespace {
+
+bool escape_pressed = false;  // during the last ProcessPlatformEvents call
+
+} // namespace
+
+bool ProcessPlatformEvents(bool escape_quits) {
+    escape_pressed = false;
     if (!SDL_WasInit(SDL_INIT_EVENTS)) {
         return true;
     }
@@ -30,11 +37,16 @@ bool ProcessPlatformEvents() {
         }
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             keep_running = false;
-        } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
-            keep_running = false;
+        } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !event.key.repeat) {
+            escape_pressed = true;
+            keep_running = keep_running && !escape_quits;
         }
     }
     return keep_running;
+}
+
+bool WasEscapePressed() {
+    return escape_pressed;
 }
 
 void ShowMessageBox(const char* title, const char* message) {

@@ -5,7 +5,7 @@ Nagłówek: `poligon/core/input.h`. Przykład: `examples/core/input`. Wzorzec w 
 ## Model
 
 - Gra nie czyta klawiatury ani myszy. Czyta **akcje**: nazwane liczby, po jednej wartości na tick (przycisk to 0 lub 1, oś to dowolna liczba).
-- **Wiązania** zamieniają urządzenia na akcje: `BindKey(akcja, klawisz, wartość)` (klawisze: litery, cyfry, strzałki, Space, Enter, Tab, Backspace, lewe Shift, Control i Alt, F1 do F12), `BindMouseButton`, `BindMouseMotion`. Dwa klawisze z +1 i -1 na tej samej akcji dają oś. Wartości wiązań się sumują, więc grę obowiązuje ewentualne ograniczenie zakresu.
+- **Wiązania** zamieniają urządzenia na akcje: `BindKey(akcja, klawisz, wartość)` (klawisze: litery, cyfry, strzałki, Space, Enter, Tab, Backspace, lewe Shift, Control i Alt, F1 do F12, Escape), `BindMouseButton`, `BindMouseMotion`. Dwa klawisze z +1 i -1 na tej samej akcji dają oś. Wartości wiązań się sumują, więc grę obowiązuje ewentualne ograniczenie zakresu.
 - Źródło wartości wybiera się raz na przebieg: prawdziwe urządzenia (`UseLiveDevices`), stan podany ręcznie (`UseManualDevices` + `SetDeviceState`, dla testów), nagranie (`StartReplay`) albo nic (wszystko 0).
 - `GameLoopConfig::input = &input` sprawia, że pętla woła `AdvanceTick` przed każdym `FixedUpdate`.
 - Odczyt: `GetValue`, `IsDown` (powyżej 0,5), `WasPressed` i `WasReleased` (tylko w ticku zmiany).
@@ -16,6 +16,7 @@ Nagłówek: `poligon/core/input.h`. Przykład: `examples/core/input`. Wzorzec w 
 2. Systemy ECS nie sięgają do `Input`. Gra raz na tick przepisuje akcje do komponentu-singletonu (w zabawce `PlayerInput`), a systemy czytają ten komponent. Dzięki temu wejście danego ticku jest w zrzucie stanu.
 3. Zdarzenia okna przetwarzamy w `Game::BeginFrame` (`ProcessPlatformEvents`), czyli przed tickami klatki.
 4. Wszystko, co ma się odtwarzać z nagrania, musi przejść przez akcje. Odczyt urządzenia z pominięciem `Input` nie trafi do nagrania.
+5. Escape: domyślnie kończy `GameLoop` (`GameLoopConfig::escape_quits`, zob. [game_loop.md](game_loop.md)). Gra, która go używa (menu pauzy), ustawia `escape_quits = false` i wiąże `Key::Escape` z własną akcją, która wtedy jest nagrywana i odtwarzana jak każdy inny klawisz.
 
 ## Flagi programu
 

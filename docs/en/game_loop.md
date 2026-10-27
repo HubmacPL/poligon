@@ -30,7 +30,7 @@ Changes are verified in headless mode.
 ## Command line
 
 - `--headless`: headless mode.
-- `--ticks N`: stop after N ticks (N >= 1). Without it a game with a window runs until the window is closed or Escape is pressed.
+- `--ticks N`: stop after N ticks (N >= 1). Without it a game with a window runs until the window is closed or Escape is pressed (unless the game took Escape for itself, below).
 - `--backend d3d12|vulkan`, `--gpu-validation`, `--dump-frame FILE.png`: see [rendering.md](rendering.md).
 - `--dump-state FILE.json`: see [ecs.md](ecs.md). `--record`, `--replay`: see [input.md](input.md). `--hash-log`, `--hash-interval`: see [determinism.md](determinism.md). `--render-settings`: see [debug_tools.md](debug_tools.md).
 - `--quality low|medium|high|ultra` (graphics preset) and `--resolution WxH` (picture size, 16 to 8192 each way): see [rendering.md](rendering.md). Both are only parsed and checked here; the game applies them.
@@ -41,7 +41,8 @@ Example: `build\dev\bin\toy.exe --headless --ticks 600 --dump-frame frame.png`.
 ## Window and loop pacing
 
 - With a window, `Renderer::EndFrame` waits for the display refresh (vsync). The game then sets `GameLoopConfig::render_every_iteration = true`, so the loop renders on every iteration, also when no tick was due.
-- `ProcessPlatformEvents()` is called once per frame in `Game::BeginFrame` (before the frame's ticks); it returns `false` when the user closed the window or pressed Escape.
+- `ProcessPlatformEvents()` is called once per frame in `Game::BeginFrame` (before the frame's ticks); it returns `false` when the user closed the window.
+- Escape: after `Game::BeginFrame` the loop ends the run if Escape was pressed during that call (`WasEscapePressed`), through the same path as `RequestQuit`, while `GameLoopConfig::escape_quits` is true (the default). A game that wants Escape (a pause menu) sets it to false and binds `Key::Escape` to an action ([input.md](input.md)). A program with a loop of its own, without `GameLoop`, calls `ProcessPlatformEvents(true)` to keep Escape as its way out (`examples/debug/debug_ui`).
 - Order within one frame: `BeginFrame`, then for each tick `Input::AdvanceTick` (if `GameLoopConfig::input` is set) and `FixedUpdate`, and finally `Render`.
 
 ## Repeatability test

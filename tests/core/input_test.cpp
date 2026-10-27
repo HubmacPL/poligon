@@ -221,5 +221,39 @@ int main(int argc, char** argv) {
                "a missing file is reported");
     }
 
+    // Escape is bound, recorded and replayed like any other key.
+    {
+        const std::string escape_path = directory + "/input_test_escape.txt";
+        {
+            poligon::Input input;
+            const poligon::InputAction pause = input.AddAction("pause");
+            input.BindKey(pause, poligon::Key::Escape);
+            input.UseManualDevices();
+            std::string error;
+            Expect(input.StartRecording(escape_path.c_str(), 60, error), "recording with Escape starts");
+            bool pressed_on_tick_two = false;
+            for (int tick = 0; tick < 5; ++tick) {
+                poligon::InputDeviceState state;
+                state.keys[static_cast<int>(poligon::Key::Escape)] = tick == 2 || tick == 3;
+                input.SetDeviceState(state);
+                input.AdvanceTick(tick);
+                pressed_on_tick_two = pressed_on_tick_two || (tick == 2 && input.WasPressed(pause));
+            }
+            Expect(pressed_on_tick_two, "Escape drives the action bound to it");
+            Expect(input.FinishRecording(), "the recording with Escape is written");
+        }
+        Expect(Contains(ReadFile(escape_path), "tick 2 pause=1\ntick 4 pause=0\n"), "Escape is recorded like any key");
+        poligon::Input input;
+        const poligon::InputAction pause = input.AddAction("pause");
+        std::string error;
+        Expect(input.StartReplay(escape_path.c_str(), 60, error), "the recording with Escape replays");
+        bool replayed = false;
+        for (int tick = 0; tick < 5; ++tick) {
+            input.AdvanceTick(tick);
+            replayed = replayed || (tick == 2 && input.WasPressed(pause));
+        }
+        Expect(replayed, "Escape's action comes back from the recording");
+    }
+
     return test::ExitCode();
 }

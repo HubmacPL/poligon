@@ -28,6 +28,10 @@ struct GameLoopConfig {
     // Optional. When set, the loop calls input->AdvanceTick before every Game::FixedUpdate,
     // so the game always sees the action values that belong to the current tick.
     Input* input = nullptr;
+    // Escape ends the run, as RequestQuit does: checked after Game::BeginFrame, where the
+    // game handles window events (poligon::ProcessPlatformEvents). Set false to give Escape
+    // to the game: bind Key::Escape to an action (a pause menu), recorded like any other key.
+    bool escape_quits = true;
 };
 
 struct TickInfo {
@@ -59,7 +63,8 @@ public:
     // Called once, before the first tick.
     virtual void Start(GameLoop& /*loop*/) {}
     // Called once per frame, before that frame's ticks. The place to process window events
-    // (poligon::ProcessPlatformEvents), so that ticks see the newest keyboard and mouse state.
+    // (poligon::ProcessPlatformEvents), so that ticks see the newest keyboard and mouse state;
+    // the loop ends after it if Escape was pressed there (GameLoopConfig::escape_quits).
     virtual void BeginFrame(GameLoop& /*loop*/) {}
     // Called once per tick. All simulation state changes belong here.
     virtual void FixedUpdate(GameLoop& loop, const TickInfo& tick) = 0;

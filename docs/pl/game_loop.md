@@ -30,7 +30,7 @@ Weryfikacja zmian odbywa się w trybie bez okna.
 ## Wiersz poleceń
 
 - `--headless`: tryb bez okna.
-- `--ticks N`: zakończ po N tickach (N >= 1). Bez tej opcji gra z oknem działa do zamknięcia okna lub Escape.
+- `--ticks N`: zakończ po N tickach (N >= 1). Bez tej opcji gra z oknem działa do zamknięcia okna lub Escape (chyba że gra wzięła Escape dla siebie, niżej).
 - `--backend d3d12|vulkan`, `--gpu-validation`, `--dump-frame PLIK.png`: patrz [rendering.md](rendering.md).
 - `--dump-state PLIK.json`: patrz [ecs.md](ecs.md). `--record`, `--replay`: patrz [input.md](input.md). `--hash-log`, `--hash-interval`: patrz [determinism.md](determinism.md). `--render-settings`: patrz [debug_tools.md](debug_tools.md).
 - `--quality low|medium|high|ultra` (zestaw ustawień grafiki) i `--resolution SxW` (rozmiar obrazu, od 16 do 8192 w każdą stronę): patrz [rendering.md](rendering.md). Obie są tu tylko odczytywane i sprawdzane; stosuje je gra.
@@ -41,7 +41,8 @@ Przykład: `build\dev\bin\toy.exe --headless --ticks 600 --dump-frame klatka.png
 ## Okno i tempo pętli
 
 - Z oknem `Renderer::EndFrame` czeka na odświeżenie ekranu (vsync). Gra ustawia wtedy `GameLoopConfig::render_every_iteration = true`, żeby pętla rysowała w każdym obiegu, także gdy nie przypadł żaden tick.
-- `ProcessPlatformEvents()` wywołuje się raz na klatkę w `Game::BeginFrame` (przed tickami klatki); zwraca `false`, gdy użytkownik zamknął okno lub nacisnął Escape.
+- `ProcessPlatformEvents()` wywołuje się raz na klatkę w `Game::BeginFrame` (przed tickami klatki); zwraca `false`, gdy użytkownik zamknął okno.
+- Escape: po `Game::BeginFrame` pętla kończy przebieg, jeśli w tym wywołaniu naciśnięto Escape (`WasEscapePressed`), tą samą drogą co `RequestQuit`, póki `GameLoopConfig::escape_quits` jest true (domyślnie). Gra, która chce Escape (menu pauzy), ustawia false i wiąże `Key::Escape` z akcją ([input.md](input.md)). Program z własną pętlą, bez `GameLoop`, woła `ProcessPlatformEvents(true)`, żeby Escape dalej go zamykał (`examples/debug/debug_ui`).
 - Kolejność w jednej klatce: `BeginFrame`, potem dla każdego ticku `Input::AdvanceTick` (jeśli ustawiono `GameLoopConfig::input`) i `FixedUpdate`, na końcu `Render`.
 
 ## Test powtarzalności

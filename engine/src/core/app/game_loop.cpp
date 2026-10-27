@@ -6,6 +6,7 @@
 #include "poligon/core/fatal_error.h"
 #include "poligon/core/fixed_step_clock.h"
 #include "poligon/core/input.h"
+#include "poligon/core/platform.h"
 
 namespace poligon {
 
@@ -59,6 +60,9 @@ GameLoopResult GameLoop::Run(Game& game) {
         }
 
         game.BeginFrame(*this);
+        if (config_.escape_quits && WasEscapePressed()) {
+            RequestQuit();
+        }
 
         const std::int64_t ticks_before = result.tick_count;
         for (int i = 0; i < due_ticks && !quit_requested_ && !tick_limit_reached(); ++i) {

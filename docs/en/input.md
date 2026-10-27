@@ -5,7 +5,7 @@ Header: `poligon/core/input.h`. Example: `examples/core/input`. Pattern in a gam
 ## Model
 
 - The game does not read the keyboard or mouse. It reads **actions**: named numbers, one value per tick (a button is 0 or 1, an axis any number).
-- **Bindings** turn devices into actions: `BindKey(action, key, value)` (keys: letters, digits, arrows, Space, Enter, Tab, Backspace, left Shift, Control and Alt, F1 to F12), `BindMouseButton`, `BindMouseMotion`. Two keys with +1 and -1 on the same action make an axis. Binding values add up, so limiting the range is the game's job.
+- **Bindings** turn devices into actions: `BindKey(action, key, value)` (keys: letters, digits, arrows, Space, Enter, Tab, Backspace, left Shift, Control and Alt, F1 to F12, Escape), `BindMouseButton`, `BindMouseMotion`. Two keys with +1 and -1 on the same action make an axis. Binding values add up, so limiting the range is the game's job.
 - The source of values is chosen once per run: real devices (`UseLiveDevices`), a state supplied by hand (`UseManualDevices` + `SetDeviceState`, for tests), a recording (`StartReplay`) or nothing (everything 0).
 - `GameLoopConfig::input = &input` makes the loop call `AdvanceTick` before every `FixedUpdate`.
 - Reading: `GetValue`, `IsDown` (above 0.5), `WasPressed` and `WasReleased` (only on the tick of the change).
@@ -16,6 +16,7 @@ Header: `poligon/core/input.h`. Example: `examples/core/input`. Pattern in a gam
 2. ECS systems do not touch `Input`. Once per tick the game copies actions into a singleton component (`PlayerInput` in the toy), and systems read that component. This puts the tick's input into the state dump.
 3. Process window events in `Game::BeginFrame` (`ProcessPlatformEvents`), that is before the frame's ticks.
 4. Everything that should replay from a recording must go through actions. Reading a device around `Input` does not reach the recording.
+5. Escape: by default it ends a `GameLoop` (`GameLoopConfig::escape_quits`, see [game_loop.md](game_loop.md)). A game that uses it (a pause menu) sets `escape_quits = false` and binds `Key::Escape` to an action of its own, which is then recorded and replayed like any other key.
 
 ## Program flags
 

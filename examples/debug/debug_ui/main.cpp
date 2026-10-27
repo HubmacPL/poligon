@@ -69,7 +69,8 @@ int main(int argc, char** argv) {
     const glm::mat4 identity(1.0f);
     bool keep_running = true;
     while (keep_running) {
-        keep_running = poligon::ProcessPlatformEvents() && !options.headless;
+        // A loop of its own (no GameLoop): Escape quits only when asked for.
+        keep_running = poligon::ProcessPlatformEvents(true) && !options.headless;
 
         renderer.SetPostSettings(settings.post);
         renderer.BeginFrame(camera.ToCamera(), settings.sun, settings.environment);
