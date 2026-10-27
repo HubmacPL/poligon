@@ -53,6 +53,10 @@ float TerrainMaps::Sample(const std::vector<float>& map, float x, float z) const
     return glm::mix(glm::mix(row[0], row[1], fx), glm::mix(next_row[0], next_row[1], fx), fz);
 }
 
+bool TerrainMaps::HasMap(const std::vector<float>& map) const {
+    return !map.empty() && map_width >= 2 && map_depth >= 2;
+}
+
 float TerrainMaps::GetWaterDepth(float x, float z) const {
     if (water_level.empty()) {
         return 0.0f;
@@ -269,23 +273,26 @@ float MapConditions::Weight(const TerrainMaps& maps, glm::vec2 place) const {
     if (weight > 0.0f && IsSet(height)) {
         weight *= RangeWeight(height, maps.height.GetHeight(place.x, place.y));
     }
+    // A condition on a map the land does not have is not met (Sample would give 0, which
+    // means "dry", "in the water" and so on).
     if (weight > 0.0f && IsSet(moisture)) {
-        weight *= RangeWeight(moisture, maps.Sample(maps.moisture, place.x, place.y));
+        weight *= maps.HasMap(maps.moisture) ? RangeWeight(moisture, maps.Sample(maps.moisture, place.x, place.y)) : 0.0f;
     }
     if (weight > 0.0f && IsSet(sediment)) {
-        weight *= RangeWeight(sediment, maps.Sample(maps.sediment, place.x, place.y));
+        weight *= maps.HasMap(maps.sediment) ? RangeWeight(sediment, maps.Sample(maps.sediment, place.x, place.y)) : 0.0f;
     }
     if (weight > 0.0f && IsSet(rock)) {
-        weight *= RangeWeight(rock, maps.Sample(maps.rock, place.x, place.y));
+        weight *= maps.HasMap(maps.rock) ? RangeWeight(rock, maps.Sample(maps.rock, place.x, place.y)) : 0.0f;
     }
     if (weight > 0.0f && IsSet(flow)) {
-        weight *= RangeWeight(flow, std::log10(std::max(maps.Sample(maps.flow, place.x, place.y), 1.0f)));
+        weight *= maps.HasMap(maps.flow) ? RangeWeight(flow, std::log10(std::max(maps.Sample(maps.flow, place.x, place.y), 1.0f))) : 0.0f;
     }
     if (weight > 0.0f && IsSet(water_distance)) {
-        weight *= RangeWeight(water_distance, maps.Sample(maps.water_distance, place.x, place.y));
+        weight *= maps.HasMap(maps.water_distance) ? RangeWeight(water_distance, maps.Sample(maps.water_distance, place.x, place.y))
+                                                   : 0.0f;
     }
     if (weight > 0.0f && IsSet(water_depth)) {
-        weight *= RangeWeight(water_depth, maps.GetWaterDepth(place.x, place.y));
+        weight *= maps.HasMap(maps.water_level) ? RangeWeight(water_depth, maps.GetWaterDepth(place.x, place.y)) : 0.0f;
     }
     return weight;
 }

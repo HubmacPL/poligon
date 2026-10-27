@@ -1,13 +1,15 @@
 // Checks cooked land (poligon/world/land.h): a level that names a streamed world is cooked
 // into patch files, which read back, from the cooked folder and from an archive, equal the
 // patches cut from the generated maps to the bit; cooking again is skipped while nothing
-// changed and done again when a ground layer changes. Also checks that ground layers and
-// plant rules share a level file.
+// changed and done again when a ground layer changes; a patch file of the first version
+// still reads. Also checks that ground layers and plant rules share a level file.
 // Usage: land_files_test OUTPUT_DIRECTORY
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
+#include <vector>
 
 #include "poligon/assets/assets.h"
 #include "poligon/assets/cooking.h"
@@ -29,7 +31,8 @@ bool SameMaps(const poligon::TerrainMaps& a, const poligon::TerrainMaps& b) {
 
 bool SamePatch(const poligon::LandPatch& a, const poligon::LandPatch& b) {
     return a.patch == b.patch && SameMaps(a.maps, b.maps) && a.weights[0].pixels == b.weights[0].pixels &&
-           a.weights[1].pixels == b.weights[1].pixels && a.weights[0].width == b.weights[0].width;
+           a.weights[1].pixels == b.weights[1].pixels && a.weights[0].width == b.weights[0].width &&
+           a.layer_indices.pixels == b.layer_indices.pixels && a.layer_weights.pixels == b.layer_weights.pixels;
 }
 
 const char* const kLevel = R"(poligon-level 1
@@ -143,6 +146,34 @@ int main(int argc, char** argv) {
         }
         Expect(all_same, from_archive ? "every patch read from the archive equals the cut patch to the bit"
                                       : "every patch read from the folder equals the cut patch to the bit");
+    }
+
+    // A patch file of version 1 (before the layer indices: no flag byte after the weights)
+    // still reads, equal to the cut patch.
+    {
+        const std::filesystem::path old_folder = output / "land_files_version1";
+        std::filesystem::remove_all(old_folder, ec);
+        std::filesystem::create_directories(old_folder / "tests" / "land", ec);
+        std::filesystem::copy_file(cooked / "tests" / "land.pworld", old_folder / "tests" / "land.pworld", ec);
+        std::vector<std::uint8_t> bytes;
+        {
+            std::ifstream file(cooked / "tests" / "land" / "1_2.ppatch", std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+        }
+        const std::string header = "poligon-patch 2\n";
+        const bool version2 = bytes.size() > header.size() && std::string(bytes.begin(), bytes.begin() + 16) == header && bytes.back() == 0;
+        Expect(version2, "patch files are written as version 2, a patch without layer indices ending in a 0 flag");
+        if (version2) {
+            bytes[14] = '1';
+            bytes.pop_back();
+            std::ofstream(old_folder / "tests" / "land" / "1_2.ppatch", std::ios::binary)
+                .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            poligon::AssetLibrary library;
+            Expect(library.Open(old_folder.string().c_str(), error), "the folder with a version 1 patch opens");
+            poligon::LandFromFiles old_files(library, "tests/land", glm::dvec3(0.0));
+            Expect(old_files.IsOpen() && SamePatch(*old_files.GetPatch({1, 2}), from_maps.CutPatch({1, 2})),
+                   "a version 1 patch file still reads, equal to the cut patch");
+        }
     }
 
     // A changed ground layer cooks the world again.

@@ -60,10 +60,18 @@ Sources, each with its own window:
 
 A game reads the land cooked (`poligon/world/land.h`): the level names its world (`world worlds/forest`, `world.patch_size`, `world.background_spacing`, see [assets.md](assets.md)), and `CookLevelWorld` (or `asset_cooker --level`) generates the land, makes its ground layer weights from the level's `ground` blocks and writes:
 
-- `NAME.pworld`: the header line `poligon-world 1`, a number naming the settings it was made from (the generator's, the ground layers', the patch size: when they change, it is cooked again), then the `LandInfo` (patches, spacings, size, lakes, the background heights and weights);
-- `NAME/X_Z.ppatch`: the header line `poligon-patch 1`, then one `LandPatch` (its window of the maps and its weights) as raw numbers.
+- `NAME.pworld`: the header line `poligon-world 2`, a number naming the settings it was made from (the generator's, the ground layers', the patch size: when they change, it is cooked again), then the `LandInfo` (patches, spacings, size, lakes, the background heights and weights);
+- `NAME/X_Z.ppatch`: the header line `poligon-patch 2`, then one `LandPatch` (its window of the maps, its weights, then a flag byte and, when it is 1, its layer indices with their weights) as raw numbers. Files of version 1 (no flag, no indices) still read (`land_files_test`).
 
 `LandFromFiles(library, name, world_origin)` reads them through an `AssetLibrary`, from the cooked folder or a `POLIPAK1` archive (read file by file, so a released game holds only the patches it uses), on any thread. A patch read back equals the patch cut from the whole maps to the bit (`land_files_test`, from the folder and from the archive). Binary files are written with `poligon/core/binary_io.h`, shared with the asset files (example `examples/core/binary_io`).
+
+## Land from a height map
+
+A game with land made elsewhere (real elevation data, its own maps: a height every 4 m, up to 32 x 32 km, 512 m patches) uses `LandFromHeightMap(map, patch_size, world_origin, ground, ground_spacing, background_spacing)` instead of the generator. Patches are cut from the height map (with the same margin as generated land); the background and the occlusion floor are made from the heights; `CookLand` writes it like generated land, `LandFromFiles` reads it back, and the terrain, its collisions (`TerrainPhysicsSource`), sky occlusion and the far background work from it unchanged (`height_map_land_test`, example `examples/world/height_map_land`).
+
+- **Ground:** a `PatchGroundSource` of the game's own, one method `GetGround(patch, ground)` filling a `LandPatchGround` (owned images: two weight images, or layer indices with their weights) over the patch's ground points, `patch_size / ground_spacing + 1` on a side. It is called on the loading thread, so it must only read. Nothing in the engine makes layer indices from maps. The ground is cooked into the patch files and handed to the terrain by `TerrainPatchSource`.
+- **What such land does not have:** lakes and water surfaces, the generator's maps (moisture, flow, sediment, rock, distance to water, water level) and so ground layers from rules (`MakeTerrainLayerWeights`, a level's `ground` blocks) and a lake viewpoint. `LandPatch::maps` holds the heights and the ground grid only; every condition on a missing map is not met (`MapConditions::Weight` gives 0 rather than reading a 0 that would mean "dry" or "at the water"), so plant rules and ground cover on slope and height work and rules on the other maps plant nothing.
+- **The far background** has no patches, so its ground comes from the terrain's material: `TerrainMaterial::layer_indices` (or weights) over the whole land, for example at the background's points (the example does this); without them layer 0 covers it.
 
 ## The far background
 

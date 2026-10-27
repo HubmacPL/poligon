@@ -129,9 +129,11 @@ struct TerrainMaps {
     static constexpr float kNoWater = -1.0e30f;
 
     // A map's value at any place, blended from the four points around it; outside the
-    // grid the nearest edge counts.
+    // grid the nearest edge counts. 0 for a map the land does not have (empty): ask
+    // HasMap first where 0 would mean something (land from a height map has none of them).
     float Sample(const std::vector<float>& map, float x, float z) const;
-    // Meters of water above the ground there; 0 on land.
+    bool HasMap(const std::vector<float>& map) const;
+    // Meters of water above the ground there; 0 on land, and where there is no water map.
     float GetWaterDepth(float x, float z) const;
 };
 
@@ -145,7 +147,9 @@ struct TerrainRange {
 
 // Conditions on the maps at a place, each a soft range; together they give a weight from
 // 0 to 1 (the product). Used by ground layers (poligon/world/terrain.h) and plant rules
-// (poligon/world/plant_rules.h). Ranges left at their default are not even looked up.
+// (poligon/world/plant_rules.h). Ranges left at their default are not even looked up. A
+// condition on a map the land does not have (land from a height map: everything but slope
+// and height) is not met: the weight is 0, never a made-up value.
 struct MapConditions {
     TerrainRange slope_degrees;
     TerrainRange height;          // meters

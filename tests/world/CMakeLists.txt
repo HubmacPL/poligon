@@ -17,6 +17,7 @@ poligon_add_render_test(terrain_render_test)
 poligon_add_render_test(ground_cover_test)
 poligon_add_render_test(water_render_test)
 poligon_add_render_test(terrain_streaming_test)
+poligon_add_render_test(height_map_land_test ${CMAKE_BINARY_DIR}/test_output)
 
 # The same scene at the origin and 28 km away must look the same (double world positions,
 # camera-relative drawing). Small differences come from shadow texels snapped to a world grid;

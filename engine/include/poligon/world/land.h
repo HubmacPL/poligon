@@ -14,7 +14,8 @@
 
 namespace poligon {
 
-// The generated land of a streamed world, patch by patch (poligon/world/streaming.h).
+// The land of a streamed world, patch by patch (poligon/world/streaming.h): generated
+// (LandFromMaps) or from a height map made elsewhere (LandFromHeightMap).
 //
 // The terrain generator simulates the whole land at once, so the land is generated whole
 // (when it is cooked) and cut into patches. A LandSource hands out one patch at a time: the
@@ -31,11 +32,36 @@ constexpr float kLandPatchMargin = 8.0f;
 
 struct LandPatch {
     PatchCoord patch;
-    // Window of the generator's maps over the patch, widened by kLandPatchMargin.
+    // Window of the generator's maps over the patch, widened by kLandPatchMargin. For land
+    // from a height map only the heights and the map grid: the other maps are empty, and
+    // every condition on them fails (MapConditions::Weight).
     TerrainMaps maps;
-    // Ground layer weights over exactly the patch's map points (TerrainMaterial::weights'
-    // layout), or empty images when the land has no layer rules.
+    // The patch's ground over exactly its map points: weights (TerrainMaterial::weights'
+    // layout), or layer indices with their weights (TerrainMaterial::layer_indices'), or
+    // neither (empty images).
     Image weights[2];
+    Image layer_indices;
+    Image layer_weights;
+};
+
+// The ground of one patch of land from a height map, its images owned (as LandPatch holds
+// them; Terrain::SetPatch takes them as TerrainPatchGround).
+struct LandPatchGround {
+    Image weights[2];
+    Image layer_indices;
+    Image layer_weights;
+};
+
+// Where a land from a height map gets each patch's ground (LandFromHeightMap): the game's
+// own data, such as a ground material number per point. Called from the loading thread,
+// possibly from several at once, so it must only read.
+class PatchGroundSource {
+public:
+    virtual ~PatchGroundSource() = default;
+    // Fills `ground` for the patch, over its ground points (patch size / ground spacing + 1
+    // on a side), with weights or with layer indices and their weights; left empty, the
+    // patch has no ground of its own (layer 0 covers it).
+    virtual void GetGround(PatchCoord patch, LandPatchGround& ground) const = 0;
 };
 
 // What a streamed land is, for those who build on it.
@@ -100,14 +126,40 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// Land from a height map made elsewhere (real elevation data, a game's own maps), without
+// the terrain generator: patches cut from `map` (which must outlive the source), their ground
+// from `ground` (nullptr: none). The patch size must be a whole number of height points and
+// of `ground_spacing` (meters between ground points). There are no lakes, no generator maps
+// (moisture, flow, water...) and so no conditions on them: ground layers from rules and water
+// from the generator's hydrology need LandFromMaps. Background, occlusion floor, physics and
+// sky occlusion come from the heights as for generated land.
+class LandFromHeightMap : public LandSource {
+public:
+    LandFromHeightMap(const HeightMap& map, double patch_size, const glm::dvec3& world_origin, const PatchGroundSource* ground,
+                      float ground_spacing, float background_spacing = 64.0f, int kept_patches = 32);
+    ~LandFromHeightMap() override;
+    const LandInfo& GetInfo() const override;
+    std::shared_ptr<const LandPatch> GetPatch(PatchCoord patch) override;
+    std::shared_ptr<const LandPatch> FindPatch(PatchCoord patch) const override;
+
+    // Cuts one patch (what GetPatch keeps); for tools that write patches to files.
+    LandPatch CutPatch(PatchCoord patch) const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
 // --- Cooked land ---
 //
 // A land cooked into files (CookLand), read patch by patch from a cooked folder or an
 // archive (LandFromFiles, through an AssetLibrary):
 //
-//     NAME.pworld        "poligon-world 1", then what LandInfo holds (without world_origin)
+//     NAME.pworld        "poligon-world 2", then what LandInfo holds (without world_origin)
 //                        and a number naming the settings it was made from
-//     NAME/X_Z.ppatch    "poligon-patch 1", then one LandPatch (its maps window and weights)
+//     NAME/X_Z.ppatch    "poligon-patch 2", then one LandPatch (its maps window, weights and,
+//                        after a flag byte, layer indices with their weights); files of
+//                        version 1 (without the flag and the indices) still read
 //
 // The bytes are those of the cut patches, so a patch read from a file equals the patch cut
 // from the whole maps to the bit.
@@ -115,6 +167,8 @@ private:
 // Writes `land`'s description and every patch into `cooked_folder`. `settings_hash` is kept
 // in the description (CookLevelWorld uses it to know when to cook again).
 bool CookLand(const LandFromMaps& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
+              std::string& error);
+bool CookLand(const LandFromHeightMap& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
               std::string& error);
 
 // Cooks the streamed world a level names (Level::world) when its files are missing or were

@@ -668,7 +668,15 @@ std::unique_ptr<PatchData> TerrainPatchSource::Load(PatchCoord patch) {
 
 void TerrainPatchSource::Attach(PatchCoord patch, std::unique_ptr<PatchData> data) {
     const LandPatch& land = *static_cast<LandPatchData&>(*data).land;
-    terrain_.SetPatch(patch, land.maps.height, land.weights[0].pixels.empty() ? nullptr : land.weights);
+    TerrainPatchGround ground;
+    if (!land.layer_indices.pixels.empty()) {
+        ground.layer_indices = &land.layer_indices;
+        ground.layer_weights = &land.layer_weights;
+    } else if (!land.weights[0].pixels.empty()) {
+        ground.low_weights = &land.weights[0];
+        ground.high_weights = &land.weights[1];
+    }
+    terrain_.SetPatch(patch, land.maps.height, ground);
 }
 
 void TerrainPatchSource::Detach(PatchCoord patch) {

@@ -60,10 +60,18 @@ Generator terenu symuluje cały ląd naraz (rzeki i erozja nie są lokalne), wi�
 
 Gra czyta ląd wypieczony (`poligon/world/land.h`): poziom wskazuje swój świat (`world worlds/forest`, `world.patch_size`, `world.background_spacing`, patrz [assets.md](assets.md)), a `CookLevelWorld` (albo `asset_cooker --level`) generuje ląd, robi jego wagi warstw podłoża z bloków `ground` poziomu i zapisuje:
 
-- `NAZWA.pworld`: wiersz nagłówka `poligon-world 1`, liczbę nazywającą ustawienia, z których powstał (generatora, warstw podłoża, rozmiar łaty: gdy się zmienią, jest wypiekany od nowa), potem `LandInfo` (łaty, odstępy, rozmiar, jeziora, wysokości i wagi tła);
-- `NAZWA/X_Z.ppatch`: wiersz nagłówka `poligon-patch 1`, potem jedna `LandPatch` (jej okno map i wagi) jako surowe liczby.
+- `NAZWA.pworld`: wiersz nagłówka `poligon-world 2`, liczbę nazywającą ustawienia, z których powstał (generatora, warstw podłoża, rozmiar łaty: gdy się zmienią, jest wypiekany od nowa), potem `LandInfo` (łaty, odstępy, rozmiar, jeziora, wysokości i wagi tła);
+- `NAZWA/X_Z.ppatch`: wiersz nagłówka `poligon-patch 2`, potem jedna `LandPatch` (jej okno map, wagi, potem bajt flagi i, gdy wynosi 1, indeksy warstw z ich wagami) jako surowe liczby. Pliki wersji 1 (bez flagi i indeksów) dalej się czytają (`land_files_test`).
 
 `LandFromFiles(library, name, world_origin)` czyta je przez `AssetLibrary`, z wypieczonego folderu albo archiwum `POLIPAK1` (czytanego plik po pliku, więc wydana gra trzyma tylko łaty, których używa), w dowolnym wątku. Odczytana łata równa się łacie wyciętej z całych map co do bitu (`land_files_test`, z folderu i z archiwum). Pliki binarne pisze `poligon/core/binary_io.h` (przykład `examples/core/binary_io`), wspólny z plikami assetów.
+
+## Ląd z mapy wysokości
+
+Gra z lądem zrobionym gdzie indziej (prawdziwe dane wysokościowe, własne mapy: wysokość co 4 m, do 32 × 32 km, łaty po 512 m) używa zamiast generatora `LandFromHeightMap(map, patch_size, world_origin, ground, ground_spacing, background_spacing)`. Łaty są wycinane z mapy wysokości (z tym samym marginesem co ląd generowany); tło i podłoga zasłaniania powstają z wysokości; `CookLand` zapisuje go jak ląd generowany, `LandFromFiles` czyta z powrotem, a teren, jego kolizje (`TerrainPhysicsSource`), zasłanianie nieba i dalekie tło działają na nim bez zmian (`height_map_land_test`, przykład `examples/world/height_map_land`).
+
+- **Podłoże:** własny `PatchGroundSource` gry, jedna metoda `GetGround(patch, ground)` wypełniająca `LandPatchGround` (obrazy na własność: dwa obrazy wag albo indeksy warstw z ich wagami) w punktach podłoża łaty, `patch_size / ground_spacing + 1` na bok. Jest wołana w wątku wczytującym, więc może tylko czytać. Nic w silniku nie robi indeksów warstw z map. Podłoże jest wypiekane do plików łat i podawane terenowi przez `TerrainPatchSource`.
+- **Czego taki ląd nie ma:** jezior i powierzchni wody, map generatora (wilgotność, przepływ, osad, skała, odległość od wody, poziom wody), a więc warstw podłoża z reguł (`MakeTerrainLayerWeights`, bloki `ground` poziomu) i punktu widokowego na jezioro. `LandPatch::maps` trzyma tylko wysokości i siatkę podłoża; każdy warunek na brakującej mapie jest niespełniony (`MapConditions::Weight` daje 0, zamiast czytać 0, które znaczyłoby "sucho" albo "przy wodzie"), więc reguły roślin i rośliny przyziemne na nachyleniu i wysokości działają, a reguły na innych mapach nic nie sadzą.
+- **Dalekie tło** nie ma łat, więc jego podłoże pochodzi z materiału terenu: `TerrainMaterial::layer_indices` (albo wagi) nad całym lądem, na przykład w punktach tła (tak robi przykład); bez nich pokrywa je warstwa 0.
 
 ## Dalekie tło
 

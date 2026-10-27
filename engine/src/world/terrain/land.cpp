@@ -221,12 +221,119 @@ std::shared_ptr<const LandPatch> LandFromMaps::GetPatch(PatchCoord patch) {
     return impl_->kept.Keep(std::make_shared<const LandPatch>(CutPatch(patch)));
 }
 
+struct LandFromHeightMap::Impl {
+    const HeightMap* map = nullptr;
+    const PatchGroundSource* ground = nullptr;
+    LandInfo info;
+    KeptPatches kept;
+};
+
+LandFromHeightMap::LandFromHeightMap(const HeightMap& map, double patch_size, const glm::dvec3& world_origin,
+                                     const PatchGroundSource* ground, float ground_spacing, float background_spacing, int kept_patches)
+    : impl_(std::make_unique<Impl>()) {
+    const double height_points = patch_size / static_cast<double>(map.spacing);
+    const double ground_points = ground_spacing > 0.0f ? patch_size / static_cast<double>(ground_spacing) : 0.5;
+    if (map.IsEmpty() || patch_size <= 0.0 || height_points != std::floor(height_points) || ground_points != std::floor(ground_points)) {
+        FatalError("LandFromHeightMap: needs heights and a patch size that is a whole number of height and ground points");
+    }
+    const int step = static_cast<int>(std::lround(background_spacing / map.spacing));
+    if (step < 1 || std::fabs(static_cast<float>(step) * map.spacing - background_spacing) > 1e-3f) {
+        FatalError("LandFromHeightMap: the background spacing must be a whole multiple of the height spacing");
+    }
+    Impl& impl = *impl_;
+    impl.map = &map;
+    impl.ground = ground;
+    impl.kept.capacity = std::max(kept_patches, 1);
+    LandInfo& info = impl.info;
+    info.grid.patch_size = patch_size;
+    info.grid.origin = {0.0, 0.0};
+    info.size_x = map.GetSizeX();
+    info.size_z = map.GetSizeZ();
+    info.grid.patch_count_x = static_cast<int>(std::ceil(static_cast<double>(info.size_x) / patch_size));
+    info.grid.patch_count_z = static_cast<int>(std::ceil(static_cast<double>(info.size_z) / patch_size));
+    info.world_origin = world_origin;
+    info.spacing = map.spacing;
+    info.map_spacing = ground_spacing;
+    info.background = MakeCoarseHeightMap(map, step);
+    info.occlusion_floor = MakeOcclusionFloor(map, step);
+}
+
+LandFromHeightMap::~LandFromHeightMap() = default;
+
+const LandInfo& LandFromHeightMap::GetInfo() const {
+    return impl_->info;
+}
+
+LandPatch LandFromHeightMap::CutPatch(PatchCoord patch) const {
+    const Impl& impl = *impl_;
+    const LandInfo& info = impl.info;
+    const HeightMap& map = *impl.map;
+    const float size = static_cast<float>(info.grid.patch_size);
+    const glm::vec2 low(static_cast<float>(patch.x) * size, static_cast<float>(patch.z) * size);
+    const glm::vec2 high(std::min(low.x + size, info.size_x), std::min(low.y + size, info.size_z));
+    LandPatch land;
+    land.patch = patch;
+    // The heights over the patch and its margin, inside the map, as CutTerrainMaps cuts them;
+    // the ground's grid over the same rectangle, with no maps on it.
+    const auto first_point = [](float place, float spacing, int count) {
+        return glm::clamp(static_cast<int>(std::floor((place - kLandPatchMargin) / spacing)), 0, count - 2);
+    };
+    const auto last_point = [](float place, float spacing, int count) {
+        return glm::clamp(static_cast<int>(std::ceil((place + kLandPatchMargin) / spacing)), 1, count - 1);
+    };
+    const int hx0 = first_point(low.x, map.spacing, map.width);
+    const int hz0 = first_point(low.y, map.spacing, map.depth);
+    land.maps.height = CutHeightMap(map, hx0, hz0, last_point(high.x, map.spacing, map.width) - hx0 + 1,
+                                    last_point(high.y, map.spacing, map.depth) - hz0 + 1);
+    const int ground_width = static_cast<int>(std::lround(info.size_x / info.map_spacing)) + 1;
+    const int ground_depth = static_cast<int>(std::lround(info.size_z / info.map_spacing)) + 1;
+    land.maps.map_spacing = info.map_spacing;
+    land.maps.map_first_x = first_point(low.x, info.map_spacing, ground_width);
+    land.maps.map_first_z = first_point(low.y, info.map_spacing, ground_depth);
+    land.maps.map_width = last_point(high.x, info.map_spacing, ground_width) - land.maps.map_first_x + 1;
+    land.maps.map_depth = last_point(high.y, info.map_spacing, ground_depth) - land.maps.map_first_z + 1;
+    if (impl.ground != nullptr) {
+        LandPatchGround ground;
+        impl.ground->GetGround(patch, ground);
+        const int points = static_cast<int>(std::lround(size / info.map_spacing)) + 1;
+        const auto fits = [points](const Image& image) {
+            return image.width == points && image.height == points &&
+                   image.pixels.size() == static_cast<size_t>(points) * static_cast<size_t>(points) * 4;
+        };
+        const bool weights = !ground.weights[0].pixels.empty() || !ground.weights[1].pixels.empty();
+        const bool indices = !ground.layer_indices.pixels.empty() || !ground.layer_weights.pixels.empty();
+        if ((weights && indices) || (weights && (!fits(ground.weights[0]) || !fits(ground.weights[1]))) ||
+            (indices && (!fits(ground.layer_indices) || !fits(ground.layer_weights)))) {
+            FatalError("LandFromHeightMap: a patch's ground must be two weight images or layer indices with their weights, "
+                       "each of (patch size / ground spacing + 1) points on a side");
+        }
+        land.weights[0] = std::move(ground.weights[0]);
+        land.weights[1] = std::move(ground.weights[1]);
+        land.layer_indices = std::move(ground.layer_indices);
+        land.layer_weights = std::move(ground.layer_weights);
+    }
+    return land;
+}
+
+std::shared_ptr<const LandPatch> LandFromHeightMap::FindPatch(PatchCoord patch) const {
+    return impl_->kept.Find(patch);
+}
+
+std::shared_ptr<const LandPatch> LandFromHeightMap::GetPatch(PatchCoord patch) {
+    if (std::shared_ptr<const LandPatch> found = impl_->kept.Find(patch)) {
+        return found;
+    }
+    return impl_->kept.Keep(std::make_shared<const LandPatch>(CutPatch(patch)));
+}
+
 // --- Cooked land ---
 
 namespace {
 
 constexpr const char* kWorldFileHeader = "poligon-world 2\n";  // 2: the occlusion floor
-constexpr const char* kPatchFileHeader = "poligon-patch 1\n";
+// 2: a flag byte and the layer indices with their weights after the weights.
+constexpr const char* kPatchFileHeader = "poligon-patch 2\n";
+constexpr const char* kPatchFileHeaderVersion1 = "poligon-patch 1\n";
 
 std::string PatchFileName(const std::string& name, PatchCoord patch) {
     return name + "/" + std::to_string(patch.x) + "_" + std::to_string(patch.z) + ".ppatch";
@@ -287,16 +394,25 @@ std::vector<std::uint8_t> WritePatch(const LandPatch& patch) {
     }
     writer.Array(maps.lakes);
     WriteImages(writer, patch.weights);
+    const bool indices = !patch.layer_indices.pixels.empty();
+    writer.Raw(static_cast<std::uint8_t>(indices ? 1 : 0));
+    if (indices) {
+        const Image images[2] = {patch.layer_indices, patch.layer_weights};
+        WriteImages(writer, images);
+    }
     return writer.data;
 }
 
 bool ReadPatch(const std::vector<std::uint8_t>& bytes, LandPatch& patch) {
     BinaryReader reader(bytes.data(), bytes.size());
+    const size_t version1_length = std::strlen(kPatchFileHeaderVersion1);
+    const bool version1 = bytes.size() >= version1_length && std::memcmp(bytes.data(), kPatchFileHeaderVersion1, version1_length) == 0;
     std::int32_t x = 0;
     std::int32_t z = 0;
     std::int32_t map_values[4] = {};
     TerrainMaps& maps = patch.maps;
-    if (!reader.Header(kPatchFileHeader) || !reader.Raw(x) || !reader.Raw(z) || !ReadHeightMap(reader, maps.height) ||
+    if (!reader.Header(version1 ? kPatchFileHeaderVersion1 : kPatchFileHeader) || !reader.Raw(x) || !reader.Raw(z) ||
+        !ReadHeightMap(reader, maps.height) ||
         !reader.Raw(map_values[0]) || !reader.Raw(map_values[1]) || !reader.Raw(maps.map_spacing) || !reader.Raw(map_values[2]) ||
         !reader.Raw(map_values[3])) {
         return false;
@@ -311,7 +427,25 @@ bool ReadPatch(const std::vector<std::uint8_t>& bytes, LandPatch& patch) {
             return false;
         }
     }
-    return reader.Array(maps.lakes) && ReadImages(reader, patch.weights);
+    if (!reader.Array(maps.lakes) || !ReadImages(reader, patch.weights)) {
+        return false;
+    }
+    if (version1) {
+        return true;
+    }
+    std::uint8_t indices = 0;
+    if (!reader.Raw(indices)) {
+        return false;
+    }
+    if (indices != 0) {
+        Image images[2];
+        if (!ReadImages(reader, images)) {
+            return false;
+        }
+        patch.layer_indices = std::move(images[0]);
+        patch.layer_weights = std::move(images[1]);
+    }
+    return true;
 }
 
 std::vector<std::uint8_t> WriteInfo(const LandInfo& info, std::uint64_t settings_hash) {
@@ -374,8 +508,12 @@ std::uint64_t HashBytes(std::uint64_t hash, const void* data, size_t size) {
 
 } // namespace
 
-bool CookLand(const LandFromMaps& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
-              std::string& error) {
+namespace {
+
+// Writes every patch (cut by the land's CutPatch), then the description.
+template <typename Land>
+bool CookPatches(const Land& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
+                 std::string& error) {
     const std::filesystem::path folder(cooked_folder);
     const LandInfo& info = land.GetInfo();
     for (int z = 0; z < info.grid.patch_count_z; ++z) {
@@ -393,6 +531,18 @@ bool CookLand(const LandFromMaps& land, const std::string& name, std::uint64_t s
         return false;
     }
     return true;
+}
+
+} // namespace
+
+bool CookLand(const LandFromMaps& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
+              std::string& error) {
+    return CookPatches(land, name, settings_hash, cooked_folder, error);
+}
+
+bool CookLand(const LandFromHeightMap& land, const std::string& name, std::uint64_t settings_hash, const char* cooked_folder,
+              std::string& error) {
+    return CookPatches(land, name, settings_hash, cooked_folder, error);
 }
 
 bool CookLevelWorld(const Level& level, const std::vector<GroundLayer>& layers, const char* cooked_folder, const char* terrain_cache,
