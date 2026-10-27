@@ -29,6 +29,12 @@ find_package(ozz-animation CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 
 set(POLIGON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# The repository's cmake/ folder, found from here, so that the engine also builds when a game
+# adds this folder (or the repository) from a project of its own.
+set(POLIGON_CMAKE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cmake)
+if(NOT TARGET poligon_build_options)
+  include(${POLIGON_CMAKE_DIR}/PoligonBuildOptions.cmake)
+endif()
 
 add_subdirectory(src/core)
 add_subdirectory(src/ecs)

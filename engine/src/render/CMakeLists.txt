@@ -91,7 +91,7 @@ function(poligon_embed_shader source stage symbol header)
   set(output_dir ${CMAKE_CURRENT_BINARY_DIR}/generated/poligon_shaders)
   set(dxil ${output_dir}/${header}.dxil)
   set(spirv ${output_dir}/${header}.spv)
-  set(embed ${PROJECT_SOURCE_DIR}/cmake/EmbedBinary.cmake)
+  set(embed ${POLIGON_CMAKE_DIR}/EmbedBinary.cmake)
 
   add_custom_command(
     OUTPUT ${output_dir}/${header}_dxil.h ${output_dir}/${header}_spirv.h

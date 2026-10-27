@@ -29,6 +29,17 @@ Wyniki trafiają do `build/<preset>/`; wszystkie programy i DLL do `build/<prese
 - AddressSanitizer jest włączany globalnie dla wszystkiego, co buduje nasz CMake. Biblioteki z vcpkg są budowane osobno i nie są nim instrumentowane. Biblioteka uruchomieniowa sanitizera jest kopiowana obok programów.
 - Test `asan_canary_detects_overflow` celowo pisze poza bufor i przechodzi tylko wtedy, gdy sanitizer to zgłosi. Jeśli zacznie padać, budowa `asan` przestała chronić.
 
+## Opcje budowy
+
+| Opcja | Buduje |
+|---|---|
+| `POLIGON_BUILD_TESTS` | `tests/` (i rejestruje je w CTest) |
+| `POLIGON_BUILD_EXAMPLES` | `examples/` (każdy jest też testem CTest) |
+| `POLIGON_BUILD_TOOLS` | `model_viewer`, `forest_scene`, `asset_cooker`, `terrain_tool`, `impostor_baker`, `image_tool` |
+| `POLIGON_BUILD_TOY` | grę-zabawkę i jej sprawdzenia |
+
+Wszystkie cztery są włączone, gdy Poligon jest budowanym projektem (`PROJECT_IS_TOP_LEVEL`), i wyłączone, gdy gra dodaje repozytorium przez `add_subdirectory`: wtedy budują się tylko biblioteki silnika i nic z Poligonu nie trafia do CTest gry. `image_compare` i `state_compare` budują się zawsze, gdy budują się testy, narzędzia albo zabawka. Silnik znajduje własny folder `cmake/` z `engine/CMakeLists.txt` (`POLIGON_CMAKE_DIR`), więc nie zależy od tego, który projekt jest główny.
+
 ## Środowisko
 
 `tools\dev_env.ps1` znajduje Visual Studio 2022 (lub Build Tools) przez `vswhere` i ładuje środowisko x64 do bieżącego procesu. Stąd biorą się `cl`, `cmake` i `ninja`; nic nie jest dopisywane do systemowego PATH. Do ręcznej pracy w terminalu: `. tools\dev_env.ps1`, potem zwykłe `cmake --preset dev` itd.
