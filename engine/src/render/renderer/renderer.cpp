@@ -370,6 +370,7 @@ void Renderer::BeginFrame(const Camera& camera, const DirectionalLight& light, c
     impl_->particles.calls.clear();
     impl_->particles.cards.clear();
     impl_->instance_batches.clear();
+    impl_->terrain_materials.clear();
     if (impl_->debug_ui_active) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
@@ -558,7 +559,7 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     }
     impl_->PrepareTerrainWeights(data, material);
     if (material.layer_count < 0 || material.layer_count > kMaxTerrainLayers) {
-        FatalError("Renderer::DrawTerrain: layer_count must be between 0 and 32");
+        FatalError("Renderer::DrawTerrain: layer_count must be between 0 and 256");
     }
     if (count == 0) {
         return;
@@ -566,7 +567,8 @@ void Renderer::DrawTerrain(TerrainHandle terrain, const TerrainMaterial& materia
     InstanceBatch batch{};
     batch.mesh_id = impl_->terrain_grid.id;
     batch.terrain_id = terrain.id;
-    batch.terrain_material = material;
+    batch.terrain_material = static_cast<std::uint32_t>(impl_->terrain_materials.size());
+    impl_->terrain_materials.push_back(material);
     batch.first_source = impl_->instance_sources.size();
     batch.count = static_cast<std::uint32_t>(count);
     batch.options = options;
@@ -929,6 +931,7 @@ void Renderer::EndFrame() {
     std::copy(std::begin(impl.mesh_lod_draws), std::end(impl.mesh_lod_draws), std::begin(impl.stats.mesh_lod_draws));
     impl.PrepareLights(frame.unshifted_view_projection);
     impl.UploadLights(commands);
+    impl.UploadTerrainLayers(commands);
     {
         // Instances are culled against the view and against every cascade before any pass
         // starts, because their transforms must be on the graphics card by then.

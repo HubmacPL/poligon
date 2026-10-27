@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "poligon/render/renderer.h"
 #include "poligon/world/terrain.h"
@@ -162,31 +163,34 @@ int main(int argc, char** argv) {
         terrain.SetMaterial(terrain_config.material);
     }
 
-    // Layer indices: 32 layers, each map point naming its layers by number. The low land in
-    // the west holds bands of layers 9, 17 and 31, and a band where every point is half
-    // layer 0 and half layer 1; the high land in the east is layer 2 north of z = -0.5 and
-    // layer 3 south of it, layer 3 kept in another channel than layer 2.
+    // Layer indices: 256 layers (one texture array of 256 images), each map point naming its
+    // layers by number. The low land in the west holds bands of layers 9, 17, 31, 200 and 255,
+    // and a band where every point is half layer 0 and half layer 1; the high land in the east
+    // is layer 2 north of z = -0.5 and layer 3 south of it, layer 3 kept in another channel
+    // than layer 2. Unused channels have weight 0 and name any layer, 255 too.
     {
-        poligon::Image colors[poligon::kMaxTerrainLayers];
-        poligon::Image normals[poligon::kMaxTerrainLayers];
-        for (int layer = 0; layer < poligon::kMaxTerrainLayers; ++layer) {
-            colors[layer] = poligon::MakeSolidImage(8, 8, 60, 60, 60);
-            normals[layer] = poligon::MakeSolidImage(8, 8, 128, 128, 255);
+        std::vector<poligon::Image> colors(poligon::kMaxTerrainLayers);
+        std::vector<poligon::Image> normals(poligon::kMaxTerrainLayers);
+        for (size_t layer = 0; layer < colors.size(); ++layer) {
+            colors[layer] = poligon::MakeSolidImage(16, 16, 60, 60, 60);
+            normals[layer] = poligon::MakeSolidImage(16, 16, 128, 128, 255);
         }
         // Pairs that meet are of equal brightness (in linear light), so that neither wins
         // the height blending and both show where they share a spot.
-        colors[0] = poligon::MakeSolidImage(8, 8, 255, 0, 0);
-        colors[1] = poligon::MakeSolidImage(8, 8, 0, 188, 0);
-        colors[2] = poligon::MakeSolidImage(8, 8, 0, 0, 255);
-        colors[3] = poligon::MakeSolidImage(8, 8, 162, 0, 0);
-        colors[9] = poligon::MakeSolidImage(8, 8, 255, 255, 0);
-        colors[17] = poligon::MakeSolidImage(8, 8, 0, 255, 255);
-        colors[31] = poligon::MakeSolidImage(8, 8, 255, 0, 255);
+        colors[0] = poligon::MakeSolidImage(16, 16, 255, 0, 0);
+        colors[1] = poligon::MakeSolidImage(16, 16, 0, 188, 0);
+        colors[2] = poligon::MakeSolidImage(16, 16, 0, 0, 255);
+        colors[3] = poligon::MakeSolidImage(16, 16, 162, 0, 0);
+        colors[9] = poligon::MakeSolidImage(16, 16, 255, 255, 0);
+        colors[17] = poligon::MakeSolidImage(16, 16, 0, 255, 255);
+        colors[31] = poligon::MakeSolidImage(16, 16, 255, 0, 255);
+        colors[200] = poligon::MakeSolidImage(16, 16, 255, 128, 0);
+        colors[255] = poligon::MakeSolidImage(16, 16, 128, 0, 255);
         poligon::TextureOptions data;
         data.is_color = false;
         poligon::TerrainMaterial material = terrain_config.material;
-        material.colors = renderer.CreateTextureArray(colors, poligon::kMaxTerrainLayers);
-        material.normals = renderer.CreateTextureArray(normals, poligon::kMaxTerrainLayers, data);
+        material.colors = renderer.CreateTextureArray(colors.data(), poligon::kMaxTerrainLayers);
+        material.normals = renderer.CreateTextureArray(normals.data(), poligon::kMaxTerrainLayers, data);
         material.layer_count = poligon::kMaxTerrainLayers;
         poligon::Image indices = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
         poligon::Image amounts = poligon::MakeSolidImage(map.width, map.depth, 0, 0, 0, 0);
@@ -206,16 +210,18 @@ int main(int argc, char** argv) {
                         index[2] = 3;
                         amount[2] = 200;
                     }
-                } else if (z < -52.0f) {
-                    index[0] = 9;
-                } else if (z < -22.0f) {
-                    index[0] = 17;
-                } else if (z < 8.0f) {
-                    index[0] = 31;
+                } else if (z < 12.0f) {
+                    // One layer per band; the other channels unused (weight 0) but naming
+                    // layers that would show: 255 and 200.
+                    index[0] = z < -65.0f ? 9 : z < -45.0f ? 17 : z < -25.0f ? 31 : z < -5.0f ? 200 : 255;
+                    index[1] = 255;
+                    index[3] = 200;
                 } else if (z < 45.0f) {
                     index[1] = 1;
                     amount[0] = 128;
                     amount[1] = 128;
+                    index[2] = 255;
+                    index[3] = 9;
                 }
             }
         }
@@ -229,10 +235,13 @@ int main(int argc, char** argv) {
         terrain.Draw(camera);
         renderer.EndFrame();
         renderer.CaptureFrame(frame);
-        const std::uint8_t* band9 = PixelAt(frame, -50.0f, -70.0f);
-        const std::uint8_t* band17 = PixelAt(frame, -50.0f, -37.0f);
-        const std::uint8_t* band31 = PixelAt(frame, -50.0f, -7.0f);
-        const std::uint8_t* half = PixelAt(frame, -50.0f, 25.0f);
+        const std::uint8_t* band9 = PixelAt(frame, -50.0f, -75.0f);
+        const std::uint8_t* band17 = PixelAt(frame, -50.0f, -55.0f);
+        const std::uint8_t* band31 = PixelAt(frame, -50.0f, -35.0f);
+        const std::uint8_t* band200 = PixelAt(frame, -50.0f, -15.0f);
+        const std::uint8_t* band255 = PixelAt(frame, -50.0f, 3.0f);
+        const std::uint8_t* half = PixelAt(frame, -50.0f, 28.0f);
+        const std::uint8_t* steep_ramp = PixelAt(frame, -2.0f, 3.0f);  // on the ramp, 63 degrees
         const std::uint8_t* north = PixelAt(frame, 50.0f, -10.0f);
         const std::uint8_t* south = PixelAt(frame, 50.0f, 10.0f);
         std::printf("  indices: 9 %d %d %d, 17 %d %d %d, 31 %d %d %d, half 0 / 1 %d %d %d, 2 %d %d %d, 3 %d %d %d\n", band9[0],
@@ -241,7 +250,15 @@ int main(int argc, char** argv) {
         Expect(band9[0] > 240 && band9[1] > 240 && band9[2] < 15, "a point of layer 9 shows layer 9's texture");
         Expect(band17[0] < 15 && band17[1] > 240 && band17[2] > 240, "a point of layer 17 shows layer 17's texture");
         Expect(band31[0] > 240 && band31[1] < 15 && band31[2] > 240, "a point of layer 31 shows layer 31's texture");
-        Expect(half[0] > 100 && half[1] > 80 && half[2] < 15, "half layer 0 and half layer 1 shows both colors mixed");
+        std::printf("  indices: 200 %d %d %d, 255 %d %d %d, steep ramp %d %d %d\n", band200[0], band200[1], band200[2], band255[0],
+                    band255[1], band255[2], steep_ramp[0], steep_ramp[1], steep_ramp[2]);
+        Expect(band200[0] > 240 && band200[1] > 110 && band200[1] < 150 && band200[2] < 15,
+               "a point of layer 200 shows layer 200's texture");
+        Expect(band255[0] > 110 && band255[0] < 150 && band255[1] < 15 && band255[2] > 240,
+               "a point of layer 255 shows layer 255's texture");
+        Expect(steep_ramp[2] > 200, "in the layer index mode the steep color is not laid over steep ground");
+        Expect(half[0] > 100 && half[1] > 80 && half[2] < 15,
+               "half layer 0 and half layer 1 shows both colors mixed, unused channels (weight 0, layers 255 and 9) add nothing");
         Expect(north[2] > 240 && north[0] < 15 && south[0] > 150 && south[2] < 15, "layers 2 and 3 cover their sides");
         // Across the border (map points 1 m apart, the middle at z = -0.5), seen from 10 m
         // above (a pixel is 4.5 cm): the colors change over several pixels, both showing

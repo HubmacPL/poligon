@@ -212,12 +212,18 @@ struct TerrainMaterialUniforms {
     glm::vec4 map_heights;
     glm::vec4 steep;
     glm::vec4 steep_color;
-    glm::vec4 tile_scales[kMaxTerrainLayers / 4];
     glm::vec4 weight_map;
-    // Per layer: where the texture's repeat stands at the camera (xy for the layer's own
-    // size, zw for seven times larger), so that camera-relative positions tile as world ones.
-    glm::vec4 tile_phases[kMaxTerrainLayers];
+    glm::vec4 layers;  // x: the material's first entry in the layer buffer, y: far tile scale
     glm::vec4 noise_shift;  // xy: camera-relative x and z to the terrain's own (for its mottling)
+};
+
+// One layer of a terrain material in the frame's layer buffer (terrain_layers in
+// terrain.frag.hlsl): one entry per layer of every terrain drawn, written in EndFrame.
+struct GpuTerrainLayer {
+    // Where the layer's repeat stands at the camera (xy at its own size, zw at the far
+    // reading's), so that camera-relative positions tile as world ones.
+    glm::vec4 phases;
+    glm::vec4 scale;  // x: 1 / meters after which the texture repeats
 };
 
 struct TonemapUniforms {
@@ -547,9 +553,11 @@ struct InstanceBatch {
     std::uint32_t mesh_id;
     Material material;
     glm::vec3 noise_shift{0.0f};  // see NoiseShift
-    // Not 0: the batch draws patches of this terrain, with this look.
+    // Not 0: the batch draws patches of this terrain, with this look (an index into
+    // Impl::terrain_materials) and its layers from this entry of the layer buffer on.
     std::uint32_t terrain_id = 0;
-    TerrainMaterial terrain_material;
+    std::uint32_t terrain_material = 0;
+    std::uint32_t terrain_layer_first = 0;
     // Not 0: the batch draws cards of this impostor (mesh_id is then the card).
     std::uint32_t impostor_id = 0;
     // The batch's transforms as given by the caller, in Impl::instance_sources.
@@ -829,6 +837,10 @@ struct Renderer::Impl {
     // all batches and lists one after another, with the buffer they are copied to.
     std::vector<glm::mat4> instance_sources;
     std::vector<InstanceBatch> instance_batches;
+    // This frame's terrain materials (InstanceBatch::terrain_material) and their layers on the card.
+    std::vector<TerrainMaterial> terrain_materials;
+    std::vector<GpuTerrainLayer> terrain_layer_data;
+    DynamicBuffer terrain_layer_buffer;
     std::vector<glm::mat4> instance_data;
     // Scratch: the sphere around each instance of the batch being culled (center, radius).
     std::vector<glm::vec4> instance_spheres;
@@ -990,6 +1002,8 @@ struct Renderer::Impl {
     // A terrain's weight arrays for drawing with `material`: a terrain of one map copies the
     // material's weight images into its arrays when they changed.
     void PrepareTerrainWeights(TerrainData& terrain, const TerrainMaterial& material);
+    // Writes the layers of every terrain drawn this frame to the layer buffer (outside any pass).
+    void UploadTerrainLayers(SDL_GPUCommandBuffer* commands);
     // Captures or lets go of the mouse as the game wants, the window's focus and the debug windows allow.
     void UpdateMouseCapture();
     // Fills one page of a terrain's height array (16-bit, between the page's lowest and highest point).

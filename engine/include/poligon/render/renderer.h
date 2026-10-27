@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -400,12 +402,12 @@ struct TerrainHandle {
     std::uint32_t id = 0;
 };
 
-// Most ground textures a terrain can mix (TerrainMaterial::layer_count).
-constexpr int kMaxTerrainLayers = 32;
+// Most ground textures a terrain can mix (TerrainMaterial::layer_count): a layer index is a byte.
+constexpr int kMaxTerrainLayers = 256;
 // Of those, how many the weight images can cover (TerrainMaterial::weights: layers 0 to 7).
 constexpr int kMaxTerrainWeightLayers = 8;
 
-// How a terrain looks: up to 32 ground textures (layers), each covering the land where the
+// How a terrain looks: up to 256 ground textures (layers), each covering the land where the
 // material's maps say, and a plain color on slopes too steep for anything to grow.
 //
 // The layers' textures are two texture arrays of equal-sized images
@@ -419,8 +421,9 @@ constexpr int kMaxTerrainWeightLayers = 8;
 //   from the generator's maps and rules. Choose it for up to eight layers.
 // - Layer indices: `layer_indices` and `layer_weights` are two images (is_color = false) of the
 //   same size; at each pixel the four channels of `layer_indices` are the numbers of four
-//   layers (bytes 0 to 31), and the same channels of `layer_weights` how much of each shows
-//   (scaled in the shader to add up to 1). Choose it for more than eight layers, or for maps
+//   layers (bytes 0 to 255), and the same channels of `layer_weights` how much of each shows
+//   (scaled in the shader to add up to 1; a channel of weight 0 adds nothing, whatever its
+//   number). Choose it for more than eight layers, or for maps
 //   made elsewhere that store ground as "material number per point". Neighboring pixels may
 //   name other layers, or the same ones in other channels: the four pixels around a spot
 //   are merged by layer and the four strongest layers drawn, so borders stay smooth. Used
@@ -432,17 +435,22 @@ constexpr int kMaxTerrainWeightLayers = 8;
 //
 // Without weights or indices layer 0 covers everything; without textures the ground is white.
 struct TerrainMaterial {
+    TerrainMaterial() { std::fill(std::begin(tile_sizes), std::end(tile_sizes), 3.0f); }
+
     TextureHandle colors;
     TextureHandle normals;  // created with TextureOptions::is_color = false
     int layer_count = 0;
-    // Meters after which each layer's texture repeats.
-    float tile_sizes[kMaxTerrainLayers] = {3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f,
-                                           3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f,
-                                           3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f};
+    // Meters after which each layer's texture repeats (3 for every layer by default).
+    float tile_sizes[kMaxTerrainLayers];
+    // Each texture is also read this many times larger, which takes over with distance and
+    // hides the repetition of the near reading.
+    float far_tile_scale = 7.0f;
     TextureHandle weights[2];
     // The layer index mode (see above): both set, or neither.
     TextureHandle layer_indices;
     TextureHandle layer_weights;
+    // Bare ground on steep slopes, in the weight mode only: in the layer index mode the maps
+    // say what lies on steep ground too, and this color is not laid over it.
     Color steep_color{0.42f, 0.34f, 0.22f, 1.0f};
     // The steep color starts to show at the first slope and is all there is at the second;
     // a start of 90 turns it off (when a rock layer covers steep ground instead).

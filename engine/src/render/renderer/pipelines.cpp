@@ -416,8 +416,9 @@ void Renderer::Impl::CreatePipelines() {
     SDL_GPUShader* terrain_vertex =
         CreateShader(SDL_GPU_SHADERSTAGE_VERTEX, 1, 3, kTerrainVertDxil, sizeof(kTerrainVertDxil), kTerrainVertSpirv,
                      sizeof(kTerrainVertSpirv), 1);
+    // Two storage buffers: the lights' and the terrain layers'.
     SDL_GPUShader* terrain_fragment = CreateShader(SDL_GPU_SHADERSTAGE_FRAGMENT, 11, 4, kTerrainFragDxil,
-                                                   sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv), 1);
+                                                   sizeof(kTerrainFragDxil), kTerrainFragSpirv, sizeof(kTerrainFragSpirv), 2);
     const auto create_terrain = [&](SDL_GPUGraphicsPipelineCreateInfo info, SDL_GPUShader* fragment,
                                     SDL_GPUCullMode cull_mode) {
         info.vertex_shader = terrain_vertex;

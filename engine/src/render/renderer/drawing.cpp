@@ -213,7 +213,7 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
     SDL_PushGPUVertexUniformData(commands, 2, &vertex_uniforms, sizeof(vertex_uniforms));
 
     if (IsScenePass(mesh_pass)) {
-        const TerrainMaterial& look = batch.terrain_material;
+        const TerrainMaterial& look = terrain_materials[batch.terrain_material];
         TerrainMaterialUniforms material_uniforms;
         material_uniforms.map = vertex_uniforms.map;
         // x: 1 = each page has its own weights (read the page's layer), 0 = one weight image for
@@ -226,15 +226,8 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
                                             std::cos(glm::radians(look.steep_end_degrees)),
                                             textured ? static_cast<float>(look.layer_count) : 1.0f, textured ? 1.0f : 0.0f);
         material_uniforms.steep_color = glm::vec4(look.steep_color.r, look.steep_color.g, look.steep_color.b, look.roughness);
-        for (int layer = 0; layer < kMaxTerrainLayers; ++layer) {
-            const double scale = 1.0 / glm::max(static_cast<double>(look.tile_sizes[layer]), 0.01);
-            material_uniforms.tile_scales[layer / 4][layer % 4] = static_cast<float>(scale);
-            // Where the repeat stands at the camera, worked out in double: the shader adds it
-            // to camera-relative positions, so textures stay fixed to the world.
-            const glm::dvec2 at_camera = glm::dvec2(origin.x, origin.z) * scale;
-            material_uniforms.tile_phases[layer] =
-                glm::vec4(glm::vec2(glm::fract(at_camera)), glm::vec2(glm::fract(at_camera / 7.0)));
-        }
+        material_uniforms.layers =
+            glm::vec4(static_cast<float>(batch.terrain_layer_first), glm::max(look.far_tile_scale, 0.01f), 0.0f, 0.0f);
         // The mottling of steep ground is fixed to the land: to a terrain of one map's first
         // point, or for a paged terrain (whose pages come and go) to the 4096 m grid.
         const glm::dvec3 noise_anchor = terrain.paged
@@ -274,6 +267,8 @@ void Renderer::Impl::DrawTerrainBatch(SDL_GPUCommandBuffer* commands, SDL_GPURen
         bindings[6].sampler = clamp_sampler;
         AddLightingBindings(&bindings[7]);
         SDL_BindGPUFragmentSamplers(pass, 0, bindings, 11);
+        // After the lights' buffer (storage buffer 0, bound with the pass).
+        SDL_BindGPUFragmentStorageBuffers(pass, 1, &terrain_layer_buffer.buffer, 1);
     } else {
         // The depth-only passes use the leaf-cutting shader with nothing to cut.
         MaterialUniforms material_uniforms{};

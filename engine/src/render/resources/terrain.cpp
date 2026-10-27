@@ -251,6 +251,30 @@ void Renderer::Impl::PrepareTerrainWeights(TerrainData& terrain, const TerrainMa
     }
 }
 
+void Renderer::Impl::UploadTerrainLayers(SDL_GPUCommandBuffer* commands) {
+    terrain_layer_data.clear();
+    for (InstanceBatch& batch : instance_batches) {
+        if (batch.terrain_id == 0) {
+            continue;
+        }
+        const TerrainMaterial& look = terrain_materials[batch.terrain_material];
+        batch.terrain_layer_first = static_cast<std::uint32_t>(terrain_layer_data.size());
+        const double far_scale = static_cast<double>(glm::max(look.far_tile_scale, 0.01f));
+        for (int layer = 0; layer < glm::max(look.layer_count, 1); ++layer) {
+            const double scale = 1.0 / glm::max(static_cast<double>(look.tile_sizes[layer]), 0.01);
+            // Where the repeat stands at the camera, worked out in double: the shader adds it
+            // to camera-relative positions, so textures stay fixed to the world.
+            const glm::dvec2 at_camera = glm::dvec2(origin.x, origin.z) * scale;
+            GpuTerrainLayer entry;
+            entry.phases = glm::vec4(glm::vec2(glm::fract(at_camera)), glm::vec2(glm::fract(at_camera / far_scale)));
+            entry.scale = glm::vec4(static_cast<float>(scale), 0.0f, 0.0f, 0.0f);
+            terrain_layer_data.push_back(entry);
+        }
+    }
+    UploadDynamicBuffer(device, commands, terrain_layer_data.data(),
+                        static_cast<Uint32>(terrain_layer_data.size() * sizeof(GpuTerrainLayer)), terrain_layer_buffer);
+}
+
 void Renderer::DestroyTerrain(TerrainHandle terrain) {
     if (impl_->in_frame) {
         FatalError("Renderer::DestroyTerrain: do not destroy terrains between BeginFrame and EndFrame");

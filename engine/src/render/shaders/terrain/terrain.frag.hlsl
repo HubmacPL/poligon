@@ -1,7 +1,7 @@
 // Fragment shader for terrain.
 //
 // The direction of the ground comes from the height image, per pixel, so it does not get
-// coarser where distant patches have few vertices. The look comes from up to 32 ground
+// coarser where distant patches have few vertices. The look comes from up to 256 ground
 // textures (layers, kept in two texture arrays), mixed by two images stretched over the
 // whole land (the weights of layers 0 to 7, or four layer numbers per point and their
 // weights), and a plain color on slopes too steep for anything to grow. Where layers
@@ -30,6 +30,12 @@
 #define LIGHTING_LIGHT_DATA_BINDING 11
 #define LIGHTING_LIGHT_DATA_T t11
 #include "lighting.hlsli"
+
+// Per layer of the material, from entry layers.x on, 32 bytes each: where its repeat stands
+// at the camera (xy at its own size, zw at the far reading's), then 1 / its tile size. Read as
+// plain bytes, as SDL GPU gives Direct3D 12 a view without a structure.
+[[vk::binding(12, 2)]]
+ByteAddressBuffer terrain_layers : register(t12, space2);
 
 [[vk::combinedImageSampler]][[vk::binding(0, 2)]]
 Texture2DArray<float> height_texture : register(t0, space2);
@@ -62,11 +68,8 @@ cbuffer TerrainMaterialUniforms : register(b1, space3) {
     float4 map_heights;     // x: 1 = every page has its own weights, y: 1 = layer index mode, zw: 1 / number of points along x and z (of a page)
     float4 steep;           // x, y: cosine of the slope where the steep color starts and where it is complete, z: number of layers, w: 1 = layer textures given
     float4 steep_color;     // rgb: color of steep slopes, a: roughness of the whole terrain
-    float4 tile_scales[8];  // per layer: 1 / meters after which its texture repeats
     float4 weight_map;      // xy: height map point -> weight image coordinate scale, zw: offset
-    // Per layer: where its repeat stands at the camera (xy at its own size, zw seven times
-    // larger), so that camera-relative positions tile as world ones.
-    float4 tile_phases[32];
+    float4 layers;          // x: the material's first entry in terrain_layers, y: far tile scale
     float4 terrain_shift;   // xy: camera-relative x, z -> the terrain's own (for the mottling)
 };
 
@@ -106,7 +109,7 @@ float HeightAt(float2 point_position, float2 page) {
 // weights. Equal layers are merged, the points weighed by distance (bilinearly), and the
 // four strongest layers kept, their weights adding up to 1. Points are read without
 // filtering: blending layer numbers would make up others.
-void GatherIndexedLayers(float2 weight_uv, float weight_layer, int layer_count, out int layers[CANDIDATES],
+void GatherIndexedLayers(float2 weight_uv, float weight_layer, int layer_count, out int found[CANDIDATES],
                          out float amounts[CANDIDATES]) {
     uint width;
     uint height;
@@ -151,7 +154,7 @@ void GatherIndexedLayers(float2 weight_uv, float weight_layer, int layer_count, 
     // The four strongest.
     float total = 0.0;
     [unroll] for (int pick = 0; pick < CANDIDATES; ++pick) {
-        layers[pick] = 0;
+        found[pick] = 0;
         amounts[pick] = 0.0;
         if (pick < 4) {
             float best = 0.0;
@@ -165,7 +168,7 @@ void GatherIndexedLayers(float2 weight_uv, float weight_layer, int layer_count, 
             [unroll] for (int j = 0; j < 16; ++j) {
                 merged[j] = merged_layers[j] == best_layer ? 0.0 : merged[j];
             }
-            layers[pick] = max(best_layer, 0);
+            found[pick] = max(best_layer, 0);
             amounts[pick] = best;
             total += best;
         }
@@ -173,6 +176,19 @@ void GatherIndexedLayers(float2 weight_uv, float weight_layer, int layer_count, 
     [unroll] for (int n = 0; n < 4; ++n) {
         amounts[n] /= max(total, 0.0001);
     }
+}
+
+struct TerrainLayer {
+    float4 phases;
+    float scale;
+};
+
+TerrainLayer LoadLayer(int layer) {
+    uint start = ((uint)layers.x + (uint)layer) * 32u;
+    TerrainLayer loaded;
+    loaded.phases = asfloat(terrain_layers.Load4(start));
+    loaded.scale = asfloat(terrain_layers.Load(start + 16u));
+    return loaded;
 }
 
 float4 main(FragmentInput input) : SV_Target0 {
@@ -186,8 +202,9 @@ float4 main(FragmentInput input) : SV_Target0 {
     float2 place_dx = ddx(place);
     float2 place_dy = ddy(place);
 
-    // Each texture is read twice: at its own size, and seven times larger. Far from the
+    // Each texture is read twice: at its own size, and far_scale times larger. Far from the
     // camera the large reading takes over, which hides the repetition of the small one.
+    float far_scale = layers.y;
     float distance_to_camera = length(camera_position.xyz - input.world_position);
     float far_share = saturate((distance_to_camera - 25.0) / 90.0) * 0.75;
 
@@ -197,16 +214,16 @@ float4 main(FragmentInput input) : SV_Target0 {
     int layer_count = (int)steep.z;
 
     // The layers that may show here, found one of two ways (map_heights.y).
-    int layers[CANDIDATES];
+    int layer_numbers[CANDIDATES];
     float weights[CANDIDATES];
     if (map_heights.y > 0.5) {
-        GatherIndexedLayers(weight_uv, weight_layer, layer_count, layers, weights);
+        GatherIndexedLayers(weight_uv, weight_layer, layer_count, layer_numbers, weights);
     } else {
         float4 low = low_weights.SampleLevel(low_weight_sampler, float3(weight_uv, weight_layer), 0.0);
         float4 high = high_weights.SampleLevel(high_weight_sampler, float3(weight_uv, weight_layer), 0.0);
         float layer_weights[8] = {low.x, low.y, low.z, low.w, high.x, high.y, high.z, high.w};
         [unroll] for (int w = 0; w < CANDIDATES; ++w) {
-            layers[w] = w;
+            layer_numbers[w] = w;
             weights[w] = w < layer_count ? layer_weights[w] : 0.0;
         }
     }
@@ -221,13 +238,14 @@ float4 main(FragmentInput input) : SV_Target0 {
         heights[i] = -1.0;
         if (weights[i] > 0.004) {
             if (steep.w > 0.5) {
-                int layer = layers[i];
-                float scale = tile_scales[layer / 4][layer % 4];
-                float2 uv = place * scale + tile_phases[layer].xy;
-                float2 far_uv = place * scale / 7.0 + tile_phases[layer].zw;
+                int layer = layer_numbers[i];
+                TerrainLayer data = LoadLayer(layer);
+                float scale = data.scale;
+                float2 uv = place * scale + data.phases.xy;
+                float2 far_uv = place * scale / far_scale + data.phases.zw;
                 float3 near_color = layer_colors.SampleGrad(layer_color_sampler, float3(uv, layer), place_dx * scale, place_dy * scale).rgb;
-                float3 far_color = layer_colors.SampleGrad(layer_color_sampler, float3(far_uv, layer), place_dx * scale / 7.0,
-                                                           place_dy * scale / 7.0).rgb;
+                float3 far_color = layer_colors.SampleGrad(layer_color_sampler, float3(far_uv, layer), place_dx * scale / far_scale,
+                                                           place_dy * scale / far_scale).rgb;
                 colors[i] = lerp(near_color, far_color, far_share);
             }
             heights[i] = weights[i] + dot(colors[i], float3(0.3, 0.59, 0.11)) * 0.6;
@@ -236,12 +254,13 @@ float4 main(FragmentInput input) : SV_Target0 {
     }
     if (highest < 0.0) {
         // No weight anywhere (outside the weight image's layers): layer 0.
-        layers[0] = 0;
+        layer_numbers[0] = 0;
         heights[0] = 1.0;
         highest = 1.0;
         if (steep.w > 0.5) {
-            colors[0] = layer_colors.SampleGrad(layer_color_sampler, float3(place * tile_scales[0].x + tile_phases[0].xy, 0.0),
-                                                place_dx * tile_scales[0].x, place_dy * tile_scales[0].x).rgb;
+            TerrainLayer first = LoadLayer(0);
+            colors[0] = layer_colors.SampleGrad(layer_color_sampler, float3(place * first.scale + first.phases.xy, 0.0),
+                                                place_dx * first.scale, place_dy * first.scale).rgb;
         }
     }
 
@@ -255,9 +274,10 @@ float4 main(FragmentInput input) : SV_Target0 {
         if (share > 0.0) {
             base_color += colors[j] * share;
             if (steep.w > 0.5) {
-                int layer = layers[j];
-                float scale = tile_scales[layer / 4][layer % 4];
-                float3 layer_normal = layer_normals.SampleGrad(layer_normal_sampler, float3(place * scale + tile_phases[layer].xy, layer),
+                int layer = layer_numbers[j];
+                TerrainLayer data = LoadLayer(layer);
+                float scale = data.scale;
+                float3 layer_normal = layer_normals.SampleGrad(layer_normal_sampler, float3(place * scale + data.phases.xy, layer),
                                                                place_dx * scale, place_dy * scale).xyz;
                 float2 normal_xy = layer_normal.xy * 2.0 - 1.0;  // z rebuilt: two-channel maps hold none
                 detail += float3(normal_xy, sqrt(saturate(1.0 - dot(normal_xy, normal_xy)))) * share;
@@ -269,7 +289,8 @@ float4 main(FragmentInput input) : SV_Target0 {
     detail = steep.w > 0.5 ? detail / max(total, 0.0001) : float3(0.0, 0.0, 1.0);
 
     // Steep slopes show bare earth, slightly mottled.
-    float steep_share = saturate((steep.x - ground_normal.y) / max(steep.x - steep.y, 0.001));
+    // Not in the layer index mode, whose maps say what lies on steep ground too.
+    float steep_share = map_heights.y > 0.5 ? 0.0 : saturate((steep.x - ground_normal.y) / max(steep.x - steep.y, 0.001));
     float mottle = 0.8 + 0.4 * ValueNoise((place + terrain_shift.xy) * 0.7);
     base_color = lerp(base_color, steep_color.rgb * mottle, steep_share);
 
