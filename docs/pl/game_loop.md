@@ -34,7 +34,7 @@ Weryfikacja zmian odbywa się w trybie bez okna.
 - `--backend d3d12|vulkan`, `--gpu-validation`, `--dump-frame PLIK.png`: patrz [rendering.md](rendering.md).
 - `--dump-state PLIK.json`: patrz [ecs.md](ecs.md). `--record`, `--replay`: patrz [input.md](input.md). `--hash-log`, `--hash-interval`: patrz [determinism.md](determinism.md). `--render-settings`: patrz [debug_tools.md](debug_tools.md).
 - `--quality low|medium|high|ultra` (zestaw ustawień grafiki) i `--resolution SxW` (rozmiar obrazu, od 16 do 8192 w każdą stronę): patrz [rendering.md](rendering.md). Obie są tu tylko odczytywane i sprawdzane; stosuje je gra.
-- Nieznana opcja jest błędem (kod wyjścia 2), żeby literówka nie przeszła po cichu.
+- Nieznana opcja jest błędem (kod wyjścia 2), żeby literówka nie przeszła po cichu. Program deklaruje własne opcje, podając `ParseCommandLine` listę `CommandLineOption` (`{name, takes_value}`, nazwa bez `--`); podane trafiają do `CommandLineOptions::extra` (nazwa -> wartość, "" dla opcji bez wartości). Nazwa opcji standardowej jest błędem. Przykład: `examples/core/command_line`.
 
 Przykład: `build\dev\bin\toy.exe --headless --ticks 600 --dump-frame klatka.png`.
 

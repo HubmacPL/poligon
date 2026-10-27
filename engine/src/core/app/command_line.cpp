@@ -20,11 +20,29 @@ const char* ReadOptionValue(int argc, const char* const* argv, int& index, std::
     return argv[index];
 }
 
+// Names of the standard options, without "--".
+const char* const kStandardOptions[] = {"headless", "gpu-validation", "ticks",    "hash-interval",   "backend",
+                                        "dump-frame", "dump-state",   "record",   "replay",          "hash-log",
+                                        "render-settings", "quality", "resolution"};
+
 } // namespace
 
-bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& options, std::string& error) {
+bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& options, std::string& error,
+                      const std::vector<CommandLineOption>& extra_options) {
     options = CommandLineOptions{};
     error.clear();
+    for (const CommandLineOption& extra : extra_options) {
+        if (extra.name.empty() || extra.name.rfind("-", 0) == 0) {
+            error = "a program's own option needs a name without the leading dashes, got \"" + extra.name + "\"";
+            return false;
+        }
+        for (const char* standard : kStandardOptions) {
+            if (extra.name == standard) {
+                error = "--" + extra.name + " is a standard option; a program cannot add it again";
+                return false;
+            }
+        }
+    }
 
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
@@ -123,8 +141,25 @@ bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& opt
         } else if (argument.rfind("--", 0) != 0) {
             options.positional.push_back(argument);
         } else {
-            error = "unknown option \"" + argument + "\"";
-            return false;
+            const CommandLineOption* own = nullptr;
+            for (const CommandLineOption& extra : extra_options) {
+                if (argument.compare(2, std::string::npos, extra.name) == 0) {
+                    own = &extra;
+                }
+            }
+            if (own == nullptr) {
+                error = "unknown option \"" + argument + "\"";
+                return false;
+            }
+            std::string value;
+            if (own->takes_value) {
+                const char* given = ReadOptionValue(argc, argv, i, error);
+                if (given == nullptr) {
+                    return false;
+                }
+                value = given;
+            }
+            options.extra[own->name] = value;
         }
     }
     return true;

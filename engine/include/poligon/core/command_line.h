@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -42,11 +43,23 @@ struct CommandLineOptions {
     // Arguments that are not options (do not start with "--"), in order. What they mean is up
     // to the program, for example a file to open. A program that takes none should reject them.
     std::vector<std::string> positional;
+    // The program's own options (ParseCommandLine's `extra_options`) that were given: name
+    // without "--" -> value ("" for an option that takes none). Given twice, the last counts.
+    std::map<std::string, std::string> extra;
+};
+
+// An option of the program's own, on top of the standard ones: "--NAME" or "--NAME VALUE".
+struct CommandLineOption {
+    std::string name;          // without "--", for example "data"
+    bool takes_value = false;  // true: the next argument is its value
 };
 
 // Parses argv (argv[0] is skipped). Returns false and fills `error` on an unknown option,
 // a missing value or an invalid value. Unknown options are errors on purpose: a mistyped
 // flag must not be silently ignored.
-bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& options, std::string& error);
+// `extra_options`: the program's own options, read into CommandLineOptions::extra; a name
+// that is one of the standard options is an error.
+bool ParseCommandLine(int argc, const char* const* argv, CommandLineOptions& options, std::string& error,
+                      const std::vector<CommandLineOption>& extra_options = {});
 
 } // namespace poligon

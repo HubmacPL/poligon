@@ -1,4 +1,5 @@
 #include <string>
+#include <vector>
 
 #include "poligon/core/command_line.h"
 #include "test_support.h"
@@ -104,6 +105,33 @@ int main() {
     for (const char* bad : {"1920", "1920x", "x1080", "1920x1080x", "8x8", "1920*1080"}) {
         const char* argv[] = {"program", "--resolution", bad};
         Expect(!Parse(3, argv, options, error), "a malformed or too small resolution is an error");
+    }
+
+    // A program's own options.
+    const std::vector<poligon::CommandLineOption> own = {{"data", true}, {"collision", false}};
+    {
+        const char* argv[] = {"program", "--data", "C:/game data", "--headless", "--collision", "level1"};
+        Expect(poligon::ParseCommandLine(6, argv, options, error, own), "a program's own options are accepted");
+        Expect(options.extra.size() == 2 && options.extra["data"] == "C:/game data" && options.extra["collision"].empty(),
+               "their values are read, an option without a value gives an empty one");
+        Expect(options.headless && options.positional.size() == 1 && options.positional[0] == "level1",
+               "standard options and positional arguments still work between them");
+    }
+    {
+        const char* argv[] = {"program", "--data"};
+        Expect(!poligon::ParseCommandLine(2, argv, options, error, own) && error.find("--data") != std::string::npos,
+               "a program's own option without its value is an error");
+    }
+    {
+        const char* argv[] = {"program", "--dat", "x"};
+        Expect(!poligon::ParseCommandLine(3, argv, options, error, own), "a mistyped own option is still an error");
+    }
+    {
+        const char* argv[] = {"program", "--data", "x"};
+        Expect(!Parse(3, argv, options, error), "without the list, a program's own option is unknown");
+        const std::vector<poligon::CommandLineOption> clash = {{"ticks", true}};
+        Expect(!poligon::ParseCommandLine(1, argv, options, error, clash) && error.find("--ticks") != std::string::npos,
+               "a program cannot add a standard option again");
     }
 
     return test::ExitCode();

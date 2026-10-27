@@ -34,7 +34,7 @@ Changes are verified in headless mode.
 - `--backend d3d12|vulkan`, `--gpu-validation`, `--dump-frame FILE.png`: see [rendering.md](rendering.md).
 - `--dump-state FILE.json`: see [ecs.md](ecs.md). `--record`, `--replay`: see [input.md](input.md). `--hash-log`, `--hash-interval`: see [determinism.md](determinism.md). `--render-settings`: see [debug_tools.md](debug_tools.md).
 - `--quality low|medium|high|ultra` (graphics preset) and `--resolution WxH` (picture size, 16 to 8192 each way): see [rendering.md](rendering.md). Both are only parsed and checked here; the game applies them.
-- An unknown option is an error (exit code 2), so a typo cannot pass silently.
+- An unknown option is an error (exit code 2), so a typo cannot pass silently. A program declares options of its own by passing a list of `CommandLineOption` (`{name, takes_value}`, the name without `--`) to `ParseCommandLine`; the ones given land in `CommandLineOptions::extra` (name -> value, "" for an option without one). A name that is a standard option is an error. Example: `examples/core/command_line`.
 
 Example: `build\dev\bin\toy.exe --headless --ticks 600 --dump-frame frame.png`.
 
