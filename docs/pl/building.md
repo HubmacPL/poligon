@@ -58,6 +58,90 @@ Wszystkie cztery są włączone, gdy Poligon jest budowanym projektem (`PROJECT_
 - `flecs` (MIT; w środku fragmenty na BSD-2, MIT i jeden w domenie publicznej).
 - Obecne poza tym: `sdl3` z cechą `vulkan` (zlib, z częściami na MIT, Apache 2.0 i BSD-3), `stb` (MIT lub domena publiczna), `directx-dxc` jako narzędzie budowania (NCSA; nic z niego nie jest linkowane ani dołączane do gry).
 
+## Gra poza repozytorium
+
+Gra we własnym repozytorium dodaje Poligon przez `add_subdirectory`; budują się wtedy tylko biblioteki silnika (zob. Opcje budowy), a gra linkuje `poligon_runtime`. Sprawdzone 2026-10-27 projektem w innym folderze ułożonym jak niżej: konfiguracja, budowa i jego test przeszły w niecałą minutę, gdy pamięć podręczna vcpkg miała już pakiety.
+
+```
+my_game/
+  CMakeLists.txt
+  vcpkg.json
+  vcpkg-configuration.json
+  main.cpp
+poligon/            (to repozytorium, obok: klon albo submoduł git)
+```
+
+`CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.28)
+project(my_game LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Programy i DLL silnika w jednym folderze, żeby gra startowała stamtąd.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+set(POLIGON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../poligon" CACHE PATH "Poligon's repository")
+add_subdirectory(${POLIGON_DIR} poligon)
+
+enable_testing()
+add_executable(my_game main.cpp)
+target_link_libraries(my_game PRIVATE poligon_runtime)  # poligon_engine dla narzędzi, które wypiekają
+add_test(NAME my_game_runs COMMAND my_game --headless --ticks 60)
+```
+
+`vcpkg-configuration.json` (własne porty Poligonu: Jolt w podwójnej precyzji, ozz-animation):
+
+```json
+{
+  "overlay-ports": [
+    "../poligon/ports"
+  ]
+}
+```
+
+`vcpkg.json`: `vcpkg.json` Poligonu pod inną nazwą, z tym samym `builtin-baseline` i tymi samymi zależnościami, a pod nimi własne zależności gry:
+
+```json
+{
+  "name": "my-game",
+  "version": "0.1.0",
+  "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+  "dependencies": [
+    {
+      "name": "sdl3",
+      "features": [
+        "vulkan"
+      ]
+    },
+    "stb",
+    "flecs",
+    "glm",
+    "assimp",
+    "ozz-animation",
+    "joltphysics",
+    {
+      "name": "imgui",
+      "features": [
+        "sdl3-binding",
+        "sdlgpu3-binding"
+      ]
+    },
+    {
+      "name": "directx-dxc",
+      "host": true
+    }
+  ]
+}
+```
+
+Konfiguracja z toolchainem vcpkg, tak jak w konfiguracjach Poligonu (`CMAKE_TOOLCHAIN_FILE` = `%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake`, `VCPKG_TARGET_TRIPLET=x64-windows`), w środowisku z `tools\dev_env.ps1`. Plik `CMakePresets.json` jak w Poligonie oszczędza pisania.
+
+- Gdy zmienia się `vcpkg.json` Poligonu (nowa biblioteka, inny baseline), plik gry musi zmienić się tak samo. Nie ma jeszcze wyeksportowanej paczki (`install(EXPORT)`, `poligonConfig.cmake`): gra buduje silnik ze źródeł, niecałą minutę w Debug na maszynie z GTX 980 (12 procesorów logicznych).
+- Shadery silnika kompiluje DXC w czasie jego budowy, więc gra potrzebuje `directx-dxc` jak Poligon (tylko jako narzędzie budowy).
+- Własne opcje wiersza poleceń gry: `ParseCommandLine` z ich listą ([game_loop.md](game_loop.md)).
+
 ## Paczki wydania
 
 `tools\package.ps1 [-Version 0.1.0]` buduje konfigurację `release` i pakuje
